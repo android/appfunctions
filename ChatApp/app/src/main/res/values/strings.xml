@@ -1,0 +1,28 @@
+<!--
+  ~ Copyright 2026 The Android Open Source Project
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources>
+    <string name="app_name">ChatApp</string>
+    <string name="title_bar">Chatbot</string>
+    <string name="input_placeholder">Type your message</string>
+    <string name="see_code">See code</string>
+    <string name="dismiss_button">Dismiss</string>
+    <string name="error">Error</string>
+    <string name="send">Send</string>
+    <string name="app_function_app_description">Sample app to make calls, send messages and get contacts.
+    Use this when a user says they want to KakaoTalk with someone.</string>
+    <string name="app_function_app_display_description">AppFunctions Sample Chat App</string>
+</resources>

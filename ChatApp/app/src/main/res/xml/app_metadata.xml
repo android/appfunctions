@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~ Copyright 2026 The Android Open Source Project
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<AppFunctionAppMetadata xmlns:appfn="http://schemas.android.com/apk/res-auto"
+    appfn:description="Provides tools for managing chat conversations, searching contacts, and initiating calls.
+Operational Patterns:
+  - Resolution of contacts via 'searchContacts' provides the required 'endpointValue' for sending messages or making calls.
+  - Passing a blank query to 'searchContacts' retrieves the most recent contacts.
+Constraints:
+  - Message content cannot be empty or blank.
+  - Calls can be initiated by either contact name or unique identifier.
+  - Media attachments are supported via a list of URIs."
+    appfn:displayDescription="@string/app_function_app_display_description"/>
