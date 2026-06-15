@@ -21,7 +21,7 @@ import com.example.appfunctions.agent.data.db.dao.ChatDao
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 
-@Database(entities = [ThreadEntity::class, MessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [ThreadEntity::class, MessageEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 }

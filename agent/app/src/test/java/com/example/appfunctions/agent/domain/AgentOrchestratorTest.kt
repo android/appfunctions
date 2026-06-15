@@ -24,11 +24,9 @@ import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
-import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
-import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -65,8 +63,6 @@ class AgentOrchestratorTest {
     private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
     private val savePendingIntentUseCase: SavePendingIntentUseCase = mockk(relaxed = true)
 
-    private val getInstalledAppsUseCase: GetInstalledAppsUseCase = mockk()
-
     private lateinit var agentOrchestrator: AgentOrchestrator
 
     @Before
@@ -84,7 +80,6 @@ class AgentOrchestratorTest {
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
                 savePendingIntentUseCase = savePendingIntentUseCase,
-                getInstalledAppsUseCase = getInstalledAppsUseCase,
             )
     }
 
@@ -96,7 +91,6 @@ class AgentOrchestratorTest {
             val thread = createThread(threadId)
 
             setupDefaultMocks(threadId, message, thread, apiKey = null)
-            coEvery { getInstalledAppsUseCase() } returns emptyList()
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
@@ -128,7 +122,6 @@ class AgentOrchestratorTest {
 
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
             coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
-            coEvery { getInstalledAppsUseCase() } returns emptyList()
 
             val errorMsg = "LLM failed"
             coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
@@ -164,7 +157,6 @@ class AgentOrchestratorTest {
 
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
             coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
-            coEvery { getInstalledAppsUseCase() } returns emptyList()
 
             val responseText = "Hi there"
             coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
@@ -195,19 +187,18 @@ class AgentOrchestratorTest {
         }
 
     @Test
-    fun `observeAndProcessMessages scopes tools by app name`() =
+    fun `observeAndProcessMessages scopes tools when targetPackageName is set`() =
         runTest {
             val threadId = "thread_1"
-            val message = createUserMessage(threadId, "@AppFunction Testing Agent run geo code address for n1c4ag")
+            val message =
+                createUserMessage(
+                    threadId = threadId,
+                    textContent = "run geo code address for n1c4ag",
+                    targetPackageName = "com.google.android.appfunctiontestingagent",
+                )
             val thread = createThread(threadId)
             val llmProvider = mockk<LlmProvider>()
 
-            // Mock install apps
-            val app1 = AppInfo("com.google.android.appfunctiontestingagent", "AppFunction Testing Agent", null)
-            val app2 = AppInfo("com.google.android.digitalwellbeing", "Digital Wellbeing", null)
-            coEvery { getInstalledAppsUseCase() } returns listOf(app1, app2)
-
-            // Mock tools
             val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
             val tool2 = createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
             mockAppFunctions(listOf(tool1, tool2))
@@ -215,47 +206,6 @@ class AgentOrchestratorTest {
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
             coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = any(),
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
-
-            // Run agent orchestrator
-            agentOrchestrator.observeAndProcessMessages(threadId)
-
-            // Verify correct details
-            coVerify {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
-                    tools = listOf(tool1),
-                    apiKey = "dummy_key",
-                    modelName = any(),
-                )
-            }
-        }
-
-    @Test
-    fun `observeAndProcessMessages scopes tools by app name case insensitively`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "@appfunction testing agent run geo code address for n1c4ag")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
-
-            val app1 = AppInfo("com.google.android.appfunctiontestingagent", "AppFunction Testing Agent", null)
-            coEvery { getInstalledAppsUseCase() } returns listOf(app1)
-
-            val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            mockAppFunctions(listOf(tool1))
-
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-
-            coEvery {
                 llmProvider.generateResponse(any(), any(), any(), any(), any())
             } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
 
@@ -273,50 +223,16 @@ class AgentOrchestratorTest {
         }
 
     @Test
-    fun `observeAndProcessMessages does not scope tools when app name is unrecognized`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "@UnrecognizedApp run geo code address for n1c4ag")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
-
-            val app1 = AppInfo("com.google.android.appfunctiontestingagent", "AppFunction Testing Agent", null)
-            coEvery { getInstalledAppsUseCase() } returns listOf(app1)
-
-            val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            mockAppFunctions(listOf(tool1))
-
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-
-            coEvery {
-                llmProvider.generateResponse(any(), any(), any(), any(), any())
-            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
-
-            agentOrchestrator.observeAndProcessMessages(threadId)
-
-            coVerify {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = eq(LlmInput.UserMessage("@UnrecognizedApp run geo code address for n1c4ag")),
-                    tools = listOf(tool1),
-                    apiKey = "dummy_key",
-                    modelName = any(),
-                )
-            }
-        }
-
-    @Test
-    fun `observeAndProcessMessages does not scope tools when no prefix is present`() =
+    fun `observeAndProcessMessages does not scope tools when targetPackageName is null`() =
         runTest {
             val threadId = "thread_1"
             val message = createUserMessage(threadId, "run geo code address for n1c4ag")
             val thread = createThread(threadId)
             val llmProvider = mockk<LlmProvider>()
 
-            coEvery { getInstalledAppsUseCase() } returns emptyList()
-
             val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            mockAppFunctions(listOf(tool1))
+            val tool2 = createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
+            mockAppFunctions(listOf(tool1, tool2))
 
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
@@ -326,45 +242,11 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
-            coVerify(exactly = 0) { getInstalledAppsUseCase() }
             coVerify {
                 llmProvider.generateResponse(
                     previousInteractionId = null,
                     input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
-                    tools = listOf(tool1),
-                    apiKey = "dummy_key",
-                    modelName = any(),
-                )
-            }
-        }
-
-    @Test
-    fun `observeAndProcessMessages scopes tools by app name when input is exactly the app name`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "@AppFunction Testing Agent")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
-
-            val app1 = AppInfo("com.google.android.appfunctiontestingagent", "AppFunction Testing Agent", null)
-            coEvery { getInstalledAppsUseCase() } returns listOf(app1)
-
-            val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            mockAppFunctions(listOf(tool1))
-
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-
-            coEvery {
-                llmProvider.generateResponse(any(), any(), any(), any(), any())
-            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
-
-            agentOrchestrator.observeAndProcessMessages(threadId)
-
-            coVerify {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = eq(LlmInput.UserMessage("")),
-                    tools = listOf(tool1),
+                    tools = listOf(tool1, tool2),
                     apiKey = "dummy_key",
                     modelName = any(),
                 )
@@ -375,6 +257,7 @@ class AgentOrchestratorTest {
         threadId: String,
         textContent: String,
         messageId: String = "message_1",
+        targetPackageName: String? = null,
     ) = MessageEntity(
         messageId = messageId,
         threadId = threadId,
@@ -382,6 +265,7 @@ class AgentOrchestratorTest {
         textContent = textContent,
         timestamp = System.currentTimeMillis(),
         processingStatus = MessageProcessingStatus.PENDING_AGENT_RESPONSE,
+        targetPackageName = targetPackageName,
     )
 
     private fun createThread(

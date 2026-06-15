@@ -27,7 +27,6 @@ import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFuncti
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
-import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -65,7 +64,6 @@ class AgentOrchestrator
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val savePendingIntentUseCase: SavePendingIntentUseCase,
-        private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
     ) {
         private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
 
@@ -111,7 +109,8 @@ class AgentOrchestrator
                 val disconnectedApps = settingsRepository.disconnectedApps.first()
                 val allTools = getAppFunctionsUseCase().first().values.flatten()
 
-                val (targetPackageName, queryText) = parseTargetPackage(message.textContent)
+                val targetPackageName = message.targetPackageName
+                val queryText = message.textContent
 
                 val tools = filterTools(allTools, disconnectedApps, targetPackageName)
 
@@ -133,31 +132,6 @@ class AgentOrchestrator
                 )
                 _status.value = AgentStatus.Idle
             }
-        }
-
-        // TODO: b/521319810 - This text-based parsing is a temporary bootstrapping method implemented in b/508130322.
-        // In b/521319810, the UI autocomplete menu will return a unique package name
-        // and attach it directly to the MessageEntity metadata.
-        // Once that is implemented, this entire `@` parsing block and `getInstalledAppsUseCase` lookup
-        // should be replaced by reading `targetPackageName` directly from the message metadata.
-        private suspend fun parseTargetPackage(content: String): Pair<String?, String> {
-            if (!content.startsWith("@")) {
-                return Pair(null, content)
-            }
-
-            val installedApps = getInstalledAppsUseCase()
-            val sortedApps = installedApps.sortedByDescending { it.label.length }
-
-            for (app in sortedApps) {
-                val prefix = "@${app.label}"
-                if (content.equals(prefix, ignoreCase = true)) {
-                    return Pair(app.packageName, "")
-                } else if (content.startsWith("$prefix ", ignoreCase = true)) {
-                    return Pair(app.packageName, content.substring(prefix.length + 1).trim())
-                }
-            }
-
-            return Pair(null, content)
         }
 
         private fun filterTools(

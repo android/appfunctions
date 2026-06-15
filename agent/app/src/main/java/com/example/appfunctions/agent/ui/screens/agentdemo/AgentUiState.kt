@@ -19,6 +19,7 @@ import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.appfunction.AppInfo
 
 /** Represents the UI state for the Agent Demo screen. */
 sealed class AgentUiState {
@@ -30,12 +31,16 @@ sealed class AgentUiState {
         val status: AgentStatus = AgentStatus.Idle,
         val threads: List<ThreadEntity> = emptyList(),
         val activePendingActionIds: Set<String> = emptySet(),
+        val installedApps: List<AppInfo> = emptyList(),
     ) : AgentUiState()
 }
 
 /** Represents UI events for the Agent Demo screen. */
 sealed class AgentUiEvent {
-    data class OnSendMessage(val text: String) : AgentUiEvent()
+    data class OnSendMessage(
+        val text: String,
+        val targetPackageName: String? = null,
+    ) : AgentUiEvent()
 
     data class OnModelSelected(val model: LlmModel) : AgentUiEvent()
 

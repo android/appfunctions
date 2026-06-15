@@ -25,6 +25,8 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -38,6 +40,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -60,6 +63,8 @@ class AgentDemoViewModelTest {
     private lateinit var observeActivePendingIntentsUseCase: ObserveActivePendingIntentsUseCase
     private lateinit var launchPendingIntentUseCase: LaunchPendingIntentUseCase
     private lateinit var consumePendingIntentUseCase: ConsumePendingIntentUseCase
+    private lateinit var getInstalledAppsUseCase: GetInstalledAppsUseCase
+    private lateinit var getAppFunctionsUseCase: GetAppFunctionsUseCase
 
     private lateinit var viewModel: AgentDemoViewModel
 
@@ -82,6 +87,11 @@ class AgentDemoViewModelTest {
         observeActivePendingIntentsUseCase = mockk()
         launchPendingIntentUseCase = mockk()
         consumePendingIntentUseCase = mockk(relaxed = true)
+        getInstalledAppsUseCase = mockk()
+        getAppFunctionsUseCase = mockk()
+
+        every { getInstalledAppsUseCase() } returns emptyList()
+        every { getAppFunctionsUseCase() } returns flowOf(emptyMap())
 
         every { manageThreadsUseCase.getThreads() } returns threadsFlow
         every { settingsRepository.selectedProvider } returns selectedProviderFlow
@@ -124,6 +134,8 @@ class AgentDemoViewModelTest {
                     observeActivePendingIntentsUseCase,
                     launchPendingIntentUseCase,
                     consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
                 )
 
             viewModel.onEvent(AgentUiEvent.OnModelSelected(LlmModel.GEMINI_3_1_PRO_PREVIEW))
@@ -150,6 +162,8 @@ class AgentDemoViewModelTest {
                     observeActivePendingIntentsUseCase,
                     launchPendingIntentUseCase,
                     consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
                 )
 
             coVerify { manageThreadsUseCase.createThread(LlmModel.DEFAULT) }
@@ -179,10 +193,15 @@ class AgentDemoViewModelTest {
                     observeActivePendingIntentsUseCase,
                     launchPendingIntentUseCase,
                     consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
                 )
 
             coVerify(exactly = 0) { manageThreadsUseCase.createThread(any()) }
-            assertEquals(existingThread, (viewModel.uiState.value as AgentUiState.Loaded).currentThread)
+            assertEquals(
+                existingThread,
+                (viewModel.uiState.value as AgentUiState.Loaded).currentThread,
+            )
         }
 
     @Test
@@ -209,6 +228,8 @@ class AgentDemoViewModelTest {
                     observeActivePendingIntentsUseCase,
                     launchPendingIntentUseCase,
                     consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
                 )
 
             coEvery { sendMessageUseCase(any(), any(), any(), any()) } returns Unit
@@ -249,6 +270,8 @@ class AgentDemoViewModelTest {
                     observeActivePendingIntentsUseCase,
                     launchPendingIntentUseCase,
                     consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
                 )
 
             val message =
@@ -296,6 +319,8 @@ class AgentDemoViewModelTest {
                     observeActivePendingIntentsUseCase,
                     launchPendingIntentUseCase,
                     consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
                 )
 
             assertEquals(newThread, (viewModel.uiState.value as AgentUiState.Loaded).currentThread)

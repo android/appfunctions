@@ -45,6 +45,7 @@ data class MessageEntity(
      * only non-null if Assistant returned PendingIntent tool response.
      */
     val pendingIntentId: String? = null,
+    val targetPackageName: String? = null,
 )
 
 enum class MessageRole {
