@@ -107,8 +107,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun AgentDemoScreen(viewModel: AgentDemoViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val messageText by viewModel.messageText.collectAsStateWithLifecycle()
 
-    AgentDemoContent(uiState = uiState, onEvent = viewModel::onEvent)
+    AgentDemoContent(
+        uiState = uiState,
+        onEvent = viewModel::onEvent,
+        messageText = messageText,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,6 +121,7 @@ fun AgentDemoScreen(viewModel: AgentDemoViewModel = hiltViewModel()) {
 fun AgentDemoContent(
     uiState: AgentUiState,
     onEvent: (AgentUiEvent) -> Unit,
+    messageText: String = "",
     initialSidePanelVisible: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -144,6 +150,7 @@ fun AgentDemoContent(
                         drawerState = drawerState,
                         scope = scope,
                         packageManager = packageManager,
+                        messageText = messageText,
                         initialSidePanelVisible = initialSidePanelVisible,
                     )
                 }
@@ -194,9 +201,9 @@ fun AgentDemoLoadedScreen(
     drawerState: DrawerState,
     scope: CoroutineScope,
     packageManager: PackageManager,
+    messageText: String = "",
     initialSidePanelVisible: Boolean = false,
 ) {
-    var messageText by remember { mutableStateOf("") }
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
 
     Scaffold(
@@ -292,14 +299,13 @@ fun AgentDemoLoadedScreen(
                 val sendMessage = {
                     if (messageText.isNotBlank() && uiState.status == AgentStatus.Idle) {
                         onEvent(AgentUiEvent.OnSendMessage(messageText))
-                        messageText = ""
                     }
                 }
 
                 // Input area
                 OutlinedTextField(
                     value = messageText,
-                    onValueChange = { messageText = it },
+                    onValueChange = { onEvent(AgentUiEvent.OnMessageTextChanged(it)) },
                     modifier =
                         Modifier.fillMaxWidth().padding(vertical = 16.dp).onPreviewKeyEvent {
                                 keyEvent ->

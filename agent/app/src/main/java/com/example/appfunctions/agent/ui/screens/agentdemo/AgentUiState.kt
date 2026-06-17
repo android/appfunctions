@@ -44,4 +44,6 @@ sealed class AgentUiEvent {
     data class OnThreadSelected(val threadId: String) : AgentUiEvent()
 
     data class OnConfirmAction(val pendingIntentId: String) : AgentUiEvent()
+
+    data class OnMessageTextChanged(val text: String) : AgentUiEvent()
 }

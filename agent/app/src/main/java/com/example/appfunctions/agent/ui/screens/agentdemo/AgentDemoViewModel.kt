@@ -61,6 +61,9 @@ class AgentDemoViewModel
         private val _uiState = MutableStateFlow<AgentUiState>(AgentUiState.Loading)
         val uiState: StateFlow<AgentUiState> = _uiState.asStateFlow()
 
+        val messageText: StateFlow<String> =
+            savedStateHandle.getStateFlow(KEY_MESSAGE_TEXT, "")
+
         private var observationJob: Job? = null
 
         init {
@@ -149,6 +152,7 @@ class AgentDemoViewModel
             val currentState = _uiState.value
             when (event) {
                 is AgentUiEvent.OnSendMessage -> {
+                    savedStateHandle[KEY_MESSAGE_TEXT] = ""
                     if (currentState is AgentUiState.Loaded) {
                         viewModelScope.launch {
                             sendMessageUseCase(
@@ -159,6 +163,9 @@ class AgentDemoViewModel
                             )
                         }
                     }
+                }
+                is AgentUiEvent.OnMessageTextChanged -> {
+                    savedStateHandle[KEY_MESSAGE_TEXT] = event.text
                 }
                 is AgentUiEvent.OnModelSelected -> {
                     if (currentState is AgentUiState.Loaded) {
@@ -190,6 +197,8 @@ class AgentDemoViewModel
             savedStateHandle[MainActivity.ARG_THREAD_ID] = threadId
         }
     }
+
+private const val KEY_MESSAGE_TEXT = "messageText"
 
 private data class ThreadConfig(
     val threads: List<ThreadEntity>,
