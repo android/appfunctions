@@ -211,7 +211,11 @@ class DebuggingViewModel
                             _uiState.update {
                                 it.copy(
                                     searchAppResultState =
-                                        currentSearchAppResultState.copy(executionResult = result),
+                                        currentSearchAppResultState.copy(
+                                            executionResult = result,
+                                            executedFunction = function,
+                                            executedInputs = inputs,
+                                        ),
                                 )
                             }
                         }
@@ -226,6 +230,8 @@ class DebuggingViewModel
                                                         error.message ?: "Failed to convert input",
                                                     ),
                                                 ),
+                                            executedFunction = function,
+                                            executedInputs = inputs,
                                         ),
                                 )
                             }
@@ -236,6 +242,8 @@ class DebuggingViewModel
                             searchAppResultState =
                                 currentSearchAppResultState.copy(
                                     executionResult = ExecuteAppFunctionResult.Error(e),
+                                    executedFunction = function,
+                                    executedInputs = inputs,
                                 ),
                         )
                     }
@@ -248,7 +256,14 @@ class DebuggingViewModel
             val currentSearchAppResultState = _uiState.value.searchAppResultState
             if (currentSearchAppResultState !is SearchAppResultState.FunctionsFoundState) return
             _uiState.update {
-                it.copy(searchAppResultState = currentSearchAppResultState.copy(executionResult = null))
+                it.copy(
+                    searchAppResultState =
+                        currentSearchAppResultState.copy(
+                            executionResult = null,
+                            executedFunction = null,
+                            executedInputs = emptyMap(),
+                        ),
+                )
             }
         }
 

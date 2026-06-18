@@ -43,6 +43,8 @@ sealed class SearchAppResultState {
         val functionInputs: Map<String, Map<String, Any>> = emptyMap(),
         val executionResult: ExecuteAppFunctionResult? = null,
         val expandedFunctions: Set<String> = emptySet(),
+        val executedFunction: AppFunctionMetadata? = null,
+        val executedInputs: Map<String, Any> = emptyMap(),
     ) : SearchAppResultState()
 
     data class TroubleshootUiState(
