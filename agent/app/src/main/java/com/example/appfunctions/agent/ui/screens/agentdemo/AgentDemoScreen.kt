@@ -232,7 +232,9 @@ fun AgentDemoLoadedScreen(
     messageText: String = "",
     initialSidePanelVisible: Boolean = false,
 ) {
-    var messageText by remember { mutableStateOf(TextFieldValue("")) }
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(messageText, TextRange(messageText.length)))
+    }
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
     var selectedAppPackageName by remember { mutableStateOf<String?>(null) }
 
@@ -345,15 +347,15 @@ fun AgentDemoLoadedScreen(
                 }
 
                 val sendMessage = {
-                    val textStr = messageText.text
+                    val textStr = textFieldValue.text
                     if (textStr.isNotBlank() && uiState.status == AgentStatus.Idle) {
                         onEvent(AgentUiEvent.OnSendMessage(textStr, selectedAppPackageName))
-                        messageText = TextFieldValue("")
+                        textFieldValue = TextFieldValue("")
                         selectedAppPackageName = null
                     }
                 }
 
-                val textStr = messageText.text
+                val textStr = textFieldValue.text
                 val lastAtIndex = textStr.lastIndexOf('@')
                 val showAutocomplete =
                     lastAtIndex >= 0 &&
@@ -409,9 +411,10 @@ fun AgentDemoLoadedScreen(
                 // Input area
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
-                        value = messageText,
+                        value = textFieldValue,
                         onValueChange = { newValue ->
-                            messageText = newValue
+                            textFieldValue = newValue
+                            onEvent(AgentUiEvent.OnMessageTextChanged(newValue.text))
                             val currentText = newValue.text
                             if (selectedAppPackageName != null && appMentionRegex != null) {
                                 if (!appMentionRegex.containsMatchIn(currentText)) {
@@ -449,7 +452,7 @@ fun AgentDemoLoadedScreen(
                             IconButton(
                                 onClick = sendMessage,
                                 enabled =
-                                    messageText.text.isNotBlank() &&
+                                    textFieldValue.text.isNotBlank() &&
                                         uiState.status == AgentStatus.Idle,
                             ) {
                                 Icon(
@@ -481,8 +484,8 @@ fun AgentDemoLoadedScreen(
                                         DropdownMenuItem(
                                             text = { Text(app.label) },
                                             onClick = {
-                                                val currentText = messageText.text
-                                                val selectionStart = messageText.selection.start
+                                                val currentText = textFieldValue.text
+                                                val selectionStart = textFieldValue.selection.start
                                                 val textBeforeCursor =
                                                     currentText.take(
                                                         selectionStart,
@@ -502,7 +505,7 @@ fun AgentDemoLoadedScreen(
                                                         "$textBeforeMention@${app.label} $textAfterCursor"
                                                     val newCursorPosition =
                                                         mentionIndex + app.label.length + 2
-                                                    messageText =
+                                                    textFieldValue =
                                                         TextFieldValue(
                                                             text = newText,
                                                             selection =
@@ -510,6 +513,9 @@ fun AgentDemoLoadedScreen(
                                                                     newCursorPosition,
                                                                 ),
                                                         )
+                                                    onEvent(
+                                                        AgentUiEvent.OnMessageTextChanged(newText),
+                                                    )
                                                     selectedAppPackageName = app.packageName
                                                 }
                                             },
