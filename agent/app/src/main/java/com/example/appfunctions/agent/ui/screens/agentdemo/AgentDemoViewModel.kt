@@ -27,6 +27,9 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.appfunction.AppInfo
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -34,6 +37,7 @@ import com.example.appfunctions.agent.domain.pendingintent.ConsumePendingIntentU
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ObserveActivePendingIntentsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +46,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -57,9 +62,13 @@ class AgentDemoViewModel
         private val observeActivePendingIntentsUseCase: ObserveActivePendingIntentsUseCase,
         private val launchPendingIntentUseCase: LaunchPendingIntentUseCase,
         private val consumePendingIntentUseCase: ConsumePendingIntentUseCase,
+        private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
+        private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<AgentUiState>(AgentUiState.Loading)
         val uiState: StateFlow<AgentUiState> = _uiState.asStateFlow()
+
+        private val installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
 
         val messageText: StateFlow<String> =
             savedStateHandle.getStateFlow(KEY_MESSAGE_TEXT, "")
@@ -67,6 +76,18 @@ class AgentDemoViewModel
         private var observationJob: Job? = null
 
         init {
+            viewModelScope.launch {
+                getAppFunctionsUseCase().collect { toolsMap ->
+                    val allTools = toolsMap.values.flatten()
+                    val packagesWithTools = allTools.map { it.packageName }.toSet()
+                    val filteredApps =
+                        withContext(Dispatchers.IO) {
+                            getInstalledAppsUseCase().filter { it.packageName in packagesWithTools }
+                        }
+                    installedApps.value = filteredApps
+                }
+            }
+
             viewModelScope.launch {
                 observeActivePendingIntentsUseCase().collect { activePendingActionIds ->
                     val currentState = _uiState.value
@@ -90,15 +111,17 @@ class AgentDemoViewModel
                     settingsRepository.selectedProvider,
                     agentOrchestrator.status,
                     savedStateHandle.getStateFlow<String?>(MainActivity.ARG_THREAD_ID, null),
+                    installedApps,
                 ) {
                         threads,
                         provider,
                         status,
                         targetThreadId,
+                        apps,
                     ->
-                    ThreadConfig(threads, provider, status, targetThreadId)
+                    ThreadConfig(threads, provider, status, targetThreadId, apps)
                 }
-                    .collectLatest { (threads, provider, status, targetThreadId) ->
+                    .collectLatest { (threads, provider, status, targetThreadId, apps) ->
                         val currentThread =
                             threads.find { it.threadId == targetThreadId } ?: threads.firstOrNull()
 
@@ -119,6 +142,7 @@ class AgentDemoViewModel
                                     threads = threads,
                                     activePendingActionIds =
                                         currentLoadedState?.activePendingActionIds ?: emptySet(),
+                                    installedApps = apps,
                                 )
 
                             // Start observing messages for the current thread if not already doing so
@@ -160,6 +184,7 @@ class AgentDemoViewModel
                                 role = MessageRole.USER,
                                 textContent = event.text,
                                 processingStatus = MessageProcessingStatus.PENDING_AGENT_RESPONSE,
+                                targetPackageName = event.targetPackageName,
                             )
                         }
                     }
@@ -205,4 +230,5 @@ private data class ThreadConfig(
     val provider: LlmProviderName,
     val status: AgentStatus,
     val targetThreadId: String?,
+    val installedApps: List<AppInfo>,
 )

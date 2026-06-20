@@ -107,6 +107,9 @@
     <string name="agent_demo_action_expired">Done</string>
     <string name="agent_demo_action_confirmation_needed">I can perform this action for you. Should I proceed?</string>
 
+    <string name="debugging_copied_value">Copied value of %1$s</string>
+    <string name="debugging_copy_value">Copy value</string>
+
     <!-- Instrumentation Error -->
     <string name="dialog_instrumentation_failed_title">Instrumentation Failed</string>
     <string name="dialog_instrumentation_failed_message">Only one instrumentation can run at a time. Please stop the other instrumentation and try again.</string>

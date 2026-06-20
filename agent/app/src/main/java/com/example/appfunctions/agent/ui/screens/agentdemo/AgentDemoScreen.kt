@@ -41,6 +41,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -48,6 +51,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -85,10 +90,31 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,6 +125,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.ui.screens.debugging.LazyExposedDropdownMenu
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.CoroutineScope
@@ -142,6 +169,7 @@ fun AgentDemoContent(
                 is AgentUiState.Loading -> {
                     AgentDemoLoadingScreen()
                 }
+
                 is AgentUiState.Loaded -> {
                     AgentDemoLoadedScreen(
                         uiState = uiState,
@@ -204,7 +232,16 @@ fun AgentDemoLoadedScreen(
     messageText: String = "",
     initialSidePanelVisible: Boolean = false,
 ) {
+    var messageText by remember { mutableStateOf(TextFieldValue("")) }
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
+    var selectedAppPackageName by remember { mutableStateOf<String?>(null) }
+
+    val chipBgColor = MaterialTheme.colorScheme.primaryContainer
+    val chipTextColor = MaterialTheme.colorScheme.onPrimaryContainer
+    val visualTransformation =
+        remember(uiState.installedApps, chipTextColor) {
+            InlineAppScopingVisualTransformation(uiState.installedApps, chipTextColor)
+        }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -215,7 +252,10 @@ fun AgentDemoLoadedScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ModelDropdown(
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
                     currentThread = uiState.currentThread,
                     onModelSelected = { onEvent(AgentUiEvent.OnModelSelected(it)) },
                     onMenuClick = {
@@ -239,7 +279,8 @@ fun AgentDemoLoadedScreen(
     ) { paddingValues ->
         Row(
             modifier =
-                Modifier.fillMaxSize()
+                Modifier
+                    .fillMaxSize()
                     .imePadding()
                     .padding(
                         top = paddingValues.calculateTopPadding(),
@@ -263,13 +304,19 @@ fun AgentDemoLoadedScreen(
             // Main Chat Area
             Column(
                 modifier =
-                    Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, end = 16.dp),
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 // Messages List
                 LazyColumn(
                     modifier =
-                        Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)),
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp)),
                     reverseLayout = true,
                 ) {
                     // Status item at the bottom (above input) if not
@@ -291,59 +338,188 @@ fun AgentDemoLoadedScreen(
                             message = message,
                             isValidAction =
                                 message.pendingIntentId in uiState.activePendingActionIds,
+                            installedApps = uiState.installedApps,
                             onConfirmAction = { onEvent(AgentUiEvent.OnConfirmAction(it)) },
                         )
                     }
                 }
 
                 val sendMessage = {
-                    if (messageText.isNotBlank() && uiState.status == AgentStatus.Idle) {
-                        onEvent(AgentUiEvent.OnSendMessage(messageText))
+                    val textStr = messageText.text
+                    if (textStr.isNotBlank() && uiState.status == AgentStatus.Idle) {
+                        onEvent(AgentUiEvent.OnSendMessage(textStr, selectedAppPackageName))
+                        messageText = TextFieldValue("")
+                        selectedAppPackageName = null
                     }
                 }
 
+                val textStr = messageText.text
+                val lastAtIndex = textStr.lastIndexOf('@')
+                val showAutocomplete =
+                    lastAtIndex >= 0 &&
+                        (lastAtIndex == 0 || textStr[lastAtIndex - 1].isWhitespace()) &&
+                        selectedAppPackageName == null
+                val autocompleteQuery =
+                    if (showAutocomplete) {
+                        textStr.substring(lastAtIndex + 1)
+                    } else {
+                        ""
+                    }
+                val filteredApps =
+                    remember(autocompleteQuery, uiState.installedApps) {
+                        if (autocompleteQuery.isEmpty()) {
+                            uiState.installedApps
+                        } else {
+                            uiState.installedApps.filter {
+                                it.label.contains(autocompleteQuery, ignoreCase = true)
+                            }
+                        }
+                    }
+
+                val density = LocalDensity.current
+                val popupPositionProvider =
+                    remember(density) {
+                        object : PopupPositionProvider {
+                            override fun calculatePosition(
+                                anchorBounds: IntRect,
+                                windowSize: IntSize,
+                                layoutDirection: LayoutDirection,
+                                popupContentSize: IntSize,
+                            ): IntOffset {
+                                val gap = with(density) { 2.dp.roundToPx() }
+                                return IntOffset(
+                                    x = anchorBounds.left,
+                                    y = anchorBounds.top - popupContentSize.height - gap,
+                                )
+                            }
+                        }
+                    }
+
+                val appMentionRegex =
+                    remember(uiState.installedApps) {
+                        if (uiState.installedApps.isNotEmpty()) {
+                            val appLabelsPattern =
+                                uiState.installedApps.joinToString("|") { Regex.escape(it.label) }
+                            Regex("@($appLabelsPattern)\\b", RegexOption.IGNORE_CASE)
+                        } else {
+                            null
+                        }
+                    }
+
                 // Input area
-                OutlinedTextField(
-                    value = messageText,
-                    onValueChange = { onEvent(AgentUiEvent.OnMessageTextChanged(it)) },
-                    modifier =
-                        Modifier.fillMaxWidth().padding(vertical = 16.dp).onPreviewKeyEvent {
-                                keyEvent ->
-                            if (
-                                (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
-                                keyEvent.type == KeyEventType.KeyDown
-                            ) {
-                                sendMessage()
-                                true
-                            } else {
-                                false
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = messageText,
+                        onValueChange = { newValue ->
+                            messageText = newValue
+                            val currentText = newValue.text
+                            if (selectedAppPackageName != null && appMentionRegex != null) {
+                                if (!appMentionRegex.containsMatchIn(currentText)) {
+                                    selectedAppPackageName = null
+                                }
                             }
                         },
-                    enabled = uiState.status == AgentStatus.Idle,
-                    shape = CircleShape,
-                    placeholder = { Text(stringResource(R.string.agent_demo_ask_agent)) },
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = Color.Transparent,
-                        ),
-                    trailingIcon = {
-                        IconButton(
-                            onClick = sendMessage,
-                            enabled =
-                                messageText.isNotBlank() &&
-                                    uiState.status == AgentStatus.Idle,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp)
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (
+                                        (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
+                                        keyEvent.type == KeyEventType.KeyDown
+                                    ) {
+                                        sendMessage()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
+                        enabled = uiState.status == AgentStatus.Idle,
+                        shape = CircleShape,
+                        placeholder = { Text(stringResource(R.string.agent_demo_ask_agent)) },
+                        visualTransformation = visualTransformation,
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = Color.Transparent,
+                            ),
+                        trailingIcon = {
+                            IconButton(
+                                onClick = sendMessage,
+                                enabled =
+                                    messageText.text.isNotBlank() &&
+                                        uiState.status == AgentStatus.Idle,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription =
+                                        stringResource(R.string.agent_demo_send),
+                                )
+                            }
+                        },
+                    )
+
+                    if (showAutocomplete && filteredApps.isNotEmpty()) {
+                        Popup(
+                            popupPositionProvider = popupPositionProvider,
+                            onDismissRequest = {},
+                            properties = PopupProperties(focusable = false),
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription =
-                                    stringResource(R.string.agent_demo_send),
-                            )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(0.9f),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                                colors =
+                                    CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceBright,
+                                    ),
+                                shape = MaterialTheme.shapes.medium,
+                            ) {
+                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                    filteredApps.take(5).forEach { app ->
+                                        DropdownMenuItem(
+                                            text = { Text(app.label) },
+                                            onClick = {
+                                                val currentText = messageText.text
+                                                val selectionStart = messageText.selection.start
+                                                val textBeforeCursor =
+                                                    currentText.take(
+                                                        selectionStart,
+                                                    )
+                                                val textAfterCursor =
+                                                    currentText.drop(
+                                                        selectionStart,
+                                                    )
+                                                val mentionIndex = textBeforeCursor.lastIndexOf('@')
+                                                if (mentionIndex >= 0) {
+                                                    val textBeforeMention =
+                                                        textBeforeCursor.substring(
+                                                            0,
+                                                            mentionIndex,
+                                                        )
+                                                    val newText =
+                                                        "$textBeforeMention@${app.label} $textAfterCursor"
+                                                    val newCursorPosition =
+                                                        mentionIndex + app.label.length + 2
+                                                    messageText =
+                                                        TextFieldValue(
+                                                            text = newText,
+                                                            selection =
+                                                                TextRange(
+                                                                    newCursorPosition,
+                                                                ),
+                                                        )
+                                                    selectedAppPackageName = app.packageName
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    },
-                )
+                    }
+                }
             }
         }
     }
@@ -380,7 +556,11 @@ fun ModelDropdown(
                 }
 
             Row(
-                modifier = Modifier.fillMaxWidth().height(56.dp).padding(start = 4.dp, end = 16.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(start = 4.dp, end = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onMenuClick) {
@@ -388,7 +568,8 @@ fun ModelDropdown(
                 }
                 Row(
                     modifier =
-                        Modifier.weight(1f)
+                        Modifier
+                            .weight(1f)
                             .fillMaxHeight()
                             .menuAnchor(
                                 ExposedDropdownMenuAnchorType.PrimaryEditable,
@@ -454,6 +635,7 @@ fun ModelDropdown(
 fun MessageBubble(
     message: MessageEntity,
     isValidAction: Boolean,
+    installedApps: List<AppInfo>,
     onConfirmAction: (String) -> Unit,
 ) {
     val alignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start
@@ -472,7 +654,10 @@ fun MessageBubble(
         }
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 2.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp, horizontal = 2.dp),
         horizontalAlignment = alignment,
     ) {
         Surface(
@@ -481,31 +666,117 @@ fun MessageBubble(
             shadowElevation = if (message.role == MessageRole.ASSISTANT) 1.dp else 0.dp,
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isError) {
-                        Icon(
-                            imageVector = Icons.Filled.Warning,
-                            contentDescription = stringResource(R.string.debugging_error),
-                            tint = textColor,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    val contentText =
-                        if (message.textContent.isEmpty() &&
-                            message.pendingIntentId != null
-                        ) {
-                            stringResource(R.string.agent_demo_action_confirmation_needed)
-                        } else {
-                            message.textContent
+                SelectionContainer {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isError) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = stringResource(R.string.debugging_error),
+                                tint = textColor,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                         }
-                    if (message.role != MessageRole.USER) {
-                        Markdown(content = contentText)
-                    } else {
-                        Text(
-                            text = contentText,
-                            color = textColor,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
+                        val contentText =
+                            if (message.textContent.isEmpty() &&
+                                message.pendingIntentId != null
+                            ) {
+                                stringResource(R.string.agent_demo_action_confirmation_needed)
+                            } else {
+                                message.textContent
+                            }
+                        if (message.role != MessageRole.USER) {
+                            Markdown(content = contentText)
+                        } else {
+                            val chipBgColor = MaterialTheme.colorScheme.primary
+                            val chipTextColor = MaterialTheme.colorScheme.onPrimary
+                            val formattedText =
+                                remember(contentText, installedApps) {
+                                    formatMessageText(contentText, installedApps)
+                                }
+                            val textMeasurer = rememberTextMeasurer()
+                            val typographyStyle = MaterialTheme.typography.bodyLarge
+                            val density = LocalDensity.current
+
+                            val inlineContentMap =
+                                remember(
+                                    contentText,
+                                    installedApps,
+                                    chipBgColor,
+                                    chipTextColor,
+                                    density,
+                                ) {
+                                    val map = mutableMapOf<String, InlineTextContent>()
+                                    if (installedApps.isNotEmpty() && contentText.contains("@")) {
+                                        val appLabelsPattern =
+                                            installedApps.joinToString(
+                                                "|",
+                                            ) { Regex.escape(it.label) }
+                                        val regex =
+                                            Regex("@($appLabelsPattern)\\b", RegexOption.IGNORE_CASE)
+                                        regex.findAll(contentText).forEachIndexed { index, match ->
+                                            val id = "chip_$index"
+                                            val appName = match.value
+                                            val measured =
+                                                textMeasurer.measure(
+                                                    text = appName,
+                                                    style =
+                                                        typographyStyle.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                        ),
+                                                )
+                                            val widthSp =
+                                                with(
+                                                    density,
+                                                ) { (measured.size.width + 8.dp.roundToPx()).toSp() }
+                                            val heightSp =
+                                                with(
+                                                    density,
+                                                ) { (measured.size.height + 2.dp.roundToPx()).toSp() }
+
+                                            map[id] =
+                                                InlineTextContent(
+                                                    Placeholder(
+                                                        width = widthSp,
+                                                        height = heightSp,
+                                                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+                                                    ),
+                                                ) {
+                                                    Surface(
+                                                        shape =
+                                                            androidx.compose.foundation.shape.RoundedCornerShape(
+                                                                6.dp,
+                                                            ),
+                                                        color = chipBgColor,
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Text(
+                                                                text = appName,
+                                                                color = chipTextColor,
+                                                                style =
+                                                                    typographyStyle.copy(
+                                                                        fontWeight = FontWeight.Bold,
+                                                                    ),
+                                                                modifier =
+                                                                    Modifier.padding(
+                                                                        horizontal = 4.dp,
+                                                                        vertical = 1.dp,
+                                                                    ),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
+                                    map
+                                }
+
+                            Text(
+                                text = formattedText,
+                                inlineContent = inlineContentMap,
+                                color = textColor,
+                                style = typographyStyle,
+                            )
+                        }
                     }
                 }
 
@@ -543,7 +814,10 @@ fun StatusIndicator(
     when (status) {
         AgentStatus.Thinking -> {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -554,6 +828,7 @@ fun StatusIndicator(
                 )
             }
         }
+
         is AgentStatus.InvokingTool -> {
             val appName =
                 try {
@@ -570,7 +845,10 @@ fun StatusIndicator(
                 }
 
             Surface(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                 shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surfaceBright,
                 shadowElevation = 2.dp,
@@ -601,6 +879,7 @@ fun StatusIndicator(
                 }
             }
         }
+
         AgentStatus.Idle -> {
             // Nothing to show
         }
@@ -614,7 +893,13 @@ fun ChatHistorySidePanel(
     onEvent: (AgentUiEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.width(280.dp).fillMaxHeight().padding(16.dp)) {
+    Column(
+        modifier =
+            modifier
+                .width(280.dp)
+                .fillMaxHeight()
+                .padding(16.dp),
+    ) {
         Text(
             text = stringResource(R.string.agent_demo_chat_history),
             style = MaterialTheme.typography.titleLarge,
@@ -664,6 +949,79 @@ fun ChatHistorySidePanel(
                     }
                 }
             }
+        }
+    }
+}
+
+class InlineAppScopingVisualTransformation(
+    private val installedApps: List<AppInfo>,
+    private val chipTextColor: Color,
+) : VisualTransformation {
+    private val regex: Regex? =
+        if (installedApps.isNotEmpty()) {
+            val appLabelsPattern = installedApps.joinToString("|") { Regex.escape(it.label) }
+            Regex("@($appLabelsPattern)\\b", RegexOption.IGNORE_CASE)
+        } else {
+            null
+        }
+
+    override fun filter(text: AnnotatedString): TransformedText {
+        val rawText = text.text
+        val currentRegex = regex
+        if (currentRegex == null || !rawText.contains("@")) {
+            return TransformedText(text, OffsetMapping.Identity)
+        }
+
+        val matches = currentRegex.findAll(rawText)
+
+        val annotatedString =
+            buildAnnotatedString {
+                var lastIndex = 0
+                matches.forEach { match ->
+                    append(rawText.substring(lastIndex, match.range.first))
+                    pushStringAnnotation(tag = "mention", annotation = match.value)
+                    withStyle(
+                        SpanStyle(
+                            color = chipTextColor,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    ) {
+                        append(match.value)
+                    }
+                    pop()
+                    lastIndex = match.range.last + 1
+                }
+                if (lastIndex < rawText.length) {
+                    append(rawText.substring(lastIndex))
+                }
+            }
+        return TransformedText(annotatedString, OffsetMapping.Identity)
+    }
+}
+
+fun formatMessageText(
+    text: String,
+    installedApps: List<AppInfo>,
+): AnnotatedString {
+    if (installedApps.isEmpty() || !text.contains("@")) {
+        return AnnotatedString(text)
+    }
+    val appLabelsPattern = installedApps.joinToString("|") { Regex.escape(it.label) }
+    val regex = Regex("@($appLabelsPattern)\\b", RegexOption.IGNORE_CASE)
+    val matches = regex.findAll(text)
+
+    return buildAnnotatedString {
+        var lastIndex = 0
+        matches.forEachIndexed { index, match ->
+            val precedingText = text.substring(lastIndex, match.range.first)
+            if (precedingText.isNotEmpty()) {
+                append(precedingText)
+            }
+            appendInlineContent(id = "chip_$index", alternateText = match.value)
+            lastIndex = match.range.last + 1
+        }
+        if (lastIndex < text.length) {
+            append(text.substring(lastIndex))
         }
     }
 }

@@ -42,6 +42,7 @@ class SendMessageUseCase
             textContent: String,
             processingStatus: MessageProcessingStatus,
             pendingIntentId: String? = null,
+            targetPackageName: String? = null,
         ) {
             val message =
                 MessageEntity(
@@ -52,6 +53,7 @@ class SendMessageUseCase
                     timestamp = System.currentTimeMillis(),
                     processingStatus = processingStatus,
                     pendingIntentId = pendingIntentId,
+                    targetPackageName = targetPackageName,
                 )
             chatRepository.sendMessage(message)
         }

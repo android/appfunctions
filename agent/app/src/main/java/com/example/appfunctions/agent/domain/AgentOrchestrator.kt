@@ -95,7 +95,6 @@ class AgentOrchestrator
 
             try {
                 val provider = thread.llmModel.providerName
-                val modelName = thread.llmModel.modelName
                 val apiKey = getApiKey(provider)
                 if (apiKey == null) {
                     completeMessageWithError(
@@ -108,39 +107,21 @@ class AgentOrchestrator
                 }
 
                 val disconnectedApps = settingsRepository.disconnectedApps.first()
-                val tools =
-                    getAppFunctionsUseCase().first().values.flatten().filter { metadata ->
-                        metadata.isEnabled && metadata.packageName !in disconnectedApps
-                    }
-                var previousInteractionId = thread.latestInteractionId
-                val currentInput = message.textContent
-                var currentToolOutputs = emptyList<ToolOutput>()
-                var continueLoop = true
+                val allTools = getAppFunctionsUseCase().first().values.flatten()
 
-                val llmProvider = llmProviderFactory.getProvider(provider)
+                val targetPackageName = message.targetPackageName
+                val queryText = message.textContent
 
-                while (continueLoop) {
-                    val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
+                val tools = filterTools(allTools, disconnectedApps, targetPackageName)
 
-                    currentToolOutputs = emptyList()
-                    val response =
-                        llmProvider.generateResponse(
-                            previousInteractionId = previousInteractionId,
-                            input = llmInput,
-                            tools = tools,
-                            apiKey = apiKey,
-                            modelName = modelName,
-                        )
-                    when (val handleResult = handleLlmResponse(response, message, tools)) {
-                        is HandleResult.Continue -> {
-                            currentToolOutputs = handleResult.toolOutputs
-                            previousInteractionId = handleResult.interactionId
-                        }
-                        is HandleResult.Stop -> {
-                            continueLoop = false
-                        }
-                    }
-                }
+                runInteractionLoop(
+                    message = message,
+                    thread = thread,
+                    apiKey = apiKey,
+                    tools = tools,
+                    initialInput = queryText,
+                )
+
                 _status.value = AgentStatus.Idle
             } catch (e: Exception) {
                 Log.e("AgentOrchestrator", "Error processing message", e)
@@ -150,6 +131,60 @@ class AgentOrchestrator
                     e.message ?: "Unknown error occurred",
                 )
                 _status.value = AgentStatus.Idle
+            }
+        }
+
+        private fun filterTools(
+            allTools: List<AppFunctionMetadata>,
+            disconnectedApps: Set<String>,
+            targetPackageName: String?,
+        ): List<AppFunctionMetadata> {
+            return allTools.filter { metadata ->
+                metadata.isEnabled &&
+                    metadata.packageName !in disconnectedApps &&
+                    (targetPackageName == null || metadata.packageName == targetPackageName)
+            }
+        }
+
+        private suspend fun runInteractionLoop(
+            message: MessageEntity,
+            thread: ThreadEntity,
+            apiKey: String,
+            tools: List<AppFunctionMetadata>,
+            initialInput: String,
+        ) {
+            val provider = thread.llmModel.providerName
+            val modelName = thread.llmModel.modelName
+            val llmProvider = llmProviderFactory.getProvider(provider)
+
+            var previousInteractionId = thread.latestInteractionId
+            var currentToolOutputs = emptyList<ToolOutput>()
+            var continueLoop = true
+            var currentInput = initialInput
+
+            while (continueLoop) {
+                val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
+
+                currentToolOutputs = emptyList()
+                val response =
+                    llmProvider.generateResponse(
+                        previousInteractionId = previousInteractionId,
+                        input = llmInput,
+                        tools = tools,
+                        apiKey = apiKey,
+                        modelName = modelName,
+                    )
+
+                when (val handleResult = handleLlmResponse(response, message, tools)) {
+                    is HandleResult.Continue -> {
+                        currentToolOutputs = handleResult.toolOutputs
+                        previousInteractionId = handleResult.interactionId
+                    }
+
+                    is HandleResult.Stop -> {
+                        continueLoop = false
+                    }
+                }
             }
         }
 
@@ -222,6 +257,7 @@ class AgentOrchestrator
                                 }
                                 HandleResult.Continue(toolResult.toolOutputs, response.interactionId)
                             }
+
                             is ExecuteToolCallsResult.PendingIntentAction -> {
                                 savePendingIntentUseCase(
                                     toolResult.pendingIntentId,
@@ -236,6 +272,7 @@ class AgentOrchestrator
                                 )
                                 HandleResult.Stop
                             }
+
                             is ExecuteToolCallsResult.Error -> {
                                 HandleResult.Stop
                             }
@@ -252,6 +289,7 @@ class AgentOrchestrator
                         HandleResult.Stop
                     }
                 }
+
                 is LlmResponse.Error -> {
                     Log.e("AgentOrchestrator", "LLM Error: ${response.errorMessage}")
                     completeMessageWithError(message.messageId, message.threadId, response.errorMessage)
@@ -321,6 +359,7 @@ class AgentOrchestrator
                             ),
                         )
                     }
+
                     is ExecuteAppFunctionResult.PendingIntentAction -> {
                         val pendingIntentId = java.util.UUID.randomUUID().toString()
                         return ExecuteToolCallsResult.PendingIntentAction(
@@ -328,6 +367,7 @@ class AgentOrchestrator
                             executionResult.pendingIntent,
                         )
                     }
+
                     is ExecuteAppFunctionResult.Error ->
                         throw IllegalStateException(
                             "Tool execution failed for ${toolCall.functionId}: ${executionResult.exception.message}",
