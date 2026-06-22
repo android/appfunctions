@@ -35,7 +35,7 @@ fun linkifyString(text: String, linkColor: Color? = null): AnnotatedString {
 
             append(text.substring(lastIndex, start))
 
-            val uriStr = if (url.startsWith("http://") || url.startsWith("https://")) {
+            val uriStr = if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) {
                 url
             } else {
                 "https://$url"

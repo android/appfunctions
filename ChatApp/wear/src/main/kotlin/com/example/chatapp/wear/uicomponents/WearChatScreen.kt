@@ -18,6 +18,7 @@ package com.example.chatapp.wear.uicomponents
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -68,12 +69,11 @@ fun WearChatScreen(
                 onClick = { },
                 title = { Text(text = if (message.isInbound) message.senderName ?: "Sender" else "Me") },
             ) {
-                Text(
-                    text = linkifyString(
-                        text = message.content,
-                        linkColor = MaterialTheme.colorScheme.primary
-                    )
-                )
+                val linkColor = MaterialTheme.colorScheme.primary
+                val annotatedText = remember(message.content, linkColor) {
+                    linkifyString(text = message.content, linkColor = linkColor)
+                }
+                Text(text = annotatedText)
             }
         }
     }

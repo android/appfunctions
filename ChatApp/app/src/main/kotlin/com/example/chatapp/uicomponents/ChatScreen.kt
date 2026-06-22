@@ -51,6 +51,7 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -273,9 +274,12 @@ fun MessageBubble(
                     } else {
                         MaterialTheme.colorScheme.inversePrimary
                     }
+                    val annotatedText = remember(message.content, linkColor) {
+                        linkifyString(message.content, linkColor = linkColor)
+                    }
                     Text(
                         modifier = Modifier.padding(16.dp),
-                        text = linkifyString(message.content, linkColor = linkColor),
+                        text = annotatedText,
                     )
                 }
             }
