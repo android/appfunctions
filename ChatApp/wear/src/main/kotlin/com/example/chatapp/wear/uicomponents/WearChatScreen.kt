@@ -25,9 +25,11 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TitleCard
 import com.example.chatapp.ChatViewModel
+import com.example.chatapp.util.linkifyString
 
 @Composable
 fun WearChatScreen(
@@ -66,7 +68,12 @@ fun WearChatScreen(
                 onClick = { },
                 title = { Text(text = if (message.isInbound) message.senderName ?: "Sender" else "Me") },
             ) {
-                Text(text = message.content)
+                Text(
+                    text = linkifyString(
+                        text = message.content,
+                        linkColor = MaterialTheme.colorScheme.primary
+                    )
+                )
             }
         }
     }

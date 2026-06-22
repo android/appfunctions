@@ -68,6 +68,7 @@ import com.example.chatapp.ChatViewModel
 import com.example.chatapp.InputBar
 import com.example.chatapp.R
 import com.example.chatapp.data.DisplayMessage
+import com.example.chatapp.util.linkifyString
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -267,9 +268,14 @@ fun MessageBubble(
                     }
                 }
                 if (message.content.isNotEmpty()) {
+                    val linkColor = if (message.isInbound) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.inversePrimary
+                    }
                     Text(
                         modifier = Modifier.padding(16.dp),
-                        text = message.content,
+                        text = linkifyString(message.content, linkColor = linkColor),
                     )
                 }
             }
