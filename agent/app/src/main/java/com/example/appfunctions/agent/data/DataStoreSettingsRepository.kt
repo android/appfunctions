@@ -61,10 +61,7 @@ class DataStoreSettingsRepository
         override val serviceTier: Flow<ServiceTier> =
             dataStore.data.map { preferences ->
                 preferences[PreferencesKeys.SERVICE_TIER]?.let { storedValue ->
-                    when (storedValue.uppercase()) {
-                        "PRIORITY" -> ServiceTier.PRIORITY
-                        else -> ServiceTier.STANDARD
-                    }
+                    ServiceTier.entries.find { it.name.equals(storedValue, ignoreCase = true) }
                 } ?: ServiceTier.STANDARD
             }
 

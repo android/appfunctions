@@ -35,6 +35,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -148,7 +149,7 @@ class GeminiProviderImpl
 
             // The Interactions API reports the served tier in the response body
             // (KEY_SERVICE_TIER), not in a response header.
-            val servedServiceTier = jsonResponse[KEY_SERVICE_TIER]?.jsonPrimitive?.content
+            val servedServiceTier = (jsonResponse[KEY_SERVICE_TIER] as? JsonPrimitive)?.contentOrNull
             Log.d(
                 TAG,
                 "Requested service_tier=${serviceTier.apiValue ?: "standard"}, " +
