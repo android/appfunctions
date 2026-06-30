@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.domain
 
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.data.ServiceTier
 
 class FakeLlmProvider : LlmProvider {
     var responseToReturn: LlmResponse = LlmResponse.Error("Default fake error")
@@ -35,6 +36,7 @@ class FakeLlmProvider : LlmProvider {
         tools: List<AppFunctionMetadata>,
         apiKey: String,
         modelName: String,
+        serviceTier: ServiceTier,
     ): LlmResponse {
         capturedPreviousInteractionId = previousInteractionId
         if (input is LlmInput.UserMessage) {

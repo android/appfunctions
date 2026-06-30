@@ -56,6 +56,7 @@ class GeminiProviderImpl
             tools: List<AppFunctionMetadata>,
             apiKey: String,
             modelName: String,
+            serviceTier: ServiceTier,
         ): LlmResponse {
             val convertedTools =
                 tools.mapNotNull { tool ->
@@ -74,6 +75,10 @@ class GeminiProviderImpl
             val requestBody =
                 buildJsonObject {
                     put(KEY_MODEL, JsonPrimitive(modelName))
+
+                    serviceTier.apiValue?.let { tierValue ->
+                        put(KEY_SERVICE_TIER, JsonPrimitive(tierValue))
+                    }
 
                     put(KEY_SYSTEM_INSTRUCTION, JsonPrimitive(getSystemInstruction()))
 
@@ -140,6 +145,25 @@ class GeminiProviderImpl
             }
 
             val jsonResponse = Json.parseToJsonElement(responseBodyText).jsonObject
+
+            // The Interactions API reports the served tier in the response body
+            // (KEY_SERVICE_TIER), not in a response header.
+            val servedServiceTier = jsonResponse[KEY_SERVICE_TIER]?.jsonPrimitive?.content
+            Log.d(
+                TAG,
+                "Requested service_tier=${serviceTier.apiValue ?: "standard"}, " +
+                    "served ($KEY_SERVICE_TIER)=${servedServiceTier ?: "unknown"}",
+            )
+            if (serviceTier == ServiceTier.PRIORITY &&
+                servedServiceTier != null &&
+                servedServiceTier != ServiceTier.PRIORITY.apiValue
+            ) {
+                Log.w(
+                    TAG,
+                    "Priority request was downgraded to '$servedServiceTier' " +
+                        "(priority quota likely exhausted).",
+                )
+            }
 
             val newInteractionId =
                 jsonResponse[KEY_ID]?.jsonPrimitive?.content
@@ -232,6 +256,7 @@ class GeminiProviderImpl
             private const val TAG = "GeminiProvider"
 
             private const val KEY_MODEL = "model"
+            private const val KEY_SERVICE_TIER = "service_tier"
             private const val KEY_INPUT = "input"
             private const val KEY_TOOLS = "tools"
             private const val KEY_TYPE = "type"

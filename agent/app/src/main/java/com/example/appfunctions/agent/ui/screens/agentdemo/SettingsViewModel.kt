@@ -20,13 +20,14 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.appfunctions.agent.data.LlmProviderName
+import com.example.appfunctions.agent.data.ServiceTier
 import com.example.appfunctions.agent.data.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,8 +43,12 @@ class SettingsViewModel
         val geminiApiKeyState = TextFieldState()
 
         val uiState: StateFlow<SettingsUiState> =
-            settingsRepository.selectedProvider
-                .map { provider -> SettingsUiState(selectedProvider = provider) }
+            combine(
+                settingsRepository.selectedProvider,
+                settingsRepository.serviceTier,
+            ) { provider, serviceTier ->
+                SettingsUiState(selectedProvider = provider, serviceTier = serviceTier)
+            }
                 .stateIn(
                     scope = viewModelScope,
                     started = SharingStarted.WhileSubscribed(5000),
@@ -69,5 +74,9 @@ class SettingsViewModel
 
         fun setSelectedProvider(provider: LlmProviderName) {
             viewModelScope.launch { settingsRepository.setSelectedProvider(provider) }
+        }
+
+        fun setServiceTier(tier: ServiceTier) {
+            viewModelScope.launch { settingsRepository.setServiceTier(tier) }
         }
     }

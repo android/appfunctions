@@ -36,6 +36,7 @@ class DataStoreSettingsRepository
         private object PreferencesKeys {
             val GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
             val SELECTED_PROVIDER = stringPreferencesKey("selected_provider")
+            val SERVICE_TIER = stringPreferencesKey("service_tier")
             val PINNED_APPS = stringSetPreferencesKey("pinned_apps")
             val DISCONNECTED_APPS = stringSetPreferencesKey("disconnected_apps")
         }
@@ -57,6 +58,16 @@ class DataStoreSettingsRepository
                 } ?: LlmProviderName.GEMINI
             }
 
+        override val serviceTier: Flow<ServiceTier> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.SERVICE_TIER]?.let { storedValue ->
+                    when (storedValue.uppercase()) {
+                        "PRIORITY" -> ServiceTier.PRIORITY
+                        else -> ServiceTier.STANDARD
+                    }
+                } ?: ServiceTier.STANDARD
+            }
+
         override val pinnedApps: Flow<Set<String>> =
             dataStore.data.map { preferences -> preferences[PreferencesKeys.PINNED_APPS] ?: emptySet() }
 
@@ -73,6 +84,10 @@ class DataStoreSettingsRepository
             dataStore.edit { preferences ->
                 preferences[PreferencesKeys.SELECTED_PROVIDER] = provider.name
             }
+        }
+
+        override suspend fun setServiceTier(tier: ServiceTier) {
+            dataStore.edit { preferences -> preferences[PreferencesKeys.SERVICE_TIER] = tier.name }
         }
 
         override suspend fun setAppPinned(

@@ -17,6 +17,7 @@ package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import androidx.compose.runtime.snapshots.Snapshot
 import com.example.appfunctions.agent.data.LlmProviderName
+import com.example.appfunctions.agent.data.ServiceTier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -103,6 +104,21 @@ class SettingsViewModelTest {
 
             val uiState = viewModel.uiState.value
             assertEquals(LlmProviderName.GEMINI, uiState.selectedProvider)
+
+            job.cancel()
+        }
+
+    @Test
+    fun setServiceTier_updatesRepository() =
+        runTest {
+            val job = backgroundScope.launch { viewModel.uiState.collect {} }
+
+            viewModel.setServiceTier(ServiceTier.PRIORITY)
+
+            testScheduler.advanceUntilIdle()
+
+            val uiState = viewModel.uiState.value
+            assertEquals(ServiceTier.PRIORITY, uiState.serviceTier)
 
             job.cancel()
         }

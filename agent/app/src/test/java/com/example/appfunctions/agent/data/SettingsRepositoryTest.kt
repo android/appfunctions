@@ -62,4 +62,19 @@ class SettingsRepositoryTest {
             val value = repository.selectedProvider.first()
             assertEquals(LlmProviderName.GEMINI, value)
         }
+
+    @Test
+    fun serviceTier_defaultsToStandard() =
+        runTest {
+            val value = repository.serviceTier.first()
+            assertEquals(ServiceTier.STANDARD, value)
+        }
+
+    @Test
+    fun setServiceTier_persistsValue() =
+        runTest {
+            repository.setServiceTier(ServiceTier.PRIORITY)
+            val value = repository.serviceTier.first()
+            assertEquals(ServiceTier.PRIORITY, value)
+        }
 }

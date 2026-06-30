@@ -16,8 +16,10 @@
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import com.example.appfunctions.agent.data.LlmProviderName
+import com.example.appfunctions.agent.data.ServiceTier
 
 /** UI State for the Settings screen. */
 data class SettingsUiState(
     val selectedProvider: LlmProviderName = LlmProviderName.GEMINI,
+    val serviceTier: ServiceTier = ServiceTier.STANDARD,
 )
