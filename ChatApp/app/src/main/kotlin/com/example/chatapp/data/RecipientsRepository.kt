@@ -39,6 +39,7 @@ class RecipientsRepository
                 Recipient(id = "4", name = "David Wilson", email = "david@example.com"),
                 Recipient(id = "5", name = "Eve Davis", email = "eve@example.com"),
                 Recipient(id = "6", name = "Frank Miller", email = "frank@example.com"),
+                Recipient(id = "7", name = "Bob Johnson", email = "bob2@example.com"),
             )
 
         private val groups =
