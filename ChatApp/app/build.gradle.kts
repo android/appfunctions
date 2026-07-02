@@ -28,8 +28,8 @@ android {
         applicationId = "com.example.chatapp"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 99999
+        versionName = "99999"
 
         testInstrumentationRunner = "com.example.chatapp.HiltTestRunner"
     }
