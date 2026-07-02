@@ -237,4 +237,12 @@ class AppFunctionsTest {
             appFunctions.makeCall(testContext, endpointValue = "nonexistent_id")
         }
     }
+
+    @Test(expected = AppFunctionInvalidArgumentException::class)
+    fun makeCall_duplicateContactName_fails() {
+        runBlocking {
+            // "Bob Johnson" has two entries (ID 2 and ID 7)
+            appFunctions.makeCall(testContext, contactName = "Bob Johnson")
+        }
+    }
 }

@@ -95,7 +95,7 @@ class AppFunctionInstrumentationTest {
                     .getAppFunctionData(ExecuteAppFunctionResponse.Success.PROPERTY_RETURN_VALUE)
                     ?.getString("message"),
             )
-                .isEqualTo("Message sent to recipient: Alice Smith.")
+                .isEqualTo("Message sent to: Alice Smith.")
             // Verify that the message was actually saved in the repository
             val messages = messageRepository.getMessages(testRecipient.id).first()
             assertThat(messages).isNotEmpty()

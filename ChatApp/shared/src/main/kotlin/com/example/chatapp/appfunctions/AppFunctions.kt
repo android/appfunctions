@@ -158,10 +158,18 @@ class AppFunctions
             val recipient =
                 with(recipientsRepository) {
                     if (endpointValue == null) {
-                        getRecipientByName(checkNotNull(contactName))
-                            ?: throw AppFunctionElementNotFoundException(
+                        val matches = getRecipientByName(checkNotNull(contactName))
+                        if (matches.isEmpty()) {
+                            throw AppFunctionElementNotFoundException(
                                 "No recipient exists for contactName: $contactName",
                             )
+                        }
+                        if (matches.size > 1) {
+                            throw AppFunctionInvalidArgumentException(
+                                "Multiple contacts found with name $contactName. Please be more specific.",
+                            )
+                        }
+                        matches.first()
                     } else {
                         getRecipientById(endpointValue)
                             ?: throw AppFunctionElementNotFoundException(

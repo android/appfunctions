@@ -85,7 +85,9 @@ class ChatViewModel
                 ?: recipientsRepository.getGroupById(recipientId)?.let {
                     Recipient(it.id, it.name, "")
                 }
-                ?: recipientsRepository.getRecipientByName(recipientId)
+                ?: recipientsRepository.getRecipientByName(recipientId).let { list ->
+                    if (list.size == 1) list.first() else null
+                }
                 ?: if (recipientId == "bot") {
                     Recipient("bot", "Assistant", "bot@example.com")
                 } else {
