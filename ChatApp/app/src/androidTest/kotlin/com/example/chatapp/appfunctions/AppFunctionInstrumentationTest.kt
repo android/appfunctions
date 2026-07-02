@@ -82,7 +82,6 @@ class AppFunctionInstrumentationTest {
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
                     )
-                        .setString("name", testRecipient.name)
                         .setString("endpointValue", testRecipient.id)
                         .setString("messageBody", "Hello!")
                         .build(),
@@ -122,7 +121,6 @@ class AppFunctionInstrumentationTest {
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
                     )
-                        .setString("name", testRecipient.name)
                         .setString("endpointValue", testRecipient.id)
                         .setString("messageBody", "")
                         .build(),
