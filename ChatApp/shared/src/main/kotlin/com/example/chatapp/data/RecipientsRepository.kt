@@ -18,6 +18,7 @@ package com.example.chatapp.data
 import com.example.chatapp.appfunctions.ChatGroup
 import com.example.chatapp.appfunctions.ContactSearchResult
 import com.example.chatapp.appfunctions.Recipient
+import com.example.chatapp.appfunctions.Endpoint
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -87,18 +88,31 @@ class RecipientsRepository
         fun searchRecipients(
             query: String?,
             maxCount: Int,
-        ): List<Recipient> {
-            if (query.isNullOrBlank()) {
-                // TODO:Return most recently contacted.
-                return recipients.take(maxCount)
+        ): List<ContactSearchResult> {
+            val matched = if (query.isNullOrBlank()) {
+                recipients
+            } else {
+                recipients.filter {
+                    it.name.contains(query, ignoreCase = true) ||
+                        it.email.contains(
+                            query,
+                            ignoreCase = true,
+                        )
+                }
             }
 
-            return recipients.filter {
-                it.name.contains(query, ignoreCase = true) ||
-                    it.email.contains(
-                        query,
-                        ignoreCase = true,
-                    )
+            val grouped = matched.groupBy { it.name }.map { (name, list) ->
+                ContactSearchResult(
+                    contactDisplayName = name,
+                    endpointType = "INDIVIDUAL",
+                    endpoints = list.map { Endpoint(it.id, it.email) }
+                )
+            }
+
+            return if (query.isNullOrBlank()) {
+                grouped.take(maxCount)
+            } else {
+                grouped
             }
         }
 
@@ -138,22 +152,18 @@ class RecipientsRepository
             query: String?,
             maxCount: Int,
         ): List<ContactSearchResult> {
-            val individuals =
-                searchRecipients(query, maxCount).map {
-                    ContactSearchResult(
-                        endpointValue = it.id,
-                        endpointType = "INDIVIDUAL",
-                        contactDisplayName = it.name,
-                        endpointDisplayName = it.email,
-                    )
-                }
+            val individuals = searchRecipients(query, maxCount)
             val groups =
                 searchGroups(query, maxCount).map {
                     ContactSearchResult(
-                        endpointValue = it.id,
-                        endpointType = "GROUP",
                         contactDisplayName = it.name,
-                        endpointDisplayName = it.name,
+                        endpointType = "GROUP",
+                        endpoints = listOf(
+                            Endpoint(
+                                endpointValue = it.id,
+                                endpointDisplayName = it.name,
+                            )
+                        )
                     )
                 }
             return mutableListOf<ContactSearchResult>().apply {

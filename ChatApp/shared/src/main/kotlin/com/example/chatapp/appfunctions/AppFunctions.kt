@@ -59,22 +59,19 @@ class AppFunctions
             val recipients =
                 when (contactType) {
                     "INDIVIDUAL" -> {
-                        recipientsRepository.searchRecipients(query, 3).map {
-                            ContactSearchResult(
-                                endpointValue = it.id,
-                                endpointType = "INDIVIDUAL",
-                                contactDisplayName = it.name,
-                                endpointDisplayName = it.email,
-                            )
-                        }
+                        recipientsRepository.searchRecipients(query, 3)
                     }
                     "GROUP" -> {
                         recipientsRepository.searchGroups(query, 3).map {
                             ContactSearchResult(
-                                endpointValue = it.id,
-                                endpointType = "GROUP",
                                 contactDisplayName = it.name,
-                                endpointDisplayName = it.name,
+                                endpointType = "GROUP",
+                                endpoints = listOf(
+                                    Endpoint(
+                                        endpointValue = it.id,
+                                        endpointDisplayName = it.name,
+                                    )
+                                )
                             )
                         }
                     }
@@ -228,13 +225,20 @@ class AppFunctions
         /** Represents a result from a contact or group search. */
         @AppFunctionSerializable(isDescribedByKDoc = true)
         data class ContactSearchResult(
-            /** The unique identifier. */
-            val endpointValue: String,
-            /** The type of the found entity, either "INDIVIDUAL" or "GROUP". */
-            val endpointType: String,
             /** The human-readable name of the contact or group. */
             val contactDisplayName: String,
-            /** The human-readable name of the endpoint (e.g. email, phone number). */
+            /** The type of the found entity, either "INDIVIDUAL" or "GROUP". */
+            val endpointType: String,
+            /** The list of endpoints associated with this contact or group. */
+            val endpoints: List<Endpoint>,
+        )
+
+        /** Represents an endpoint of a contact or group. */
+        @AppFunctionSerializable(isDescribedByKDoc = true)
+        data class Endpoint(
+            /** The unique identifier of the endpoint. */
+            val endpointValue: String,
+            /** The human-readable label/display name of the endpoint. */
             val endpointDisplayName: String,
         )
 

@@ -100,7 +100,10 @@ class AppFunctionsTest {
             val contacts = appFunctions.searchContacts(testContext, "Alice", "INDIVIDUAL")
             Assert.assertEquals(1, contacts.size)
             Assert.assertEquals("Alice Smith", contacts[0].contactDisplayName)
-            Assert.assertEquals("alice@example.com", contacts[0].endpointDisplayName)
+            Assert.assertEquals("INDIVIDUAL", contacts[0].endpointType)
+            Assert.assertEquals(1, contacts[0].endpoints.size)
+            Assert.assertEquals("1", contacts[0].endpoints[0].endpointValue)
+            Assert.assertEquals("alice@example.com", contacts[0].endpoints[0].endpointDisplayName)
         }
     }
 
@@ -110,7 +113,10 @@ class AppFunctionsTest {
             val contacts = appFunctions.searchContacts(testContext, "Work", "GROUP")
             Assert.assertEquals(1, contacts.size)
             Assert.assertEquals("Work Friends", contacts[0].contactDisplayName)
-            Assert.assertEquals("Work Friends", contacts[0].endpointDisplayName)
+            Assert.assertEquals("GROUP", contacts[0].endpointType)
+            Assert.assertEquals(1, contacts[0].endpoints.size)
+            Assert.assertEquals("g1", contacts[0].endpoints[0].endpointValue)
+            Assert.assertEquals("Work Friends", contacts[0].endpoints[0].endpointDisplayName)
         }
     }
 
@@ -128,7 +134,25 @@ class AppFunctionsTest {
             val contacts = appFunctions.searchContacts(testContext, "Alice", "ANY")
             Assert.assertEquals(1, contacts.size)
             Assert.assertEquals("Alice Smith", contacts[0].contactDisplayName)
-            Assert.assertEquals("alice@example.com", contacts[0].endpointDisplayName)
+            Assert.assertEquals("INDIVIDUAL", contacts[0].endpointType)
+            Assert.assertEquals(1, contacts[0].endpoints.size)
+            Assert.assertEquals("1", contacts[0].endpoints[0].endpointValue)
+            Assert.assertEquals("alice@example.com", contacts[0].endpoints[0].endpointDisplayName)
+        }
+    }
+
+    @Test
+    fun searchContacts_duplicateNamesMerged() {
+        runBlocking {
+            val contacts = appFunctions.searchContacts(testContext, "Bob", "INDIVIDUAL")
+            Assert.assertEquals(1, contacts.size)
+            Assert.assertEquals("Bob Johnson", contacts[0].contactDisplayName)
+            Assert.assertEquals("INDIVIDUAL", contacts[0].endpointType)
+            Assert.assertEquals(2, contacts[0].endpoints.size)
+            Assert.assertEquals("2", contacts[0].endpoints[0].endpointValue)
+            Assert.assertEquals("bob@example.com", contacts[0].endpoints[0].endpointDisplayName)
+            Assert.assertEquals("7", contacts[0].endpoints[1].endpointValue)
+            Assert.assertEquals("bob2@example.com", contacts[0].endpoints[1].endpointDisplayName)
         }
     }
 

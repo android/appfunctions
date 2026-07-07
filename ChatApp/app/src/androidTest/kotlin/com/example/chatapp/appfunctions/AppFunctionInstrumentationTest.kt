@@ -165,10 +165,14 @@ class AppFunctionInstrumentationTest {
             )
                 .containsExactly(
                     AppFunctions.ContactSearchResult(
-                        endpointValue = "1",
-                        endpointType = "INDIVIDUAL",
                         contactDisplayName = "Alice Smith",
-                        endpointDisplayName = "alice@example.com",
+                        endpointType = "INDIVIDUAL",
+                        endpoints = listOf(
+                            AppFunctions.Endpoint(
+                                endpointValue = "1",
+                                endpointDisplayName = "alice@example.com",
+                            )
+                        )
                     ),
                 )
         }
