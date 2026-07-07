@@ -47,7 +47,7 @@ class AppFunctionsViewModelTest {
     fun toggleFunction_doesNotCrash() =
         runTest {
             // Use a potentially real ID from the app
-            viewModel.toggleFunction("com.example.chatapp.appfunctions.AppFunctions#searchContacts", true)
+            viewModel.toggleFunction(com.example.chatapp.appfunctions.AppFunctionsIds.SEARCH_CONTACTS_ID, true)
         }
 
     @Test

@@ -15,9 +15,9 @@
  */
 package com.example.chatapp.data
 
-import com.example.chatapp.appfunctions.AppFunctions.ChatGroup
-import com.example.chatapp.appfunctions.AppFunctions.ContactSearchResult
-import com.example.chatapp.appfunctions.AppFunctions.Recipient
+import com.example.chatapp.appfunctions.ChatGroup
+import com.example.chatapp.appfunctions.ContactSearchResult
+import com.example.chatapp.appfunctions.Recipient
 import javax.inject.Inject
 import javax.inject.Singleton
 

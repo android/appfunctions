@@ -51,8 +51,6 @@ class AppFunctionInstrumentationTest {
 
     @Inject lateinit var recipientsRepository: RecipientsRepository
 
-    @Inject lateinit var appFunctions: AppFunctions
-
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val appFunctionManager: AppFunctionManager =
         checkNotNull(AppFunctionManager.getInstance(context))
@@ -164,10 +162,10 @@ class AppFunctionInstrumentationTest {
                     .getAppFunctionDataList(
                         ExecuteAppFunctionResponse.Success.PROPERTY_RETURN_VALUE,
                     )
-                    ?.map { it.deserialize(AppFunctions.ContactSearchResult::class.java) },
+                    ?.map { it.deserialize(ContactSearchResult::class.java) },
             )
                 .containsExactly(
-                    AppFunctions.ContactSearchResult(endpointValue = "1", endpointType = "INDIVIDUAL", displayName = "Alice Smith"),
+                    ContactSearchResult(endpointValue = "1", endpointType = "INDIVIDUAL", displayName = "Alice Smith"),
                 )
         }
 }

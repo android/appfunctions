@@ -15,7 +15,7 @@
  */
 package com.example.chatapp.data
 
-import com.example.chatapp.appfunctions.AppFunctions.Recipient
+import com.example.chatapp.appfunctions.Recipient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

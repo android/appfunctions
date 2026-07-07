@@ -18,7 +18,6 @@ package com.example.chatapp.appfunctions
 import android.content.Context
 import android.net.Uri
 import androidx.appfunctions.AppFunctionAppUnknownException
-import androidx.appfunctions.AppFunctionContext
 import androidx.appfunctions.AppFunctionElementNotFoundException
 import androidx.appfunctions.AppFunctionInvalidArgumentException
 import androidx.test.core.app.ApplicationProvider
@@ -38,12 +37,6 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppFunctionsTest {
-    private val testContext =
-        object : AppFunctionContext {
-            override val context: Context
-                get() = ApplicationProvider.getApplicationContext()
-        }
-
     private class MockMessageRepository : MessageRepository {
         var shouldFail = false
         private val messages = MutableStateFlow<Map<String, List<DisplayMessage>>>(emptyMap())
@@ -85,19 +78,47 @@ class AppFunctionsTest {
 
     private val callManager = CallManager(recipientsRepository)
 
-    private val appFunctions = AppFunctions(messageRepository, recipientsRepository, callManager)
+    private class TestChatAppFunctionService(
+        val testContext: Context,
+        messageRepo: MessageRepository,
+        recipientsRepo: RecipientsRepository,
+        callMgr: CallManager,
+    ) : BaseChatAppFunctionService() {
+        init {
+            attachBaseContext(testContext)
+            this.messageRepository = messageRepo
+            this.recipientsRepository = recipientsRepo
+            this.callManager = callMgr
+        }
+
+        override fun onExecuteFunction(
+            request: androidx.appfunctions.ExecuteAppFunctionRequest,
+            cancellationSignal: android.os.CancellationSignal,
+            callback: java.util.function.Consumer<androidx.appfunctions.ExecuteAppFunctionResponse>,
+        ) {
+            // Not used in direct unit tests
+        }
+    }
+
+    private val appFunctions =
+        TestChatAppFunctionService(
+            ApplicationProvider.getApplicationContext(),
+            messageRepository,
+            recipientsRepository,
+            callManager,
+        )
 
     @Test(expected = AppFunctionInvalidArgumentException::class)
     fun searchContacts_returnsEmptyList() {
         runBlocking {
-            appFunctions.searchContacts(testContext, "nonexistent", "INDIVIDUAL")
+            appFunctions.searchContacts("nonexistent", "INDIVIDUAL")
         }
     }
 
     @Test
     fun searchContacts_returnsMatches() {
         runBlocking {
-            val contacts = appFunctions.searchContacts(testContext, "Alice", "INDIVIDUAL")
+            val contacts = appFunctions.searchContacts("Alice", "INDIVIDUAL")
             Assert.assertEquals(1, contacts.size)
             Assert.assertEquals("Alice Smith", contacts[0].displayName)
         }
@@ -106,7 +127,7 @@ class AppFunctionsTest {
     @Test
     fun searchContacts_groups_returnsMatches() {
         runBlocking {
-            val contacts = appFunctions.searchContacts(testContext, "Work", "GROUP")
+            val contacts = appFunctions.searchContacts("Work", "GROUP")
             Assert.assertEquals(1, contacts.size)
             Assert.assertEquals("Work Friends", contacts[0].displayName)
         }
@@ -115,7 +136,7 @@ class AppFunctionsTest {
     @Test
     fun searchContacts_emptyQuery_returnsRecent() {
         runBlocking {
-            val contacts = appFunctions.searchContacts(testContext, "", "INDIVIDUAL")
+            val contacts = appFunctions.searchContacts("", "INDIVIDUAL")
             Assert.assertEquals(3, contacts.size)
         }
     }
@@ -123,8 +144,7 @@ class AppFunctionsTest {
     @Test
     fun searchContacts_anyType_returnsMatches() {
         runBlocking {
-            // "searchAny" branch (when filterType is not INDIVIDUAL or GROUP)
-            val contacts = appFunctions.searchContacts(testContext, "Alice", "ANY")
+            val contacts = appFunctions.searchContacts("Alice", "ANY")
             Assert.assertEquals(1, contacts.size)
             Assert.assertEquals("Alice Smith", contacts[0].displayName)
         }
@@ -133,9 +153,9 @@ class AppFunctionsTest {
     @Test
     fun send_validMessage_returnsSuccess() {
         runTest {
-            val result = appFunctions.send(testContext, "1", "Hello")
+            val result = appFunctions.send("1", "Hello")
             Assert.assertEquals(
-                AppFunctions.Result(
+                Result(
                     "Message ID",
                     "Message sent to: Alice Smith.",
                 ),
@@ -149,13 +169,12 @@ class AppFunctionsTest {
         runTest {
             val result =
                 appFunctions.send(
-                    testContext,
                     "1",
                     "Hello",
                     listOf(Uri.parse("content://media/1")),
                 )
             Assert.assertEquals(
-                AppFunctions.Result(
+                Result(
                     "Message ID",
                     "Message sent to: Alice Smith.",
                 ),
@@ -167,9 +186,9 @@ class AppFunctionsTest {
     @Test
     fun send_toGroup_success() {
         runTest {
-            val result = appFunctions.send(testContext, "g1", "Hello")
+            val result = appFunctions.send("g1", "Hello")
             Assert.assertEquals(
-                AppFunctions.Result(
+                Result(
                     "Message ID",
                     "Message sent to: Work Friends.",
                 ),
@@ -181,14 +200,14 @@ class AppFunctionsTest {
     @Test(expected = AppFunctionInvalidArgumentException::class)
     fun send_emptyContent_fails() {
         runTest {
-            appFunctions.send(testContext, "1", "")
+            appFunctions.send("1", "")
         }
     }
 
     @Test(expected = AppFunctionElementNotFoundException::class)
     fun send_invalidRecipient_fails() {
         runTest {
-            appFunctions.send(testContext, "nonexistent_id", "Hello")
+            appFunctions.send("nonexistent_id", "Hello")
         }
     }
 
@@ -196,24 +215,22 @@ class AppFunctionsTest {
     fun send_repositoryError_returnsError() {
         runTest {
             messageRepository.shouldFail = true
-            appFunctions.send(testContext, "1", "Hello")
+            appFunctions.send("1", "Hello")
         }
     }
 
     @Test
     fun makeCall_returnsPendingIntent() {
         runBlocking {
-            val pendingIntent = appFunctions.makeCall(testContext, endpointValue = "1")
+            val pendingIntent = appFunctions.makeCall(endpointValue = "1")
             Assert.assertNotNull(pendingIntent)
         }
     }
 
-
     @Test(expected = AppFunctionElementNotFoundException::class)
     fun makeCall_invalidEndpointValue_fails() {
         runBlocking {
-            appFunctions.makeCall(testContext, endpointValue = "nonexistent_id")
+            appFunctions.makeCall(endpointValue = "nonexistent_id")
         }
     }
-
 }
