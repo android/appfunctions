@@ -203,10 +203,18 @@ class AppFunctions
                             endpointValue = id,
                             messages =
                                 matchingMessages.map {
+                                    val senderDisplayName = it.senderName
+                                        ?: if (it.isInbound) {
+                                            recipientsRepository.getRecipientById(id)?.name
+                                                ?: recipientsRepository.getGroupById(id)?.name
+                                                ?: "Other"
+                                        } else {
+                                            "Me"
+                                        }
                                     Message(
                                         messageBody = it.content,
                                         timestamp = it.sentAt,
-                                        isSent = !it.isInbound,
+                                        senderDisplayName = senderDisplayName,
                                     )
                                 },
                         )
@@ -261,8 +269,8 @@ class AppFunctions
             val messageBody: String,
             /** The timestamp when the message was sent or received. */
             val timestamp: Long,
-            /** True if the message was sent by the user, false if it was received. */
-            val isSent: Boolean,
+            /** The human-readable name of the sender. */
+            val senderDisplayName: String,
         )
 
         /** Represents the search results for a specific chat endpoint. */

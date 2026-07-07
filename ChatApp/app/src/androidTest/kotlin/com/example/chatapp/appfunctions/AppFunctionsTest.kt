@@ -224,13 +224,13 @@ class AppFunctionsTest {
             Assert.assertEquals(1, aliceResult.messages.size)
             Assert.assertEquals("Hello Alice", aliceResult.messages[0].messageBody)
             Assert.assertEquals(1000L, aliceResult.messages[0].timestamp)
-            Assert.assertFalse(aliceResult.messages[0].isSent)
+            Assert.assertEquals("Alice Smith", aliceResult.messages[0].senderDisplayName)
 
             val bobResult = results.first { it.endpointValue == "2" }
             Assert.assertEquals(1, bobResult.messages.size)
             Assert.assertEquals("Hello Bob", bobResult.messages[0].messageBody)
             Assert.assertEquals(2000L, bobResult.messages[0].timestamp)
-            Assert.assertTrue(bobResult.messages[0].isSent)
+            Assert.assertEquals("Me", bobResult.messages[0].senderDisplayName)
         }
     }
 
