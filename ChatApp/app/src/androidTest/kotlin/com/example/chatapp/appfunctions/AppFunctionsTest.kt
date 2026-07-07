@@ -120,11 +120,10 @@ class AppFunctionsTest {
         }
     }
 
-    @Test
-    fun searchContacts_emptyQuery_returnsRecent() {
+    @Test(expected = AppFunctionInvalidArgumentException::class)
+    fun searchContacts_emptyQuery_fails() {
         runBlocking {
-            val contacts = appFunctions.searchContacts(testContext, "", "INDIVIDUAL")
-            Assert.assertEquals(3, contacts.size)
+            appFunctions.searchContacts(testContext, "", "INDIVIDUAL")
         }
     }
 

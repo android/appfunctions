@@ -56,6 +56,9 @@ class AppFunctions
             @AppFunctionStringValueConstraint(enumValues = ["INDIVIDUAL", "GROUP", "ANY"])
             contactType: String,
         ): List<ContactSearchResult> {
+            if (query.isBlank()) {
+                throw AppFunctionInvalidArgumentException("Query cannot be empty")
+            }
             val recipients =
                 when (contactType) {
                     "INDIVIDUAL" -> {
