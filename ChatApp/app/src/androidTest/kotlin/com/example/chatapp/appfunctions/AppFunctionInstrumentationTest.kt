@@ -82,7 +82,6 @@ class AppFunctionInstrumentationTest {
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
                     )
-                        .setString("name", testRecipient.name)
                         .setString("endpointValue", testRecipient.id)
                         .setString("messageBody", "Hello!")
                         .build(),
@@ -95,7 +94,7 @@ class AppFunctionInstrumentationTest {
                     .getAppFunctionData(ExecuteAppFunctionResponse.Success.PROPERTY_RETURN_VALUE)
                     ?.getString("message"),
             )
-                .isEqualTo("Message sent to recipient: Alice Smith.")
+                .isEqualTo("Message sent to: Alice Smith.")
             // Verify that the message was actually saved in the repository
             val messages = messageRepository.getMessages(testRecipient.id).first()
             assertThat(messages).isNotEmpty()
@@ -122,7 +121,6 @@ class AppFunctionInstrumentationTest {
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
                     )
-                        .setString("name", testRecipient.name)
                         .setString("endpointValue", testRecipient.id)
                         .setString("messageBody", "")
                         .build(),

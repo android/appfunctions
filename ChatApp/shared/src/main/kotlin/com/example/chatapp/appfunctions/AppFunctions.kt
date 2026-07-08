@@ -97,7 +97,6 @@ class AppFunctions
          * Send a text message with optional image attachments.
          *
          * @param appFunctionContext The context of this app function call.
-         * @param name The display name of the recipient for confirmation purposes.
          * @param endpointValue The unique identifier for the recipient or group.
          * @param messageBody The text content of the message. Cannot be empty.
          * @param imageUris List of URIs for images to attach.
@@ -105,7 +104,6 @@ class AppFunctions
         @AppFunction(isDescribedByKDoc = true)
         suspend fun send(
             appFunctionContext: AppFunctionContext,
-            name: String,
             endpointValue: String,
             messageBody: String,
             imageUris: List<Uri>? = null,
@@ -140,35 +138,18 @@ class AppFunctions
          * Initiate a voice call.
          *
          * @param appFunctionContext The context of this app function call.
-         * @param contactName The name of the contact. Use this if the ID is unknown.
          * @param endpointValue The unique identifier for the recipient.
          */
         @AppFunction(isDescribedByKDoc = true)
         suspend fun makeCall(
             appFunctionContext: AppFunctionContext,
-            contactName: String? = null,
-            endpointValue: String? = null,
+            endpointValue: String,
         ): PendingIntent {
-            if (contactName == null && endpointValue == null) {
-                throw AppFunctionInvalidArgumentException(
-                    "Specify either contactName or endpointValue. Both cannot be null.",
-                )
-            }
-
             val recipient =
-                with(recipientsRepository) {
-                    if (endpointValue == null) {
-                        getRecipientByName(checkNotNull(contactName))
-                            ?: throw AppFunctionElementNotFoundException(
-                                "No recipient exists for contactName: $contactName",
-                            )
-                    } else {
-                        getRecipientById(endpointValue)
-                            ?: throw AppFunctionElementNotFoundException(
-                                "No recipient exists for endpointValue: $endpointValue",
-                            )
-                    }
-                }
+                recipientsRepository.getRecipientById(endpointValue)
+                    ?: throw AppFunctionElementNotFoundException(
+                        "No recipient exists for endpointValue: $endpointValue",
+                    )
 
             // Call manager should technically also record it here depending on app architecture,
             // but we will launch the intent to handle it in the UI.

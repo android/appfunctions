@@ -133,7 +133,7 @@ class AppFunctionsTest {
     @Test
     fun send_validMessage_returnsSuccess() {
         runTest {
-            val result = appFunctions.send(testContext, "Alice Smith", "1", "Hello")
+            val result = appFunctions.send(testContext, "1", "Hello")
             Assert.assertEquals(
                 AppFunctions.Result(
                     "Message ID",
@@ -150,7 +150,6 @@ class AppFunctionsTest {
             val result =
                 appFunctions.send(
                     testContext,
-                    "Alice Smith",
                     "1",
                     "Hello",
                     listOf(Uri.parse("content://media/1")),
@@ -168,7 +167,7 @@ class AppFunctionsTest {
     @Test
     fun send_toGroup_success() {
         runTest {
-            val result = appFunctions.send(testContext, "Work Friends", "g1", "Hello")
+            val result = appFunctions.send(testContext, "g1", "Hello")
             Assert.assertEquals(
                 AppFunctions.Result(
                     "Message ID",
@@ -182,14 +181,14 @@ class AppFunctionsTest {
     @Test(expected = AppFunctionInvalidArgumentException::class)
     fun send_emptyContent_fails() {
         runTest {
-            appFunctions.send(testContext, "Alice Smith", "1", "")
+            appFunctions.send(testContext, "1", "")
         }
     }
 
     @Test(expected = AppFunctionElementNotFoundException::class)
     fun send_invalidRecipient_fails() {
         runTest {
-            appFunctions.send(testContext, "Unknown", "nonexistent_id", "Hello")
+            appFunctions.send(testContext, "nonexistent_id", "Hello")
         }
     }
 
@@ -197,7 +196,7 @@ class AppFunctionsTest {
     fun send_repositoryError_returnsError() {
         runTest {
             messageRepository.shouldFail = true
-            appFunctions.send(testContext, "Alice Smith", "1", "Hello")
+            appFunctions.send(testContext, "1", "Hello")
         }
     }
 
@@ -209,27 +208,6 @@ class AppFunctionsTest {
         }
     }
 
-    @Test
-    fun makeCall_withContactName_success() {
-        runBlocking {
-            val pendingIntent = appFunctions.makeCall(testContext, contactName = "Alice Smith")
-            Assert.assertNotNull(pendingIntent)
-        }
-    }
-
-    @Test(expected = AppFunctionInvalidArgumentException::class)
-    fun makeCall_missingParameters_fails() {
-        runBlocking {
-            appFunctions.makeCall(testContext, contactName = null, endpointValue = null)
-        }
-    }
-
-    @Test(expected = AppFunctionElementNotFoundException::class)
-    fun makeCall_invalidContactName_fails() {
-        runBlocking {
-            appFunctions.makeCall(testContext, contactName = "Unknown")
-        }
-    }
 
     @Test(expected = AppFunctionElementNotFoundException::class)
     fun makeCall_invalidEndpointValue_fails() {
@@ -237,4 +215,5 @@ class AppFunctionsTest {
             appFunctions.makeCall(testContext, endpointValue = "nonexistent_id")
         }
     }
+
 }

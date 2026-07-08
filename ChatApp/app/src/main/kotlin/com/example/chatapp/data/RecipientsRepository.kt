@@ -39,6 +39,7 @@ class RecipientsRepository
                 Recipient(id = "4", name = "David Wilson", email = "david@example.com"),
                 Recipient(id = "5", name = "Eve Davis", email = "eve@example.com"),
                 Recipient(id = "6", name = "Frank Miller", email = "frank@example.com"),
+                Recipient(id = "7", name = "Bob Johnson", email = "bob2@example.com"),
             )
 
         private val groups =
@@ -159,7 +160,7 @@ class RecipientsRepository
 
         fun getRecipientById(id: String): Recipient? = recipients.singleOrNull { it.id == id }
 
-        fun getRecipientByName(name: String): Recipient? = recipients.singleOrNull { it.name == name }
+        fun getRecipientByName(name: String): List<Recipient> = recipients.filter { it.name == name }
 
         fun getGroupById(id: String): ChatGroup? = groups.singleOrNull { it.id == id }
     }

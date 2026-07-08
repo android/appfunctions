@@ -41,7 +41,6 @@ class CallManager
                     ?: recipientsRepository.getGroupById(recipientId)?.let {
                         Recipient(it.id, it.name, "")
                     }
-                    ?: recipientsRepository.getRecipientByName(recipientId)
                     ?: Recipient(recipientId, recipientId, "")
             startCall(recipient)
         }

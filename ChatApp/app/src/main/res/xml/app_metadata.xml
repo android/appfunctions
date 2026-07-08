@@ -21,6 +21,6 @@ Operational Patterns:
   - Passing a blank query to 'searchContacts' retrieves the most recent contacts.
 Constraints:
   - Message content cannot be empty or blank.
-  - Calls can be initiated by either contact name or unique identifier.
+  - Calls are initiated by unique identifier.
   - Media attachments are supported via a list of URIs."
     appfn:displayDescription="@string/app_function_app_display_description"/>
