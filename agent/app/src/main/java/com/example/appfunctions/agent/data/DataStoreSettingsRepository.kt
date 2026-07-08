@@ -62,7 +62,7 @@ class DataStoreSettingsRepository
             dataStore.data.map { preferences ->
                 preferences[PreferencesKeys.SERVICE_TIER]?.let { storedValue ->
                     ServiceTier.entries.find { it.name.equals(storedValue, ignoreCase = true) }
-                } ?: ServiceTier.STANDARD
+                } ?: ServiceTier.PRIORITY
             }
 
         override val pinnedApps: Flow<Set<String>> =

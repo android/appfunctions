@@ -605,6 +605,8 @@ fun ModelDropdown(
             }
             val models =
                 listOf(
+                    LlmModel.GEMINI_3_5_FLASH,
+                    LlmModel.GEMINI_3_1_FLASH_LITE,
                     LlmModel.GEMINI_3_1_PRO_PREVIEW,
                     LlmModel.GEMINI_3_FLASH_PREVIEW,
                     LlmModel.GEMINI_3_1_FLASH_LITE_PREVIEW,

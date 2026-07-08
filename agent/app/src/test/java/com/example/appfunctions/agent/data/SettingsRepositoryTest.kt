@@ -64,10 +64,10 @@ class SettingsRepositoryTest {
         }
 
     @Test
-    fun serviceTier_defaultsToStandard() =
+    fun serviceTier_defaultsToPriority() =
         runTest {
             val value = repository.serviceTier.first()
-            assertEquals(ServiceTier.STANDARD, value)
+            assertEquals(ServiceTier.PRIORITY, value)
         }
 
     @Test
