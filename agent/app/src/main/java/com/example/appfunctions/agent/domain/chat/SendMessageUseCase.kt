@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.domain.chat
 
 import com.example.appfunctions.agent.data.ChatRepository
+import com.example.appfunctions.agent.data.db.entities.MessageAttachment
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
@@ -24,37 +25,39 @@ import javax.inject.Inject
 
 /** Use case to send a message in a chat thread. */
 class SendMessageUseCase
-    @Inject
-    constructor(
-        private val chatRepository: ChatRepository,
+@Inject
+constructor(
+    private val chatRepository: ChatRepository
+) {
+    /**
+     * Executes the use case.
+     *
+     * @param threadId The ID of the thread to send the message to.
+     * @param role The role of the sender (USER or ASSISTANT).
+     * @param textContent The content of the message.
+     * @param processingStatus The processing status of the message.
+     */
+    suspend operator fun invoke(
+        threadId: String,
+        role: MessageRole,
+        textContent: String,
+        processingStatus: MessageProcessingStatus,
+        pendingIntentId: String? = null,
+        targetPackageName: String? = null,
+        attachments: List<MessageAttachment> = emptyList()
     ) {
-        /**
-         * Executes the use case.
-         *
-         * @param threadId The ID of the thread to send the message to.
-         * @param role The role of the sender (USER or ASSISTANT).
-         * @param textContent The content of the message.
-         * @param processingStatus The processing status of the message.
-         */
-        suspend operator fun invoke(
-            threadId: String,
-            role: MessageRole,
-            textContent: String,
-            processingStatus: MessageProcessingStatus,
-            pendingIntentId: String? = null,
-            targetPackageName: String? = null,
-        ) {
-            val message =
-                MessageEntity(
-                    messageId = UUID.randomUUID().toString(),
-                    threadId = threadId,
-                    role = role,
-                    textContent = textContent,
-                    timestamp = System.currentTimeMillis(),
-                    processingStatus = processingStatus,
-                    pendingIntentId = pendingIntentId,
-                    targetPackageName = targetPackageName,
-                )
-            chatRepository.sendMessage(message)
-        }
+        val message =
+            MessageEntity(
+                messageId = UUID.randomUUID().toString(),
+                threadId = threadId,
+                role = role,
+                textContent = textContent,
+                timestamp = System.currentTimeMillis(),
+                processingStatus = processingStatus,
+                pendingIntentId = pendingIntentId,
+                targetPackageName = targetPackageName,
+                attachments = attachments
+            )
+        chatRepository.sendMessage(message)
     }
+}

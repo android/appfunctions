@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.domain
 
+import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import com.example.appfunctions.agent.data.LlmModel
@@ -25,6 +26,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
+import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
@@ -48,8 +50,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class AgentOrchestratorTest {
     private val observePendingMessagesUseCase: ObservePendingMessagesUseCase = mockk()
     private val updateMessageUseCase: UpdateMessageUseCase = mockk(relaxed = true)
@@ -79,148 +83,145 @@ class AgentOrchestratorTest {
                 getAppFunctionsUseCase = getAppFunctionsUseCase,
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
-                savePendingIntentUseCase = savePendingIntentUseCase,
+                savePendingIntentUseCase = savePendingIntentUseCase
             )
     }
 
     @Test
-    fun `observeAndProcessMessages fails when API key is missing`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "Hello", messageId = "msg_1")
-            val thread = createThread(threadId)
+    fun `observeAndProcessMessages fails when API key is missing`() = runTest {
+        val threadId = "thread_1"
+        val message = createUserMessage(threadId, "Hello", messageId = "msg_1")
+        val thread = createThread(threadId)
 
-            setupDefaultMocks(threadId, message, thread, apiKey = null)
+        setupDefaultMocks(threadId, message, thread, apiKey = null)
 
-            agentOrchestrator.observeAndProcessMessages(threadId)
+        agentOrchestrator.observeAndProcessMessages(threadId)
 
-            // Verify behavior (state)
-            assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
+        // Verify behavior (state)
+        assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
 
-            // Verify interactions
-            coVerify {
-                updateMessageUseCase(
-                    message.messageId,
-                    UpdateMessageParams(status = MessageProcessingStatus.PROCESSED),
-                )
-                sendMessageUseCase(
-                    threadId = threadId,
-                    role = MessageRole.ASSISTANT,
-                    textContent = "API key is missing for GEMINI",
-                    processingStatus = MessageProcessingStatus.FAILED,
-                )
-            }
+        // Verify interactions
+        coVerify {
+            updateMessageUseCase(
+                message.messageId,
+                UpdateMessageParams(status = MessageProcessingStatus.PROCESSED)
+            )
+            sendMessageUseCase(
+                threadId = threadId,
+                role = MessageRole.ASSISTANT,
+                textContent = "API key is missing for GEMINI",
+                processingStatus = MessageProcessingStatus.FAILED
+            )
         }
+    }
 
     @Test
-    fun `observeAndProcessMessages fails when LLM returns error`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "Hello", messageId = "msg_1")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
+    fun `observeAndProcessMessages fails when LLM returns error`() = runTest {
+        val threadId = "thread_1"
+        val message = createUserMessage(threadId, "Hello", messageId = "msg_1")
+        val thread = createThread(threadId)
+        val llmProvider = mockk<LlmProvider>()
 
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-            coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
+        setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+        coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
 
-            val errorMsg = "LLM failed"
-            coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
-                LlmResponse.Error(errorMsg)
+        val errorMsg = "LLM failed"
+        coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
+            LlmResponse.Error(errorMsg)
 
-            agentOrchestrator.observeAndProcessMessages(threadId)
+        agentOrchestrator.observeAndProcessMessages(threadId)
 
-            // Verify behavior (state)
-            assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
+        // Verify behavior (state)
+        assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
 
-            // Verify interactions
-            coVerify {
-                updateMessageUseCase(
-                    message.messageId,
-                    UpdateMessageParams(status = MessageProcessingStatus.PROCESSED),
-                )
-                sendMessageUseCase(
-                    threadId = threadId,
-                    role = MessageRole.ASSISTANT,
-                    textContent = errorMsg,
-                    processingStatus = MessageProcessingStatus.FAILED,
-                )
-            }
+        // Verify interactions
+        coVerify {
+            updateMessageUseCase(
+                message.messageId,
+                UpdateMessageParams(status = MessageProcessingStatus.PROCESSED)
+            )
+            sendMessageUseCase(
+                threadId = threadId,
+                role = MessageRole.ASSISTANT,
+                textContent = errorMsg,
+                processingStatus = MessageProcessingStatus.FAILED
+            )
         }
+    }
 
     @Test
-    fun `observeAndProcessMessages succeeds when LLM returns text`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "Hello", messageId = "msg_1")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
+    fun `observeAndProcessMessages succeeds when LLM returns text`() = runTest {
+        val threadId = "thread_1"
+        val message = createUserMessage(threadId, "Hello", messageId = "msg_1")
+        val thread = createThread(threadId)
+        val llmProvider = mockk<LlmProvider>()
 
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-            coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
+        setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+        coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
 
-            val responseText = "Hi there"
-            coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
-                LlmResponse.Success(
-                    "interaction_123",
-                    listOf(LlmResponsePart.Text(responseText)),
-                )
+        val responseText = "Hi there"
+        coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
+            LlmResponse.Success(
+                "interaction_123",
+                listOf(LlmResponsePart.Text(responseText))
+            )
 
-            agentOrchestrator.observeAndProcessMessages(threadId)
+        agentOrchestrator.observeAndProcessMessages(threadId)
 
-            // Verify behavior (state)
-            assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
+        // Verify behavior (state)
+        assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
 
-            // Verify interactions
-            coVerify {
-                updateThreadUseCase(threadId, UpdateThreadParams(interactionId = "interaction_123"))
-                sendMessageUseCase(
-                    threadId = threadId,
-                    role = MessageRole.ASSISTANT,
-                    textContent = responseText,
-                    processingStatus = MessageProcessingStatus.PROCESSED,
-                )
-                updateMessageUseCase(
-                    message.messageId,
-                    UpdateMessageParams(status = MessageProcessingStatus.PROCESSED),
-                )
-            }
+        // Verify interactions
+        coVerify {
+            updateThreadUseCase(threadId, UpdateThreadParams(interactionId = "interaction_123"))
+            sendMessageUseCase(
+                threadId = threadId,
+                role = MessageRole.ASSISTANT,
+                textContent = responseText,
+                processingStatus = MessageProcessingStatus.PROCESSED
+            )
+            updateMessageUseCase(
+                message.messageId,
+                UpdateMessageParams(status = MessageProcessingStatus.PROCESSED)
+            )
         }
+    }
 
     @Test
-    fun `observeAndProcessMessages scopes tools when targetPackageName is set`() =
-        runTest {
-            val threadId = "thread_1"
-            val message =
-                createUserMessage(
-                    threadId = threadId,
-                    textContent = "run geo code address for n1c4ag",
-                    targetPackageName = "com.google.android.appfunctiontestingagent",
-                )
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
+    fun `observeAndProcessMessages scopes tools when targetPackageName is set`() = runTest {
+        val threadId = "thread_1"
+        val message =
+            createUserMessage(
+                threadId = threadId,
+                textContent = "run geo code address for n1c4ag",
+                targetPackageName = "com.google.android.appfunctiontestingagent"
+            )
+        val thread = createThread(threadId)
+        val llmProvider = mockk<LlmProvider>()
 
-            val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            val tool2 = createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
-            mockAppFunctions(listOf(tool1, tool2))
+        val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
+        val tool2 =
+            createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
+        mockAppFunctions(listOf(tool1, tool2))
 
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+        setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
-            coEvery {
-                llmProvider.generateResponse(any(), any(), any(), any(), any())
-            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
+        coEvery {
+            llmProvider.generateResponse(any(), any(), any(), any(), any())
+        } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
 
-            agentOrchestrator.observeAndProcessMessages(threadId)
+        agentOrchestrator.observeAndProcessMessages(threadId)
 
-            coVerify {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
-                    tools = listOf(tool1),
-                    apiKey = "dummy_key",
-                    modelName = any(),
-                )
-            }
+        coVerify {
+            llmProvider.generateResponse(
+                previousInteractionId = null,
+                input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
+                tools = listOf(tool1),
+                apiKey = "dummy_key",
+                modelName = any()
+            )
         }
+    }
 
     @Test
     fun `observeAndProcessMessages does not scope tools when targetPackageName is null`() =
@@ -231,7 +232,8 @@ class AgentOrchestratorTest {
             val llmProvider = mockk<LlmProvider>()
 
             val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            val tool2 = createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
+            val tool2 =
+                createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
             mockAppFunctions(listOf(tool1, tool2))
 
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
@@ -248,7 +250,7 @@ class AgentOrchestratorTest {
                     input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
                     tools = listOf(tool1, tool2),
                     apiKey = "dummy_key",
-                    modelName = any(),
+                    modelName = any()
                 )
             }
         }
@@ -257,7 +259,7 @@ class AgentOrchestratorTest {
         threadId: String,
         textContent: String,
         messageId: String = "message_1",
-        targetPackageName: String? = null,
+        targetPackageName: String? = null
     ) = MessageEntity(
         messageId = messageId,
         threadId = threadId,
@@ -265,26 +267,26 @@ class AgentOrchestratorTest {
         textContent = textContent,
         timestamp = System.currentTimeMillis(),
         processingStatus = MessageProcessingStatus.PENDING_AGENT_RESPONSE,
-        targetPackageName = targetPackageName,
+        targetPackageName = targetPackageName
     )
 
     private fun createThread(
         threadId: String,
         llmModel: LlmModel = LlmModel.GEMINI_3_FLASH_PREVIEW,
-        latestInteractionId: String? = null,
+        latestInteractionId: String? = null
     ) = ThreadEntity(
         threadId = threadId,
         createdAt = System.currentTimeMillis(),
         llmModel = llmModel,
-        latestInteractionId = latestInteractionId,
+        latestInteractionId = latestInteractionId
     )
 
     private fun createMockTool(
         packageName: String,
         id: String,
-        isEnabled: Boolean = true,
+        isEnabled: Boolean = true
     ): AppFunctionMetadata {
-        val tool = mockk<AppFunctionMetadata>()
+        val tool = mockk<AppFunctionMetadata>(relaxed = true)
         every { tool.packageName } returns packageName
         every { tool.id } returns id
         every { tool.isEnabled } returns isEnabled
@@ -302,7 +304,7 @@ class AgentOrchestratorTest {
         thread: ThreadEntity,
         apiKey: String? = "dummy_key",
         disconnectedApps: Set<String> = emptySet(),
-        llmProvider: LlmProvider = mockk(),
+        llmProvider: LlmProvider = mockk()
     ) {
         coEvery { observePendingMessagesUseCase(threadId) } returns
             flow {
@@ -314,4 +316,88 @@ class AgentOrchestratorTest {
         coEvery { settingsRepository.disconnectedApps } returns flowOf(disconnectedApps)
         coEvery { llmProviderFactory.getProvider(LlmProviderName.GEMINI) } returns llmProvider
     }
+
+    @Test
+    fun `observeAndProcessMessages extracts attachments when tool returns imageUri and mimeType`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "generate image of a dog")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+
+            val generateTool = createMockTool("com.example.appfunctions.agent", "generateImage")
+            mockAppFunctions(listOf(generateTool))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+
+            val toolCall =
+                LlmResponsePart.ToolCall(
+                    packageName = "com.example.appfunctions.agent",
+                    functionId = "generateImage",
+                    arguments = mapOf("prompt" to "dog"),
+                    callId = "call_1"
+                )
+
+            val firstResponse =
+                LlmResponse.Success(
+                    interactionId = "interaction_1",
+                    parts = listOf(toolCall)
+                )
+            val secondResponse =
+                LlmResponse.Success(
+                    interactionId = "interaction_2",
+                    parts = listOf(LlmResponsePart.Text("Here is your image!"))
+                )
+
+            coEvery {
+                llmProvider.generateResponse(
+                    previousInteractionId = null,
+                    input = any(),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any()
+                )
+            } returns firstResponse
+
+            coEvery {
+                llmProvider.generateResponse(
+                    previousInteractionId = "interaction_1",
+                    input = any(),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any()
+                )
+            } returns secondResponse
+
+            coEvery {
+                convertInputToAppFunctionDataUseCase(any(), any(), any())
+            } returns Result.success(AppFunctionData.EMPTY)
+
+            coEvery {
+                executeAppFunctionUseCase(any(), any(), any())
+            } returns
+                ExecuteAppFunctionResult.Data(
+                    data = AppFunctionData.EMPTY,
+                    formattedJson = """{"imageUri":"content://com.example.appfunctions.agent.fileprovider/cache/test.jpg","mimeType":"image/jpeg","prompt":"dog"}"""
+                )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Here is your image!",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = null,
+                    targetPackageName = null,
+                    attachments =
+                    listOf(
+                        com.example.appfunctions.agent.data.db.entities.MessageAttachment(
+                            uri = "content://com.example.appfunctions.agent.fileprovider/cache/test.jpg",
+                            mimeType = "image/jpeg"
+                        )
+                    )
+                )
+            }
+        }
 }
