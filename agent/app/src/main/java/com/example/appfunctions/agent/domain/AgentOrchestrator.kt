@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.domain
 
 import android.util.Log
+import androidx.appfunctions.AppFunctionException
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -23,6 +24,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
+import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFormatter
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
@@ -368,11 +370,28 @@ class AgentOrchestrator
                         )
                     }
 
-                    is ExecuteAppFunctionResult.Error ->
-                        throw IllegalStateException(
-                            "Tool execution failed for ${toolCall.functionId}: ${executionResult.exception.message}",
-                            executionResult.exception,
-                        )
+                    is ExecuteAppFunctionResult.Error -> {
+                        val exception = executionResult.exception
+                        val appException = AppFunctionExceptionFormatter.getAppFunctionException(exception)
+                        if (appException != null) {
+                            results.add(
+                                ToolOutput(
+                                    functionId = toolCall.functionId,
+                                    callId = toolCall.callId,
+                                    result =
+                                        AppFunctionExceptionFormatter.format(
+                                            appException,
+                                            toolCall.functionId,
+                                        ),
+                                ),
+                            )
+                        } else {
+                            throw IllegalStateException(
+                                "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
+                                exception,
+                            )
+                        }
+                    }
                 }
             }
             return ExecuteToolCallsResult.Success(results)

@@ -25,6 +25,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
+import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
@@ -48,8 +49,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class AgentOrchestratorTest {
     private val observePendingMessagesUseCase: ObservePendingMessagesUseCase = mockk()
     private val updateMessageUseCase: UpdateMessageUseCase = mockk(relaxed = true)
@@ -247,6 +250,73 @@ class AgentOrchestratorTest {
                     previousInteractionId = null,
                     input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
                     tools = listOf(tool1, tool2),
+                    apiKey = "dummy_key",
+                    modelName = any(),
+                )
+            }
+        }
+
+    @Test
+    fun `observeAndProcessMessages feeds AppFunctionException back to LLM as ToolOutput`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "create event")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+
+            val tool1 = createMockTool("com.example.calendar", "create_event")
+            every { tool1.parameters } returns emptyList()
+            every { tool1.components } returns mockk(relaxed = true)
+            mockAppFunctions(listOf(tool1))
+
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+
+            coEvery {
+                convertInputToAppFunctionDataUseCase(any(), any(), any())
+            } returns Result.success(mockk())
+
+            val appException = androidx.appfunctions.AppFunctionPermissionRequiredException("Calendar permission required")
+            coEvery {
+                executeAppFunctionUseCase(any(), any(), any())
+            } returns ExecuteAppFunctionResult.Error(appException)
+
+            coEvery {
+                llmProvider.generateResponse(null, any(), any(), any(), any())
+            } returns LlmResponse.Success(
+                "interaction_1",
+                listOf(
+                    LlmResponsePart.ToolCall(
+                        packageName = "com.example.calendar",
+                        functionId = "create_event",
+                        arguments = emptyMap(),
+                        callId = "call_1",
+                    )
+                )
+            )
+
+            val expectedErrorOutput =
+                "Tool execution failed for create_event: Error: AppFunctionPermissionRequiredException - Calendar permission required"
+            coEvery {
+                llmProvider.generateResponse(eq("interaction_1"), any(), any(), any(), any())
+            } returns LlmResponse.Success("interaction_2", listOf(LlmResponsePart.Text("Permission needed.")))
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = eq("interaction_1"),
+                    input = eq(
+                        LlmInput.ToolResponse(
+                            listOf(
+                                ToolOutput(
+                                    functionId = "create_event",
+                                    callId = "call_1",
+                                    result = expectedErrorOutput,
+                                )
+                            )
+                        )
+                    ),
+                    tools = listOf(tool1),
                     apiKey = "dummy_key",
                     modelName = any(),
                 )
