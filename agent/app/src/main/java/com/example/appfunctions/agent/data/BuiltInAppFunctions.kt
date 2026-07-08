@@ -203,6 +203,20 @@ class BuiltInAppFunctions {
                         )
                     }
                 )
+                put(
+                    "generationConfig",
+                    JSONObject().apply {
+                        put("responseModalities", JSONArray().apply { put("IMAGE") })
+                        if (!aspectRatio.isNullOrBlank()) {
+                            put(
+                                "imageConfig",
+                                JSONObject().apply {
+                                    put("aspectRatio", aspectRatio)
+                                }
+                            )
+                        }
+                    }
+                )
             }
 
         val endpointUrl =
@@ -247,7 +261,9 @@ class BuiltInAppFunctions {
                     .optJSONObject("content")
                     ?.optJSONArray("parts")
             if (parts == null || parts.length() == 0) {
-                throw IllegalStateException("No parts returned in candidate content")
+                throw IllegalStateException(
+                    "No parts returned in candidate content. Gemini response: $responseText"
+                )
             }
 
             var base64Data: String? = null
@@ -272,7 +288,9 @@ class BuiltInAppFunctions {
             }
 
             if (base64Data.isNullOrBlank()) {
-                throw IllegalStateException("No inlineData image found in response parts")
+                throw IllegalStateException(
+                    "No inlineData image found in response parts. Gemini response: $responseText"
+                )
             }
 
             val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)

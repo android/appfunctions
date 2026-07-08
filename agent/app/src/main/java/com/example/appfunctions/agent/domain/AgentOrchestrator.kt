@@ -15,6 +15,9 @@
  */
 package com.example.appfunctions.agent.domain
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
@@ -36,6 +39,7 @@ import com.example.appfunctions.agent.domain.chat.UpdateMessageUseCase
 import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +59,7 @@ import org.json.JSONObject
 class AgentOrchestrator
 @Inject
 constructor(
+    @ApplicationContext private val context: Context,
     private val manageThreadsUseCase: ManageThreadsUseCase,
     private val observePendingMessagesUseCase: ObservePendingMessagesUseCase,
     private val sendMessageUseCase: SendMessageUseCase,
@@ -351,6 +356,19 @@ constructor(
             }
 
             val convertedInputs = toolCall.arguments.filterValues { it != null } as Map<String, Any>
+
+            for (value in convertedInputs.values) {
+                if (value is String && value.startsWith("content://")) {
+                    runCatching {
+                        val uri = Uri.parse(value)
+                        context.grantUriPermission(
+                            toolCall.packageName,
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                }
+            }
 
             val appFunctionDataResult =
                 withContext(Dispatchers.Default) {

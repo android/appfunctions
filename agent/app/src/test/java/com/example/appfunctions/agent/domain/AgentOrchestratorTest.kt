@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.domain
 
+import android.content.Intent
 import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
@@ -65,6 +66,7 @@ class AgentOrchestratorTest {
     private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase = mockk()
     private val sendMessageUseCase: SendMessageUseCase = mockk(relaxed = true)
     private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
+    private val context: android.content.Context = mockk(relaxed = true)
     private val savePendingIntentUseCase: SavePendingIntentUseCase = mockk(relaxed = true)
 
     private lateinit var agentOrchestrator: AgentOrchestrator
@@ -73,6 +75,7 @@ class AgentOrchestratorTest {
     fun setUp() {
         agentOrchestrator =
             AgentOrchestrator(
+                context = context,
                 manageThreadsUseCase = manageThreadsUseCase,
                 observePendingMessagesUseCase = observePendingMessagesUseCase,
                 sendMessageUseCase = sendMessageUseCase,
@@ -397,6 +400,78 @@ class AgentOrchestratorTest {
                             mimeType = "image/jpeg"
                         )
                     )
+                )
+            }
+        }
+
+    @Test
+    fun `observeAndProcessMessages grants URI read permission when tool is called with content URI argument`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "set wallpaper")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+
+            val targetTool = createMockTool("com.example.targetapp", "setWallpaper")
+            mockAppFunctions(listOf(targetTool))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+
+            val contentUri = "content://com.example.appfunctions.agent.fileprovider/cache/img.jpg"
+            val toolCall =
+                LlmResponsePart.ToolCall(
+                    packageName = "com.example.targetapp",
+                    functionId = "setWallpaper",
+                    arguments = mapOf("uri" to contentUri),
+                    callId = "call_2"
+                )
+
+            coEvery {
+                llmProvider.generateResponse(
+                    previousInteractionId = null,
+                    input = any(),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any()
+                )
+            } returns
+                LlmResponse.Success(
+                    interactionId = "interaction_1",
+                    parts = listOf(toolCall)
+                )
+
+            coEvery {
+                llmProvider.generateResponse(
+                    previousInteractionId = "interaction_1",
+                    input = any(),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any()
+                )
+            } returns
+                LlmResponse.Success(
+                    interactionId = "interaction_2",
+                    parts = listOf(LlmResponsePart.Text("Wallpaper set"))
+                )
+
+            coEvery {
+                convertInputToAppFunctionDataUseCase(any(), any(), any())
+            } returns Result.success(AppFunctionData.EMPTY)
+
+            coEvery {
+                executeAppFunctionUseCase(any(), any(), any())
+            } returns
+                ExecuteAppFunctionResult.Data(
+                    data = AppFunctionData.EMPTY,
+                    formattedJson = """{"success":true}"""
+                )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                context.grantUriPermission(
+                    eq("com.example.targetapp"),
+                    any(),
+                    eq(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 )
             }
         }
