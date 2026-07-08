@@ -15,20 +15,45 @@
  */
 package com.example.appfunctions.agent.data
 
-import androidx.appfunctions.AppFunctionContext
+import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionSerializable
-import androidx.appfunctions.service.AppFunction
+import androidx.appfunctions.AppFunctionService
+import androidx.appfunctions.AppFunctionServiceEntryPoint
+import dagger.hilt.android.AndroidEntryPoint
 
-class FakeAppFunctions {
-    @AppFunction
+/** Fake AppFunction service used for testing and verification. */
+@RequiresApi(36)
+@AndroidEntryPoint
+@AppFunctionServiceEntryPoint(
+    serviceName = "FakeAppFunctionService",
+    appFunctionXmlFileName = "fake_app_function_service",
+)
+abstract class BaseFakeAppFunctionService : AppFunctionService() {
+    /**
+     * Execute a fake function for testing purposes.
+     *
+     * @param params The test parameters containing input data.
+     * @return The test response containing output data.
+     */
+    @AppFunction(isDescribedByKDoc = true)
     suspend fun fakeFunction(
-        appFunctionContext: AppFunctionContext,
         params: FakeParams,
     ): FakeResponse {
         return FakeResponse("success")
     }
 
-    @AppFunctionSerializable data class FakeParams(val input: String)
+    /** Input parameters for fake function testing. */
+    @AppFunctionSerializable(isDescribedByKDoc = true)
+    data class FakeParams(
+        /** The test input string. */
+        val input: String,
+    )
 
-    @AppFunctionSerializable data class FakeResponse(val output: String)
+    /** Response data from fake function testing. */
+    @AppFunctionSerializable(isDescribedByKDoc = true)
+    data class FakeResponse(
+        /** The test output string. */
+        val output: String,
+    )
 }
