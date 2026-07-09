@@ -169,8 +169,9 @@ class AppFunctions
          * Search for messages containing a query string, optionally filtered by a specific recipient.
          *
          * @param appFunctionContext The context of this app function call.
-         * @param query The text to search for within message bodies.
+         * @param query The text to search for within message bodies. Throws [AppFunctionInvalidArgumentException] if empty.
          * @param endpointValue Optional unique identifier of the contact or group to restrict the search to.
+         * @throws AppFunctionInvalidArgumentException if the query is blank.
          */
         @AppFunction(isDescribedByKDoc = true)
         suspend fun searchMessages(
@@ -178,6 +179,9 @@ class AppFunctions
             query: String,
             endpointValue: String? = null,
         ): List<MessagesSearchResult> {
+            if (query.isBlank()) {
+                throw AppFunctionInvalidArgumentException("Query cannot be empty")
+            }
             val targetIds =
                 if (endpointValue != null) {
                     listOf(endpointValue)

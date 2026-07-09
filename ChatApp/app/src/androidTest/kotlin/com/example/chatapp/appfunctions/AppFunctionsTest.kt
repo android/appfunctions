@@ -282,4 +282,12 @@ class AppFunctionsTest {
         }
     }
 
+    @Test(expected = AppFunctionInvalidArgumentException::class)
+    fun searchMessages_emptyQuery_fails() {
+        runTest {
+            appFunctions.searchMessages(testContext, "")
+        }
+    }
+
 }
+
