@@ -15,10 +15,12 @@
  */
 package com.example.appfunctions.agent.domain
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.appfunctions.AppFunctionException
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -27,6 +29,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
+import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFormatter
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
@@ -40,8 +43,10 @@ import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -226,7 +231,7 @@ constructor(
 
         data class PendingIntentAction(
             val pendingIntentId: String,
-            val pendingIntent: android.app.PendingIntent
+            val pendingIntent: PendingIntent,
         ) : ExecuteToolCallsResult()
 
         object Error : ExecuteToolCallsResult()
@@ -414,11 +419,32 @@ constructor(
                     )
                 }
 
-                is ExecuteAppFunctionResult.Error ->
-                    throw IllegalStateException(
-                        "Tool execution failed for ${toolCall.functionId}: ${executionResult.exception.message}",
-                        executionResult.exception
-                    )
+                is ExecuteAppFunctionResult.Error -> {
+                    val exception = executionResult.exception
+                    if (exception is CancellationException) {
+                        throw exception
+                    }
+                    val appFunctionException =
+                        AppFunctionExceptionFormatter.getAppFunctionException(exception)
+                    if (appFunctionException != null) {
+                        results.add(
+                            ToolOutput(
+                                functionId = toolCall.functionId,
+                                callId = toolCall.callId,
+                                result =
+                                    AppFunctionExceptionFormatter.format(
+                                        appFunctionException,
+                                        toolCall.functionId,
+                                    ),
+                            ),
+                        )
+                    } else {
+                        throw IllegalStateException(
+                            "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
+                            exception,
+                        )
+                    }
+                }
             }
         }
         return ExecuteToolCallsResult.Success(results)

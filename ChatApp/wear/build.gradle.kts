@@ -27,8 +27,8 @@ android {
 
     defaultConfig {
         applicationId = "com.example.chatapp.wear"
-        minSdk = 30
-        targetSdk = 35
+        minSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
     }
@@ -66,7 +66,6 @@ dependencies {
 
     // App functions
     implementation(libs.androidx.appfunctions)
-    implementation(libs.androidx.appfunctions.service)
     ksp(libs.androidx.appfunctions.compiler)
 
 }

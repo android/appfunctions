@@ -23,14 +23,18 @@ import android.location.Address
 import android.location.Geocoder
 import android.location.LocationManager
 import android.util.Base64
+import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionContext
 import androidx.appfunctions.AppFunctionSerializable
-import androidx.appfunctions.service.AppFunction
+import androidx.appfunctions.AppFunctionService
+import androidx.appfunctions.AppFunctionServiceEntryPoint
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.appfunctions.agent.BuildConfig
 import com.example.appfunctions.agent.di.settingsDataStore
+import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -44,22 +48,29 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Built-in AppFunctions for location and geocoding services. */
-class BuiltInAppFunctions {
+@RequiresApi(36)
+@AndroidEntryPoint
+@AppFunctionServiceEntryPoint(
+    serviceName = "BuiltInAppFunctionService",
+    appFunctionXmlFileName = "builtin_app_function_service",
+)
+abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
     /**
-     * Geocodes a physical address string into its latitude and longitude coordinates.
+     * Geocode a physical address string into its latitude and longitude coordinates.
      *
      * @param address The physical address to geocode (e.g., "1600 Amphitheatre Pkwy, Mountain View,
      *   CA").
      * @return The latitude and longitude coordinates of the address, or null if geocoding fails.
      */
-    @AppFunction
-    suspend fun geocodeAddress(appFunctionContext: AppFunctionContext, address: String): LatLng? {
-        val context = appFunctionContext.context
+    @AppFunction(isDescribedByKDoc = true)
+    suspend fun geocodeAddress(
+        address: String,
+    ): LatLng? {
         if (!Geocoder.isPresent()) {
             return null
         }
 
-        val geocoder = Geocoder(context)
+        val geocoder = Geocoder(this)
 
         return withContext(Dispatchers.IO) {
             try {
@@ -92,38 +103,34 @@ class BuiltInAppFunctions {
     }
 
     /**
-     * Retrieves the current latitude and longitude coordinates of the device.
+     * Retrieve the current latitude and longitude coordinates of the device.
      *
      * @return The current location coordinates of the device, or null if location is unavailable or
      *   permission is denied.
      */
     @SuppressLint("MissingPermission")
-    @AppFunction
-    suspend fun getCurrentLocation(appFunctionContext: AppFunctionContext): LatLng? =
+    @AppFunction(isDescribedByKDoc = true)
+    suspend fun getCurrentLocation(): LatLng? =
         withContext(Dispatchers.Default) {
-            val context = appFunctionContext.context
-
             // Check permissions
             val hasFineLocation =
                 ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                ) ==
-                    PackageManager.PERMISSION_GRANTED
+                    this@BaseBuiltInAppFunctionService,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
 
             val hasCoarseLocation =
                 ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ) ==
-                    PackageManager.PERMISSION_GRANTED
+                    this@BaseBuiltInAppFunctionService,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
 
             if (!hasFineLocation && !hasCoarseLocation) {
                 throw IllegalStateException("Location permission is not granted")
             }
 
             val locationManager =
-                context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                this@BaseBuiltInAppFunctionService.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
             try {
                 // Try GPS Provider first
@@ -153,7 +160,7 @@ class BuiltInAppFunctions {
         }
 
     /** Represents the latitude and longitude coordinates. */
-    @AppFunctionSerializable
+    @AppFunctionSerializable(isDescribedByKDoc = true)
     data class LatLng(
         /** The latitude coordinate. */
         val latitude: Double,
@@ -170,11 +177,10 @@ class BuiltInAppFunctions {
      */
     @AppFunction(isDescribedByKDoc = true)
     suspend fun generateImage(
-        appFunctionContext: AppFunctionContext,
         prompt: String,
         aspectRatio: String? = null
     ): GeneratedImageResult = withContext(Dispatchers.IO) {
-        val context = appFunctionContext.context
+        val context = this@BaseBuiltInAppFunctionService
         val apiKey =
             context.settingsDataStore.data
                 .first()[stringPreferencesKey("gemini_api_key")]
