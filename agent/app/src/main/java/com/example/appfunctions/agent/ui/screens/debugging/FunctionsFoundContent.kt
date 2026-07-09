@@ -65,7 +65,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.appfunctions.AppFunctionException
 import com.example.appfunctions.agent.R
+import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFormatter
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.ui.theme.AppFunctionsAgentTheme
 import com.example.appfunctions.agent.ui.theme.GoogleSansCodeFontFamily
@@ -186,8 +188,19 @@ fun FunctionsFoundContent(
                     when (val result = state.executionResult) {
                         is ExecuteAppFunctionResult.Error -> {
                             SelectionContainer {
+                                val appException =
+                                    AppFunctionExceptionFormatter.getAppFunctionException(result.exception)
+                                val errorText =
+                                    if (appException != null) {
+                                        AppFunctionExceptionFormatter.format(
+                                            appException,
+                                            state.executedFunction?.id,
+                                        )
+                                    } else {
+                                        result.exception.message ?: "Unknown error"
+                                    }
                                 Text(
-                                    text = result.exception.message ?: "Unknown error",
+                                    text = errorText,
                                     style =
                                         MaterialTheme.typography.bodyMedium.copy(
                                             fontFamily = GoogleSansCodeFontFamily,

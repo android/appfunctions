@@ -16,8 +16,8 @@
 package com.example.chatapp
 
 import androidx.lifecycle.ViewModel
-import com.example.chatapp.appfunctions.AppFunctions.ChatGroup
-import com.example.chatapp.appfunctions.AppFunctions.Recipient
+import com.example.chatapp.appfunctions.ChatGroup
+import com.example.chatapp.appfunctions.Recipient
 import com.example.chatapp.data.DisplayMessage
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository

@@ -16,27 +16,4 @@
 package com.example.chatapp
 
 import android.app.Application
-import androidx.appfunctions.service.AppFunctionConfiguration
-import com.example.chatapp.appfunctions.AppFunctions
-import dagger.hilt.EntryPoint
-import dagger.hilt.InstallIn
-import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.components.SingletonComponent
-
-abstract class BaseChatApplication : Application(), AppFunctionConfiguration.Provider {
-    override val appFunctionConfiguration: AppFunctionConfiguration
-        get() {
-            val entryPoint = EntryPointAccessors.fromApplication(this, AppFunctionsEntryPoint::class.java)
-            val taskFunctions = entryPoint.getAppFunctions()
-
-            return AppFunctionConfiguration.Builder()
-                .addEnclosingClassFactory(AppFunctions::class.java) { taskFunctions }
-                .build()
-        }
-}
-
-@EntryPoint
-@InstallIn(SingletonComponent::class)
-interface AppFunctionsEntryPoint {
-    fun getAppFunctions(): AppFunctions
-}
+abstract class BaseChatApplication : Application()

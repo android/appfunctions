@@ -18,6 +18,7 @@ package com.example.chatapp
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.example.chatapp.appfunctions.ChatAppFunctionService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertNotNull
@@ -47,7 +48,7 @@ class AppFunctionsViewModelTest {
     fun toggleFunction_doesNotCrash() =
         runTest {
             // Use a potentially real ID from the app
-            viewModel.toggleFunction("com.example.chatapp.appfunctions.AppFunctions#searchContacts", true)
+            viewModel.toggleFunction(ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS, true)
         }
 
     @Test

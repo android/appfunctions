@@ -22,35 +22,42 @@ import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.location.LocationManager
-import androidx.appfunctions.AppFunctionContext
+import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionSerializable
-import androidx.appfunctions.service.AppFunction
+import androidx.appfunctions.AppFunctionService
+import androidx.appfunctions.AppFunctionServiceEntryPoint
 import androidx.core.content.ContextCompat
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 /** Built-in AppFunctions for location and geocoding services. */
-class BuiltInAppFunctions {
+@RequiresApi(36)
+@AndroidEntryPoint
+@AppFunctionServiceEntryPoint(
+    serviceName = "BuiltInAppFunctionService",
+    appFunctionXmlFileName = "builtin_app_function_service",
+)
+abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
     /**
-     * Geocodes a physical address string into its latitude and longitude coordinates.
+     * Geocode a physical address string into its latitude and longitude coordinates.
      *
      * @param address The physical address to geocode (e.g., "1600 Amphitheatre Pkwy, Mountain View,
      *   CA").
      * @return The latitude and longitude coordinates of the address, or null if geocoding fails.
      */
-    @AppFunction
+    @AppFunction(isDescribedByKDoc = true)
     suspend fun geocodeAddress(
-        appFunctionContext: AppFunctionContext,
         address: String,
     ): LatLng? {
-        val context = appFunctionContext.context
         if (!Geocoder.isPresent()) {
             return null
         }
 
-        val geocoder = Geocoder(context)
+        val geocoder = Geocoder(this)
 
         return withContext(Dispatchers.IO) {
             try {
@@ -83,35 +90,34 @@ class BuiltInAppFunctions {
     }
 
     /**
-     * Retrieves the current latitude and longitude coordinates of the device.
+     * Retrieve the current latitude and longitude coordinates of the device.
      *
      * @return The current location coordinates of the device, or null if location is unavailable or
      *   permission is denied.
      */
     @SuppressLint("MissingPermission")
-    @AppFunction
-    suspend fun getCurrentLocation(appFunctionContext: AppFunctionContext): LatLng? =
+    @AppFunction(isDescribedByKDoc = true)
+    suspend fun getCurrentLocation(): LatLng? =
         withContext(Dispatchers.Default) {
-            val context = appFunctionContext.context
-
             // Check permissions
             val hasFineLocation =
-                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                    PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(
+                    this@BaseBuiltInAppFunctionService,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
 
             val hasCoarseLocation =
                 ContextCompat.checkSelfPermission(
-                    context,
+                    this@BaseBuiltInAppFunctionService,
                     Manifest.permission.ACCESS_COARSE_LOCATION,
-                ) ==
-                    PackageManager.PERMISSION_GRANTED
+                ) == PackageManager.PERMISSION_GRANTED
 
             if (!hasFineLocation && !hasCoarseLocation) {
                 throw IllegalStateException("Location permission is not granted")
             }
 
             val locationManager =
-                context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                this@BaseBuiltInAppFunctionService.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
             try {
                 // Try GPS Provider first
@@ -141,7 +147,7 @@ class BuiltInAppFunctions {
         }
 
     /** Represents the latitude and longitude coordinates. */
-    @AppFunctionSerializable
+    @AppFunctionSerializable(isDescribedByKDoc = true)
     data class LatLng(
         /** The latitude coordinate. */
         val latitude: Double,

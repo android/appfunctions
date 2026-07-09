@@ -49,8 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.chatapp.RecipientsViewModel
-import com.example.chatapp.appfunctions.AppFunctions.ChatGroup
-import com.example.chatapp.appfunctions.AppFunctions.Recipient
+import com.example.chatapp.appfunctions.ChatGroup
+import com.example.chatapp.appfunctions.Recipient
 
 /**
  * A screen that displays a list of recipients/contacts.
