@@ -98,8 +98,17 @@ class ConvertInputToAppFunctionDataUseCase
                     }
                 }
                 is AppFunctionObjectTypeMetadata -> {
-                    val objData = convertObject(dataType, value as Map<String, Any>, components)
-                    builder.setAppFunctionData(name, objData)
+                    if (dataType.qualifiedName == "android.net.Uri" && value is String) {
+                        val uriPropertyName = dataType.properties.keys.firstOrNull() ?: "uri"
+                        val uriData =
+                            AppFunctionData.Builder(dataType, components)
+                                .setString(uriPropertyName, value)
+                                .build()
+                        builder.setAppFunctionData(name, uriData)
+                    } else {
+                        val objData = convertObject(dataType, value as Map<String, Any>, components)
+                        builder.setAppFunctionData(name, objData)
+                    }
                 }
                 is AppFunctionArrayTypeMetadata -> {
                     setArrayValue(builder, name, dataType, value as List<Any>, components)
@@ -109,8 +118,17 @@ class ConvertInputToAppFunctionDataUseCase
                     val objectType =
                         components.dataTypes[referenceKey] as? AppFunctionObjectTypeMetadata
                     if (objectType != null) {
-                        val objData = convertObject(objectType, value as Map<String, Any>, components)
-                        builder.setAppFunctionData(name, objData)
+                        if (referenceKey == "android.net.Uri" && value is String) {
+                            val uriPropertyName = objectType.properties.keys.firstOrNull() ?: "uri"
+                            val uriData =
+                                AppFunctionData.Builder(objectType, components)
+                                    .setString(uriPropertyName, value)
+                                    .build()
+                            builder.setAppFunctionData(name, uriData)
+                        } else {
+                            val objData = convertObject(objectType, value as Map<String, Any>, components)
+                            builder.setAppFunctionData(name, objData)
+                        }
                     }
                 }
             }

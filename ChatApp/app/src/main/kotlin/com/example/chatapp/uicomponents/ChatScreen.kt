@@ -15,7 +15,9 @@
  */
 package com.example.chatapp.uicomponents
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -57,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -90,99 +93,123 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var message by rememberSaveable { mutableStateOf("") }
 
-    Scaffold(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                colors =
-                    topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                title = {
-                    Text(text = viewModel.recipient.name)
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onCallClick) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Call",
-                        )
-                    }
-                },
+    Box(modifier = Modifier.fillMaxSize()) {
+        uiState.wallpaperPath?.let { path ->
+            AsyncImage(
+                model = path,
+                contentDescription = "Chat Wallpaper",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
             )
-        },
-        bottomBar = {
-            InputBar(
-                value = message,
-                placeholder = stringResource(R.string.input_placeholder),
-                onInputChanged = {
-                    message = it
-                },
-                onSendClick = { uris ->
-                    viewModel.sendMessage(message, uris)
-                    message = ""
-                },
-                sendEnabled = uiState.botMessageState !is BotMessageState.Generating,
+            Box(
                 modifier =
                     Modifier
-                        .navigationBarsPadding()
-                        .imePadding(),
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f)),
             )
-        },
-    ) { innerPadding ->
-        Column(
+        }
+
+        Scaffold(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding),
-        ) {
-            MessageList(
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor =
+                if (uiState.wallpaperPath != null) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+            topBar = {
+                TopAppBar(
+                    colors =
+                        topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    title = {
+                        Text(text = viewModel.recipient.name)
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onCallClick) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = "Call",
+                            )
+                        }
+                    },
+                )
+            },
+            bottomBar = {
+                InputBar(
+                    value = message,
+                    placeholder = stringResource(R.string.input_placeholder),
+                    onInputChanged = {
+                        message = it
+                    },
+                    onSendClick = { uris ->
+                        viewModel.sendMessage(message, uris)
+                        message = ""
+                    },
+                    sendEnabled = uiState.botMessageState !is BotMessageState.Generating,
+                    modifier =
+                        Modifier
+                            .navigationBarsPadding()
+                            .imePadding(),
+                )
+            },
+        ) { innerPadding ->
+            Box(
                 modifier =
                     Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .weight(1f),
-                messages = uiState.messages,
-                contentPadding = PaddingValues(bottom = 8.dp),
-            )
-
-            when (val state = uiState.botMessageState) {
-                is BotMessageState.Generating -> {
-                    CircularProgressIndicator(
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .consumeWindowInsets(innerPadding),
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    MessageList(
                         modifier =
                             Modifier
-                                .padding(vertical = 8.dp)
-                                .align(Alignment.CenterHorizontally),
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .weight(1f),
+                        messages = uiState.messages,
+                        contentPadding = PaddingValues(bottom = 8.dp),
                     )
-                }
 
-                is BotMessageState.Error -> {
-                    AlertDialog(
-                        onDismissRequest = { viewModel.dismissError() },
-                        title = { Text(text = stringResource(R.string.error)) },
-                        text = { Text(text = state.errorMessage) },
-                        confirmButton = {
-                            Button(onClick = { viewModel.dismissError() }) {
-                                Text(text = stringResource(R.string.dismiss_button))
-                            }
-                        },
-                    )
-                }
+                    when (val state = uiState.botMessageState) {
+                        is BotMessageState.Generating -> {
+                            CircularProgressIndicator(
+                                modifier =
+                                    Modifier
+                                        .padding(vertical = 8.dp)
+                                        .align(Alignment.CenterHorizontally),
+                            )
+                        }
 
-                else -> { // No additional UI for waiting state
+                        is BotMessageState.Error -> {
+                            AlertDialog(
+                                onDismissRequest = { viewModel.dismissError() },
+                                title = { Text(text = stringResource(R.string.error)) },
+                                text = { Text(text = state.errorMessage) },
+                                confirmButton = {
+                                    Button(onClick = { viewModel.dismissError() }) {
+                                        Text(text = stringResource(R.string.dismiss_button))
+                                    }
+                                },
+                            )
+                        }
+
+                        else -> {}
+                    }
                 }
             }
         }

@@ -238,4 +238,32 @@ class ConvertInputToAppFunctionDataUseCaseTest {
 
         assertEquals(true, result.isFailure)
     }
+
+    @Test
+    fun convert_uriObjectTypeWithStringInput_buildsUriAppFunctionData() {
+        val uriObjectType =
+            AppFunctionObjectTypeMetadata(
+                properties =
+                    mapOf(
+                        "uri" to AppFunctionStringTypeMetadata(false),
+                    ),
+                required = listOf("uri"),
+                qualifiedName = "android.net.Uri",
+                isNullable = false,
+            )
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    name = "wallpaperUri",
+                    isRequired = true,
+                    dataType = uriObjectType,
+                ),
+            )
+        val inputs = mapOf("wallpaperUri" to "content://com.example/file.jpg")
+
+        val result = useCase(parameters, components, inputs).getOrThrow()
+
+        val uriData = result.getAppFunctionData("wallpaperUri")
+        assertEquals("content://com.example/file.jpg", uriData?.getString("uri"))
+    }
 }

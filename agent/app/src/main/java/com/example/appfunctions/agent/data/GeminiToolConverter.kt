@@ -67,6 +67,7 @@ class GeminiToolConverter
                                             parameter.dataType,
                                             tool.components,
                                             tool.id,
+                                            parameterName = parameter.name,
                                         )
                                     put(
                                         parameter.name,
@@ -118,11 +119,15 @@ class GeminiToolConverter
             components: AppFunctionComponentsMetadata,
             functionId: String,
             visitedReferences: Set<String> = emptySet(),
+            parameterName: String? = null,
         ): JsonObject {
             return when (dataType) {
                 is AppFunctionStringTypeMetadata ->
                     buildJsonObject {
                         put(KEY_TYPE, JsonPrimitive(VALUE_STRING))
+                        if (isFileReferenceParameter(parameterName)) {
+                            put(KEY_FORMAT, JsonPrimitive(VALUE_FILE_REFERENCE))
+                        }
                         val enumValues = dataType.enumValues
                         if (!enumValues.isNullOrEmpty()) {
                             put(
@@ -168,39 +173,54 @@ class GeminiToolConverter
                                 components,
                                 functionId,
                                 visitedReferences,
+                                parameterName,
                             ),
                         )
                     }
                 is AppFunctionObjectTypeMetadata ->
-                    buildJsonObject {
-                        put(KEY_TYPE, JsonPrimitive(VALUE_OBJECT))
-                        put(
-                            KEY_PROPERTIES,
-                            buildJsonObject {
-                                dataType.properties.forEach { (name, type) ->
-                                    put(
-                                        name,
-                                        mapDataTypeToGeminiSchema(
-                                            type,
-                                            components,
-                                            functionId,
-                                            visitedReferences,
-                                        ),
-                                    )
-                                }
-                            },
-                        )
-                        if (dataType.required.isNotEmpty()) {
+                    if (dataType.qualifiedName == "android.net.Uri") {
+                        buildJsonObject {
+                            put(KEY_TYPE, JsonPrimitive(VALUE_STRING))
+                            put(KEY_FORMAT, JsonPrimitive(VALUE_FILE_REFERENCE))
+                        }
+                    } else {
+                        buildJsonObject {
+                            put(KEY_TYPE, JsonPrimitive(VALUE_OBJECT))
                             put(
-                                KEY_REQUIRED,
-                                buildJsonArray {
-                                    dataType.required.forEach { name -> add(JsonPrimitive(name)) }
+                                KEY_PROPERTIES,
+                                buildJsonObject {
+                                    dataType.properties.forEach { (name, type) ->
+                                        put(
+                                            name,
+                                            mapDataTypeToGeminiSchema(
+                                                type,
+                                                components,
+                                                functionId,
+                                                visitedReferences,
+                                                parameterName = name,
+                                            ),
+                                        )
+                                    }
                                 },
                             )
+                            if (dataType.required.isNotEmpty()) {
+                                put(
+                                    KEY_REQUIRED,
+                                    buildJsonArray {
+                                        dataType.required.forEach { name -> add(JsonPrimitive(name)) }
+                                    },
+                                )
+                            }
                         }
                     }
                 is AppFunctionReferenceTypeMetadata -> {
                     val referenceKey = dataType.referenceDataType
+                    if (referenceKey == "android.net.Uri") {
+                        return buildJsonObject {
+                            put(KEY_TYPE, JsonPrimitive(VALUE_STRING))
+                            put(KEY_FORMAT, JsonPrimitive(VALUE_FILE_REFERENCE))
+                        }
+                    }
                     if (visitedReferences.contains(referenceKey)) {
                         Log.d(
                             "GeminiToolConverter",
@@ -218,6 +238,7 @@ class GeminiToolConverter
                         components,
                         functionId,
                         visitedReferences + referenceKey,
+                        parameterName,
                     )
                 }
                 else ->
@@ -227,12 +248,30 @@ class GeminiToolConverter
             }
         }
 
+        private fun isFileReferenceParameter(parameterName: String?): Boolean {
+            if (parameterName == null) return false
+            if (parameterName in KNOWN_FILE_REFERENCE_PARAM_NAMES) return true
+            return parameterName.endsWith("Uri", ignoreCase = true) ||
+                parameterName.endsWith("Uris", ignoreCase = true)
+        }
+
         companion object {
             private const val TOOL_ID_SEPARATOR = "_"
             private const val KEY_NAME = "name"
             private const val KEY_DESCRIPTION = "description"
             private const val KEY_PARAMETERS = "parameters"
             private const val KEY_TYPE = "type"
+            private const val KEY_FORMAT = "format"
+            private const val VALUE_FILE_REFERENCE = "file_reference"
+            private val KNOWN_FILE_REFERENCE_PARAM_NAMES =
+                setOf(
+                    "wallpaperUri",
+                    "imageUri",
+                    "attachmentUri",
+                    "ringtoneUri",
+                    "profilePictureUri",
+                    "audioUri",
+                )
             private const val VALUE_OBJECT = "object"
             private const val KEY_PROPERTIES = "properties"
             private const val KEY_REQUIRED = "required"

@@ -27,8 +27,11 @@ import com.example.chatapp.data.CallManager
 import com.example.chatapp.data.DisplayMessage
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
+import com.example.chatapp.data.WallpaperRepository
+import java.io.InputStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -85,7 +88,15 @@ class AppFunctionsTest {
 
     private val callManager = CallManager(recipientsRepository)
 
-    private val appFunctions = AppFunctions(messageRepository, recipientsRepository, callManager)
+    private val mockWallpaperRepository =
+        object : WallpaperRepository {
+            override fun getWallpaper(chatId: String): Flow<String?> = flowOf(null)
+
+            override suspend fun setWallpaper(chatId: String, inputStream: InputStream): Boolean = true
+        }
+
+    private val appFunctions =
+        AppFunctions(messageRepository, recipientsRepository, callManager, mockWallpaperRepository)
 
     @Test(expected = AppFunctionInvalidArgumentException::class)
     fun searchContacts_returnsEmptyList() {

@@ -28,6 +28,7 @@ import androidx.appfunctions.service.AppFunction
 import com.example.chatapp.data.CallManager
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
+import com.example.chatapp.data.WallpaperRepository
 import javax.inject.Inject
 
 /**
@@ -39,6 +40,7 @@ class AppFunctions
         private val messageRepository: MessageRepository,
         private val recipientsRepository: RecipientsRepository,
         private val callManager: CallManager,
+        private val wallpaperRepository: WallpaperRepository,
     ) {
         /**
          * Search for contacts or groups by name.
@@ -163,6 +165,32 @@ class AppFunctions
                     .apply { putExtra("nav_route", "call/${recipient.id}") },
                 PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
             )
+        }
+
+        /**
+         * Updates the wallpaper image for a specific chat conversation.
+         *
+         * @param appFunctionContext The context of this app function call.
+         * @param chatId The unique identifier for the recipient or chat group.
+         * @param wallpaperUri The URI of the image file to set as the chat wallpaper.
+         */
+        @AppFunction(isDescribedByKDoc = true)
+        suspend fun updateChatWallpaper(
+            appFunctionContext: AppFunctionContext,
+            chatId: String,
+            wallpaperUri: Uri,
+        ): Boolean {
+            val resolvedId =
+                recipientsRepository.getRecipientById(chatId)?.id
+                    ?: recipientsRepository.getGroupById(chatId)?.id
+                    ?: recipientsRepository.searchAny(chatId, maxCount = 1).firstOrNull()?.endpointValue
+                    ?: chatId
+            val inputStream =
+                appFunctionContext.context.contentResolver.openInputStream(wallpaperUri)
+                    ?: throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream")
+            return inputStream.use { stream ->
+                wallpaperRepository.setWallpaper(resolvedId, stream)
+            }
         }
 
         /** Represents a result from a contact or group search. */

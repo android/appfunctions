@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -77,7 +78,8 @@ internal fun InputBar(
 
     Surface(
         modifier = modifier,
-        tonalElevation = 3.dp,
+        color = Color.Transparent,
+        tonalElevation = 0.dp,
     ) {
         Column {
             if (selectedImages.isNotEmpty()) {
@@ -107,18 +109,25 @@ internal fun InputBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                IconButton(
+                FilledIconButton(
                     onClick = {
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                         )
                     },
+                    modifier = Modifier.size(56.dp),
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add Image",
                     )
                 }
+                Spacer(modifier = Modifier.width(4.dp))
                 TextField(
                     value = value,
                     onValueChange = onInputChanged,
