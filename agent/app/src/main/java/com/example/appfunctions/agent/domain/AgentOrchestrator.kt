@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.domain
 
+import android.app.PendingIntent
 import android.util.Log
 import androidx.appfunctions.AppFunctionException
 import androidx.appfunctions.metadata.AppFunctionMetadata
@@ -37,6 +38,8 @@ import com.example.appfunctions.agent.domain.chat.UpdateMessageUseCase
 import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -219,7 +222,7 @@ class AgentOrchestrator
 
             data class PendingIntentAction(
                 val pendingIntentId: String,
-                val pendingIntent: android.app.PendingIntent,
+                val pendingIntent: PendingIntent,
             ) : ExecuteToolCallsResult()
 
             object Error : ExecuteToolCallsResult()
@@ -363,7 +366,7 @@ class AgentOrchestrator
                     }
 
                     is ExecuteAppFunctionResult.PendingIntentAction -> {
-                        val pendingIntentId = java.util.UUID.randomUUID().toString()
+                        val pendingIntentId = UUID.randomUUID().toString()
                         return ExecuteToolCallsResult.PendingIntentAction(
                             pendingIntentId,
                             executionResult.pendingIntent,
@@ -372,15 +375,18 @@ class AgentOrchestrator
 
                     is ExecuteAppFunctionResult.Error -> {
                         val exception = executionResult.exception
-                        val appException = AppFunctionExceptionFormatter.getAppFunctionException(exception)
-                        if (appException != null) {
+                        if (exception is CancellationException) {
+                            throw exception
+                        }
+                        val appFunctionException = AppFunctionExceptionFormatter.getAppFunctionException(exception)
+                        if (appFunctionException != null) {
                             results.add(
                                 ToolOutput(
                                     functionId = toolCall.functionId,
                                     callId = toolCall.callId,
                                     result =
                                         AppFunctionExceptionFormatter.format(
-                                            appException,
+                                            appFunctionException,
                                             toolCall.functionId,
                                         ),
                                 ),

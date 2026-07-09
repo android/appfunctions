@@ -18,14 +18,6 @@ package com.example.chatapp.appfunctions
 
 import androidx.appfunctions.AppFunctionSerializable
 
-/**
- * Identifiers for AppFunctions exposed by ChatApp.
- */
-object AppFunctionsIds {
-    const val SEND_ID = "com.example.chatapp.appfunctions.BaseChatAppFunctionService#send"
-    const val SEARCH_CONTACTS_ID = "com.example.chatapp.appfunctions.BaseChatAppFunctionService#searchContacts"
-    const val MAKE_CALL_ID = "com.example.chatapp.appfunctions.BaseChatAppFunctionService#makeCall"
-}
 
 /**
  * Represents a result from a contact or group search.

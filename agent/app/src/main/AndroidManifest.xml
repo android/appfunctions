@@ -63,7 +63,7 @@
             android:name="com.example.appfunctions.agent.data.BuiltInAppFunctionService"
             android:permission="android.permission.BIND_APP_FUNCTION_SERVICE"
             android:exported="true"
-            tools:targetApi="36">
+            tools:targetApi="37">
             <property
                 android:name="android.app.appfunctions.schema"
                 android:value="app_functions_schema.xsd" />
@@ -79,7 +79,7 @@
             android:name="com.example.appfunctions.agent.data.FakeAppFunctionService"
             android:permission="android.permission.BIND_APP_FUNCTION_SERVICE"
             android:exported="true"
-            tools:targetApi="36">
+            tools:targetApi="37">
             <property
                 android:name="android.app.appfunctions.schema"
                 android:value="app_functions_schema.xsd" />

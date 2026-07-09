@@ -24,6 +24,7 @@ import androidx.appfunctions.ExecuteAppFunctionRequest
 import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.example.chatapp.appfunctions.ChatAppFunctionService
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
 import com.google.common.truth.Truth.assertThat
@@ -70,12 +71,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == AppFunctionsIds.SEND_ID }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    AppFunctionsIds.SEND_ID,
+                    ChatAppFunctionService.FUNCTION_ID_SEND,
                     AppFunctionData.Builder(
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
@@ -109,12 +110,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == AppFunctionsIds.SEND_ID }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    AppFunctionsIds.SEND_ID,
+                    ChatAppFunctionService.FUNCTION_ID_SEND,
                     AppFunctionData.Builder(
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
@@ -140,12 +141,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == AppFunctionsIds.SEARCH_CONTACTS_ID }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS }
 
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    AppFunctionsIds.SEARCH_CONTACTS_ID,
+                    ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS,
                     AppFunctionData.Builder(
                         getRecipientsFunctionMetadata.parameters,
                         getRecipientsFunctionMetadata.components,

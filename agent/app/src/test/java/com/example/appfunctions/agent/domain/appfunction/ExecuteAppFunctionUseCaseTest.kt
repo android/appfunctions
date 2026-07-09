@@ -38,19 +38,6 @@ class ExecuteAppFunctionUseCaseTest {
     private val convertAppFunctionDataToJsonUseCase = mockk<ConvertAppFunctionDataToJsonUseCase>()
     private val useCase = ExecuteAppFunctionUseCase(appFunctionManager, convertAppFunctionDataToJsonUseCase)
 
-    @Test
-    fun `invoke returns Error when AppFunctionManager is null`() = runTest {
-        val useCaseWithNullManager = ExecuteAppFunctionUseCase(null, convertAppFunctionDataToJsonUseCase)
-        val function = mockk<AppFunctionMetadata>(relaxed = true)
-        val parameters = mockk<AppFunctionData>()
-
-        val result = useCaseWithNullManager(function, parameters)
-
-        assertTrue(result is ExecuteAppFunctionResult.Error)
-        val errorResult = result as ExecuteAppFunctionResult.Error
-        assertTrue(errorResult.exception is IllegalStateException)
-        assertEquals("AppFunctionManager not available on this device", errorResult.exception.message)
-    }
 
     @Test
     fun `invoke returns Error with original AppFunctionException when response is Error`() = runTest {

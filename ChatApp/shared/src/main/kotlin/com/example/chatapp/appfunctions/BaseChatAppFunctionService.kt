@@ -31,6 +31,7 @@ import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 
 /**
  * Service entry point for chat-related AppFunctions such as searching contacts, sending messages, and making calls.
@@ -134,6 +135,8 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
                     recipientIds = listOf(endpointValue),
                     imageUris = imageUris?.map { it.toString() },
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 throw AppFunctionAppUnknownException("Failed to send message: ${e.message}")
             }
@@ -164,7 +167,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
         return PendingIntent.getActivity(
             this,
             0,
-            Intent(this, Class.forName("com.example.chatapp.MainActivity"))
+            Intent().setClassName(this, "com.example.chatapp.MainActivity")
                 .apply { putExtra("nav_route", "call/${recipient.id}") },
             PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
         )
