@@ -20,7 +20,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import androidx.appfunctions.AppFunctionException
 import androidx.appfunctions.metadata.AppFunctionArrayTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionDataTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
@@ -28,10 +27,6 @@ import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.core.content.FileProvider
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.UUID
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
@@ -53,6 +48,10 @@ import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -243,7 +242,7 @@ constructor(
 
         data class PendingIntentAction(
             val pendingIntentId: String,
-            val pendingIntent: PendingIntent,
+            val pendingIntent: PendingIntent
         ) : ExecuteToolCallsResult()
 
         object Error : ExecuteToolCallsResult()
@@ -379,14 +378,14 @@ constructor(
                         resolveRemoteFileReferencesRecursively(
                             context = context,
                             parametersMetadata = matchingTool.parameters,
-                            inputs = rawConvertedInputs,
+                            inputs = rawConvertedInputs
                         )
                     }
                 } catch (e: Exception) {
                     completeMessageWithError(
                         message.messageId,
                         message.threadId,
-                        "Failed to download remote file reference: ${e.message}",
+                        "Failed to download remote file reference: ${e.message}"
                     )
                     return ExecuteToolCallsResult.Error
                 }
@@ -450,16 +449,16 @@ constructor(
                                 functionId = toolCall.functionId,
                                 callId = toolCall.callId,
                                 result =
-                                    AppFunctionExceptionFormatter.format(
-                                        appFunctionException,
-                                        toolCall.functionId,
-                                    ),
-                            ),
+                                AppFunctionExceptionFormatter.format(
+                                    appFunctionException,
+                                    toolCall.functionId
+                                )
+                            )
                         )
                     } else {
                         throw IllegalStateException(
                             "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
-                            exception,
+                            exception
                         )
                     }
                 }
@@ -488,7 +487,7 @@ constructor(
     private fun resolveRemoteFileReferencesRecursively(
         context: Context,
         parametersMetadata: List<AppFunctionParameterMetadata>,
-        inputs: Map<String, Any>,
+        inputs: Map<String, Any>
     ): Map<String, Any> {
         val paramMap = parametersMetadata.associateBy { it.name }
         return inputs.mapValues { (key, value) ->
@@ -501,13 +500,18 @@ constructor(
         context: Context,
         dataType: AppFunctionDataTypeMetadata?,
         value: Any,
-        paramName: String?,
+        paramName: String?
     ): Any {
         return when (value) {
             is String -> {
                 val shouldResolve =
                     isFileReferenceParameter(paramName) || isUriMetadata(dataType)
-                if (shouldResolve && (value.startsWith("http://") || value.startsWith("https://"))) {
+                if (shouldResolve && (
+                        value.startsWith(
+                            "http://"
+                        ) || value.startsWith("https://")
+                        )
+                ) {
                     downloadRemoteFileToContentUri(context, value)
                 } else {
                     value
@@ -518,7 +522,16 @@ constructor(
                     val k = entry.key as String
                     val propType =
                         (dataType as? AppFunctionObjectTypeMetadata)?.properties?.get(k)
-                    k to (entry.value?.let { resolveValueRecursively(context, propType, it, k) } ?: "")
+                    k to (
+                        entry.value?.let {
+                            resolveValueRecursively(
+                                context,
+                                propType,
+                                it,
+                                k
+                            )
+                        } ?: ""
+                        )
                 }
             }
             is List<*> -> {
@@ -559,7 +572,7 @@ constructor(
                 FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.fileprovider",
-                    file,
+                    file
                 )
             return contentUri.toString()
         } finally {
@@ -570,7 +583,7 @@ constructor(
     private fun grantContentUriPermissionsRecursively(
         context: Context,
         targetPackageName: String,
-        value: Any?,
+        value: Any?
     ) {
         when (value) {
             is String -> {
@@ -580,13 +593,17 @@ constructor(
                         context.grantUriPermission(
                             targetPackageName,
                             uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
                     }
                 }
             }
-            is Map<*, *> -> value.values.forEach { grantContentUriPermissionsRecursively(context, targetPackageName, it) }
-            is List<*> -> value.forEach { grantContentUriPermissionsRecursively(context, targetPackageName, it) }
+            is Map<*, *> -> value.values.forEach {
+                grantContentUriPermissionsRecursively(context, targetPackageName, it)
+            }
+            is List<*> -> value.forEach {
+                grantContentUriPermissionsRecursively(context, targetPackageName, it)
+            }
         }
     }
 
@@ -612,7 +629,7 @@ constructor(
                 "attachmentUri",
                 "ringtoneUri",
                 "profilePictureUri",
-                "audioUri",
+                "audioUri"
             )
     }
 }

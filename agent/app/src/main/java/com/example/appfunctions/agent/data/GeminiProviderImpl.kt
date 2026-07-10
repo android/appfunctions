@@ -55,7 +55,7 @@ constructor(
         input: LlmInput,
         tools: List<AppFunctionMetadata>,
         apiKey: String,
-        modelName: String,
+        modelName: String
     ): LlmResponse {
         val sortedTools = tools.sortedByDescending { it.id.startsWith(it.packageName) }
         val uniqueTools = sortedTools.distinctBy { toolConverter.getToolName(it) }
