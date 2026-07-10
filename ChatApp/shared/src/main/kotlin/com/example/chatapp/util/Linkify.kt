@@ -24,7 +24,10 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 
-fun linkifyString(text: String, linkColor: Color? = null): AnnotatedString {
+fun linkifyString(
+    text: String,
+    linkColor: Color? = null,
+): AnnotatedString {
     val matcher = Patterns.WEB_URL.matcher(text)
     var lastIndex = 0
     return buildAnnotatedString {
@@ -35,22 +38,24 @@ fun linkifyString(text: String, linkColor: Color? = null): AnnotatedString {
 
             append(text.substring(lastIndex, start))
 
-            val uriStr = if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) {
-                url
-            } else {
-                "https://$url"
-            }
-            
-            val linkStyle = SpanStyle(
-                color = linkColor ?: Color.Unspecified,
-                textDecoration = TextDecoration.Underline
-            )
+            val uriStr =
+                if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) {
+                    url
+                } else {
+                    "https://$url"
+                }
+
+            val linkStyle =
+                SpanStyle(
+                    color = linkColor ?: Color.Unspecified,
+                    textDecoration = TextDecoration.Underline,
+                )
 
             pushLink(
                 LinkAnnotation.Url(
                     url = uriStr,
-                    styles = TextLinkStyles(style = linkStyle)
-                )
+                    styles = TextLinkStyles(style = linkStyle),
+                ),
             )
             append(url)
             pop()

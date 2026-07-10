@@ -21,57 +21,65 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.withContext
 
 interface WallpaperRepository {
     fun getWallpaper(chatId: String): Flow<String?>
-    suspend fun setWallpaper(chatId: String, inputStream: InputStream): Boolean
+
+    suspend fun setWallpaper(
+        chatId: String,
+        inputStream: InputStream,
+    ): Boolean
 }
 
 @Singleton
-class WallpaperRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context,
-) : WallpaperRepository {
-    private val wallpapers = MutableStateFlow<Map<String, String>>(emptyMap())
+class WallpaperRepositoryImpl
+    @Inject
+    constructor(
+        @ApplicationContext private val context: Context,
+    ) : WallpaperRepository {
+        private val wallpapers = MutableStateFlow<Map<String, String>>(emptyMap())
 
-    override fun getWallpaper(chatId: String): Flow<String?> {
-        return wallpapers.map { map ->
-            map[chatId] ?: run {
-                val dir = File(context.filesDir, "wallpapers")
-                dir.listFiles { f -> f.name.startsWith("wallpaper_${chatId}_") }
-                    ?.maxByOrNull { it.lastModified() }
-                    ?.absolutePath
-            }
+        override fun getWallpaper(chatId: String): Flow<String?> {
+            return wallpapers.map { map ->
+                map[chatId] ?: run {
+                    val dir = File(context.filesDir, "wallpapers")
+                    dir.listFiles { f -> f.name.startsWith("wallpaper_${chatId}_") }
+                        ?.maxByOrNull { it.lastModified() }
+                        ?.absolutePath
+                }
+            }.flowOn(Dispatchers.IO)
         }
-    }
 
-    override suspend fun setWallpaper(
-        chatId: String,
-        inputStream: InputStream,
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val dir = File(context.filesDir, "wallpapers").apply { mkdirs() }
-            dir.listFiles { f -> f.name.startsWith("wallpaper_${chatId}_") }?.forEach { it.delete() }
-            val file = File(dir, "wallpaper_${chatId}_${System.currentTimeMillis()}.jpg")
-            file.outputStream().use { output ->
-                inputStream.copyTo(output)
+        override suspend fun setWallpaper(
+            chatId: String,
+            inputStream: InputStream,
+        ): Boolean =
+            withContext(Dispatchers.IO) {
+                try {
+                    val dir = File(context.filesDir, "wallpapers").apply { mkdirs() }
+                    dir.listFiles { f -> f.name.startsWith("wallpaper_${chatId}_") }?.forEach { it.delete() }
+                    val file = File(dir, "wallpaper_${chatId}_${System.currentTimeMillis()}.jpg")
+                    file.outputStream().use { output ->
+                        inputStream.copyTo(output)
+                    }
+                    wallpapers.update { current -> current + (chatId to file.absolutePath) }
+                    true
+                } catch (e: Exception) {
+                    false
+                }
             }
-            wallpapers.update { current -> current + (chatId to file.absolutePath) }
-            true
-        } catch (e: Exception) {
-            false
-        }
     }
-}
 
 @Module
 @InstallIn(SingletonComponent::class)

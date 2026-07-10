@@ -19,20 +19,20 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionAppUnknownException
 import androidx.appfunctions.AppFunctionElementNotFoundException
 import androidx.appfunctions.AppFunctionInvalidArgumentException
 import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
 import androidx.appfunctions.AppFunctionStringValueConstraint
-import androidx.appfunctions.AppFunction
 import com.example.chatapp.data.CallManager
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
 import com.example.chatapp.data.WallpaperRepository
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import javax.inject.Inject
 
 /**
  * Service entry point for chat-related AppFunctions such as searching contacts, sending messages, and making calls.
@@ -45,8 +45,11 @@ import kotlinx.coroutines.CancellationException
 )
 abstract class BaseChatAppFunctionService : AppFunctionService() {
     @Inject lateinit var messageRepository: MessageRepository
+
     @Inject lateinit var recipientsRepository: RecipientsRepository
+
     @Inject lateinit var callManager: CallManager
+
     @Inject lateinit var wallpaperRepository: WallpaperRepository
 
     /**
@@ -155,9 +158,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @throws AppFunctionElementNotFoundException If no recipient exists for endpointValue. If thrown, call "searchContacts" to find the correct ID.
      */
     @AppFunction(isDescribedByKDoc = true)
-    suspend fun makeCall(
-        endpointValue: String,
-    ): PendingIntent {
+    suspend fun makeCall(endpointValue: String): PendingIntent {
         val recipient =
             recipientsRepository.getRecipientById(endpointValue)
                 ?: throw AppFunctionElementNotFoundException(
@@ -192,8 +193,11 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
                 ?: recipientsRepository.searchAny(chatId, maxCount = 1).firstOrNull()?.endpointValue
                 ?: chatId
         val inputStream =
-            contentResolver.openInputStream(wallpaperUri)
-                ?: throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream")
+            try {
+                contentResolver.openInputStream(wallpaperUri)
+            } catch (e: Exception) {
+                throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream: ${e.message}")
+            } ?: throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream")
         return inputStream.use { stream ->
             wallpaperRepository.setWallpaper(resolvedId, stream)
         }

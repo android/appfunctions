@@ -546,7 +546,11 @@ constructor(
 
     private fun downloadRemoteFileToContentUri(context: Context, urlString: String): String {
         val url = URL(urlString)
-        val connection = url.openConnection() as HttpURLConnection
+        val connection =
+            (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 15000
+            }
         try {
             connection.connect()
             val contentType = connection.contentType ?: ""
