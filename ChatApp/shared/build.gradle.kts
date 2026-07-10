@@ -47,7 +47,6 @@ dependencies {
 
     // App functions
     implementation(libs.androidx.appfunctions)
-    implementation(libs.androidx.appfunctions.service)
     ksp(libs.androidx.appfunctions.compiler)
 
 }

@@ -109,12 +109,7 @@ class ExecuteAppFunctionUseCase
                         }
                     }
                     is ExecuteAppFunctionResponse.Error -> {
-                        val exception = response.error
-                        ExecuteAppFunctionResult.Error(
-                            Exception(
-                                "Execution failed: ${exception.errorMessage} (${exception.javaClass.simpleName})",
-                            ),
-                        )
+                        ExecuteAppFunctionResult.Error(response.error)
                     }
                 }
             } catch (e: Exception) {

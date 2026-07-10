@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.domain.pendingintent
 
+import android.app.PendingIntent
 import com.example.appfunctions.agent.data.PendingIntentRepository
 import javax.inject.Inject
 
@@ -22,7 +23,7 @@ import javax.inject.Inject
 class ConsumePendingIntentUseCase
     @Inject
     constructor(private val pendingIntentRepository: PendingIntentRepository) {
-        operator fun invoke(pendingIntentId: String): android.app.PendingIntent? {
+        operator fun invoke(pendingIntentId: String): PendingIntent? {
             return pendingIntentRepository.consumePendingIntent(pendingIntentId)
         }
     }
