@@ -282,17 +282,18 @@ class AgentOrchestratorTest {
 
             coEvery {
                 llmProvider.generateResponse(null, any(), any(), any(), any())
-            } returns LlmResponse.Success(
-                "interaction_1",
-                listOf(
-                    LlmResponsePart.ToolCall(
-                        packageName = "com.example.calendar",
-                        functionId = "create_event",
-                        arguments = emptyMap(),
-                        callId = "call_1",
-                    )
+            } returns
+                LlmResponse.Success(
+                    "interaction_1",
+                    listOf(
+                        LlmResponsePart.ToolCall(
+                            packageName = "com.example.calendar",
+                            functionId = "create_event",
+                            arguments = emptyMap(),
+                            callId = "call_1",
+                        ),
+                    ),
                 )
-            )
 
             val expectedErrorOutput =
                 "Tool execution failed for create_event: Error: AppFunctionPermissionRequiredException - Calendar permission required"
@@ -305,17 +306,18 @@ class AgentOrchestratorTest {
             coVerify {
                 llmProvider.generateResponse(
                     previousInteractionId = eq("interaction_1"),
-                    input = eq(
-                        LlmInput.ToolResponse(
-                            listOf(
-                                ToolOutput(
-                                    functionId = "create_event",
-                                    callId = "call_1",
-                                    result = expectedErrorOutput,
-                                )
-                            )
-                        )
-                    ),
+                    input =
+                        eq(
+                            LlmInput.ToolResponse(
+                                listOf(
+                                    ToolOutput(
+                                        functionId = "create_event",
+                                        callId = "call_1",
+                                        result = expectedErrorOutput,
+                                    ),
+                                ),
+                            ),
+                        ),
                     tools = listOf(tool1),
                     apiKey = "dummy_key",
                     modelName = any(),

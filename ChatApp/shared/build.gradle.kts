@@ -48,5 +48,4 @@ dependencies {
     // App functions
     implementation(libs.androidx.appfunctions)
     ksp(libs.androidx.appfunctions.compiler)
-
 }

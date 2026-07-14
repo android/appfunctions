@@ -24,7 +24,6 @@ import androidx.appfunctions.ExecuteAppFunctionRequest
 import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.chatapp.appfunctions.ChatAppFunctionService
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
 import com.google.common.truth.Truth.assertThat

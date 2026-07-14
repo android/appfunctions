@@ -16,4 +16,5 @@
 package com.example.chatapp
 
 import android.app.Application
+
 abstract class BaseChatApplication : Application()

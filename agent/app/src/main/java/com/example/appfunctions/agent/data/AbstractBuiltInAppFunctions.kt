@@ -22,7 +22,6 @@ import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.location.LocationManager
-import androidx.annotation.RequiresApi
 import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionService
@@ -35,29 +34,27 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 /** Built-in AppFunctions for location and geocoding services. */
-@RequiresApi(36)
 @AndroidEntryPoint
 @AppFunctionServiceEntryPoint(
     serviceName = "BuiltInAppFunctionService",
     appFunctionXmlFileName = "builtin_app_function_service",
 )
-abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
+abstract class AbstractBuiltInAppFunctions : AppFunctionService() {
     /**
-     * Geocode a physical address string into its latitude and longitude coordinates.
+     * Geocodes a physical address string into its latitude and longitude coordinates.
      *
      * @param address The physical address to geocode (e.g., "1600 Amphitheatre Pkwy, Mountain View,
      *   CA").
      * @return The latitude and longitude coordinates of the address, or null if geocoding fails.
      */
     @AppFunction(isDescribedByKDoc = true)
-    suspend fun geocodeAddress(
-        address: String,
-    ): LatLng? {
+    suspend fun geocodeAddress(address: String): LatLng? {
+        val context = this
         if (!Geocoder.isPresent()) {
             return null
         }
 
-        val geocoder = Geocoder(this)
+        val geocoder = Geocoder(context)
 
         return withContext(Dispatchers.IO) {
             try {
@@ -90,7 +87,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
     }
 
     /**
-     * Retrieve the current latitude and longitude coordinates of the device.
+     * Retrieves the current latitude and longitude coordinates of the device.
      *
      * @return The current location coordinates of the device, or null if location is unavailable or
      *   permission is denied.
@@ -99,25 +96,26 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
     @AppFunction(isDescribedByKDoc = true)
     suspend fun getCurrentLocation(): LatLng? =
         withContext(Dispatchers.Default) {
+            val context = this@AbstractBuiltInAppFunctions
+
             // Check permissions
             val hasFineLocation =
-                ContextCompat.checkSelfPermission(
-                    this@BaseBuiltInAppFunctionService,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                ) == PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                    PackageManager.PERMISSION_GRANTED
 
             val hasCoarseLocation =
                 ContextCompat.checkSelfPermission(
-                    this@BaseBuiltInAppFunctionService,
+                    context,
                     Manifest.permission.ACCESS_COARSE_LOCATION,
-                ) == PackageManager.PERMISSION_GRANTED
+                ) ==
+                    PackageManager.PERMISSION_GRANTED
 
             if (!hasFineLocation && !hasCoarseLocation) {
                 throw IllegalStateException("Location permission is not granted")
             }
 
             val locationManager =
-                this@BaseBuiltInAppFunctionService.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
             try {
                 // Try GPS Provider first

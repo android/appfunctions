@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.appfunctions.agent"
-        minSdk = 35
+        minSdk = 36
         targetSdk = 37
         versionCode = 1
         versionName = "0.0.0"

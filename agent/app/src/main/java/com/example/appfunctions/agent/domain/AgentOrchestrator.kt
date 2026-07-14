@@ -17,7 +17,6 @@ package com.example.appfunctions.agent.domain
 
 import android.app.PendingIntent
 import android.util.Log
-import androidx.appfunctions.AppFunctionException
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -38,7 +37,6 @@ import com.example.appfunctions.agent.domain.chat.UpdateMessageUseCase
 import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -50,6 +48,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
