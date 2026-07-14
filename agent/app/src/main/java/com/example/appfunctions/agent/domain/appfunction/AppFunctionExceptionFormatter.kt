@@ -22,7 +22,10 @@ object AppFunctionExceptionFormatter {
     /**
      * Formats the given [exception] including its class name and message.
      */
-    fun format(exception: AppFunctionException, functionId: String? = null): String {
+    fun format(
+        exception: AppFunctionException,
+        functionId: String? = null,
+    ): String {
         val className = exception.javaClass.simpleName
         val message = exception.errorMessage ?: exception.message ?: "No error message provided"
         val prefix = if (functionId != null) "Tool execution failed for $functionId: " else ""

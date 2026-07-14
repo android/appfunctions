@@ -37,9 +37,7 @@ abstract class BaseFakeAppFunctionService : AppFunctionService() {
      * @return The test response containing output data.
      */
     @AppFunction(isDescribedByKDoc = true)
-    suspend fun fakeFunction(
-        params: FakeParams,
-    ): FakeResponse {
+    suspend fun fakeFunction(params: FakeParams): FakeResponse {
         return FakeResponse("success")
     }
 

@@ -44,12 +44,14 @@ fun SpotlessExtension.spotlessConfiguration() {
         target("src/**/*.kt")
         targetExclude("**/build/**/*.kt")
         ktlint(libs.versions.ktlint.get())
+            .setEditorConfigPath("${rootProject.projectDir.parentFile}/.editorconfig")
         licenseHeaderFile(rootProject.file("spotless/copyright.kt"))
     }
     kotlinGradle {
         target("*.kts")
         targetExclude("**/build/**/*.kts")
         ktlint(libs.versions.ktlint.get())
+            .setEditorConfigPath("${rootProject.projectDir.parentFile}/.editorconfig")
         licenseHeaderFile(rootProject.file("spotless/copyright.kt"), "(^(?![\\\\/ ]\\\\*).*$)")
     }
 }

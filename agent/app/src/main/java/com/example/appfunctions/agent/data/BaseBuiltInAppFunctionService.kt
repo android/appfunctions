@@ -50,9 +50,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
      * @return The latitude and longitude coordinates of the address, or null if geocoding fails.
      */
     @AppFunction(isDescribedByKDoc = true)
-    suspend fun geocodeAddress(
-        address: String,
-    ): LatLng? {
+    suspend fun geocodeAddress(address: String): LatLng? {
         if (!Geocoder.isPresent()) {
             return null
         }

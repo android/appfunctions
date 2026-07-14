@@ -49,7 +49,7 @@ Follow these steps to explore and run the samples:
 We'd love to accept your patches and contributions!
 
 - **Contributor License Agreement (CLA)**: All contributors must sign the [Google CLA](https://cla.developers.google.com/).
-- **Code Style**: We use [Spotless](https://github.com/diffplug/spotless) to maintain consistent formatting. Run `./gradlew spotlessApply` before committing.
+- **Code Style**: We use [Spotless](https://github.com/diffplug/spotless) to maintain consistent formatting. Because this repository contains separate Gradle projects for each sample, run `./agent/gradlew -p agent spotlessApply && ./ChatApp/gradlew -p ChatApp spotlessApply` from the repository root (or `./gradlew spotlessApply` inside a specific sample directory) before committing.
 - **Testing**: Ensure all new functionality is covered by unit or instrumentation tests.
 - **Reviews**: All submissions are reviewed via GitHub Pull Requests.
 
