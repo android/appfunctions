@@ -73,7 +73,7 @@ jobs:
           emulator-options: -no-window -gpu libswiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: agent
-          script: ./gradlew connectedAndroidTest -PGEMINI_API_KEY=dummy
+          script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest -PGEMINI_API_KEY=dummy
 
   chatapp-build:
     name: "ChatApp build & test"
@@ -134,4 +134,4 @@ jobs:
           emulator-options: -no-window -gpu libswiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: ChatApp
-          script: ./gradlew connectedAndroidTest
+          script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest
