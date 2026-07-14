@@ -541,7 +541,7 @@ class AgentOrchestrator
                 is List<*> -> {
                     val itemType = (dataType as? AppFunctionArrayTypeMetadata)?.itemType
                     value.mapNotNull { item ->
-                        item?.let { resolveValueRecursively(context, itemType, it, paramName) }
+                        if (item != null) resolveValueRecursively(context, itemType, item, paramName) else null
                     }
                 }
                 else -> value
