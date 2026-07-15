@@ -26,15 +26,15 @@ import kotlinx.serialization.json.Json
 @Entity(
     tableName = "messages",
     foreignKeys =
-    [
-        ForeignKey(
-            entity = ThreadEntity::class,
-            parentColumns = ["threadId"],
-            childColumns = ["threadId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index("threadId")]
+        [
+            ForeignKey(
+                entity = ThreadEntity::class,
+                parentColumns = ["threadId"],
+                childColumns = ["threadId"],
+                onDelete = ForeignKey.CASCADE,
+            ),
+        ],
+    indices = [Index("threadId")],
 )
 data class MessageEntity(
     @PrimaryKey val messageId: String,
@@ -49,24 +49,24 @@ data class MessageEntity(
      */
     val pendingIntentId: String? = null,
     val targetPackageName: String? = null,
-    val attachments: List<MessageAttachment> = emptyList()
+    val attachments: List<MessageAttachment> = emptyList(),
 )
 
 @Serializable
 data class MessageAttachment(
     val uri: String,
-    val mimeType: String
+    val mimeType: String,
 )
 
 class MessageAttachmentConverter {
-    private val dbJson = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val dbJson =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     @androidx.room.TypeConverter
-    fun fromAttachments(attachments: List<MessageAttachment>): String =
-        dbJson.encodeToString(attachments)
+    fun fromAttachments(attachments: List<MessageAttachment>): String = dbJson.encodeToString(attachments)
 
     @androidx.room.TypeConverter
     fun toAttachments(jsonString: String?): List<MessageAttachment> =
@@ -80,11 +80,11 @@ class MessageAttachmentConverter {
 
 enum class MessageRole {
     USER,
-    ASSISTANT
+    ASSISTANT,
 }
 
 enum class MessageProcessingStatus {
     PENDING_AGENT_RESPONSE,
     PROCESSED,
-    FAILED
+    FAILED,
 }

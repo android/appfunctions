@@ -20,7 +20,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageAttachmentConverterTest {
-
     private val converter = MessageAttachmentConverter()
 
     @Test
@@ -29,12 +28,12 @@ class MessageAttachmentConverterTest {
             listOf(
                 MessageAttachment(
                     uri = "content://com.example.appfunctions.agent.fileprovider/cache/test.jpg",
-                    mimeType = "image/jpeg"
+                    mimeType = "image/jpeg",
                 ),
                 MessageAttachment(
                     uri = "content://com.example.appfunctions.agent.fileprovider/cache/test.png",
-                    mimeType = "image/png"
-                )
+                    mimeType = "image/png",
+                ),
             )
 
         val json = converter.fromAttachments(attachments)

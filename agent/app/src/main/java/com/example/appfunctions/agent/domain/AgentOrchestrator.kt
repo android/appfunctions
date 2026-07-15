@@ -20,7 +20,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import androidx.appfunctions.AppFunctionException
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -43,9 +42,6 @@ import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.UUID
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -58,412 +54,419 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /** Orchestrates the interaction between the LLM, AppFunctions, and the chat repository. */
 @Singleton
 class AgentOrchestrator
-@Inject
-constructor(
-    @ApplicationContext private val context: Context,
-    private val manageThreadsUseCase: ManageThreadsUseCase,
-    private val observePendingMessagesUseCase: ObservePendingMessagesUseCase,
-    private val sendMessageUseCase: SendMessageUseCase,
-    private val updateMessageUseCase: UpdateMessageUseCase,
-    private val updateThreadUseCase: UpdateThreadUseCase,
-    private val llmProviderFactory: LlmProviderFactory,
-    private val settingsRepository: SettingsRepository,
-    private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
-    private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
-    private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
-    private val savePendingIntentUseCase: SavePendingIntentUseCase
-) {
-    private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
+    @Inject
+    constructor(
+        @ApplicationContext private val context: Context,
+        private val manageThreadsUseCase: ManageThreadsUseCase,
+        private val observePendingMessagesUseCase: ObservePendingMessagesUseCase,
+        private val sendMessageUseCase: SendMessageUseCase,
+        private val updateMessageUseCase: UpdateMessageUseCase,
+        private val updateThreadUseCase: UpdateThreadUseCase,
+        private val llmProviderFactory: LlmProviderFactory,
+        private val settingsRepository: SettingsRepository,
+        private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
+        private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
+        private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
+        private val savePendingIntentUseCase: SavePendingIntentUseCase,
+    ) {
+        private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
 
-    /** The current status of the agent. */
-    val status: StateFlow<AgentStatus> = _status.asStateFlow()
+        /** The current status of the agent. */
+        val status: StateFlow<AgentStatus> = _status.asStateFlow()
 
-    /**
-     * Observes messages for a specific thread and processes any pending agent responses. This
-     * method suspends and collects messages until cancelled.
-     */
-    suspend fun observeAndProcessMessages(threadId: String) = coroutineScope {
-        val threadStateFlow =
-            manageThreadsUseCase.getThread(
-                threadId
-            ).stateIn(this, SharingStarted.Eagerly, null)
+        /**
+         * Observes messages for a specific thread and processes any pending agent responses. This
+         * method suspends and collects messages until cancelled.
+         */
+        suspend fun observeAndProcessMessages(threadId: String) =
+            coroutineScope {
+                val threadStateFlow =
+                    manageThreadsUseCase.getThread(
+                        threadId,
+                    ).stateIn(this, SharingStarted.Eagerly, null)
 
-        observePendingMessagesUseCase(threadId).collect { message ->
-            if (message != null) {
-                val thread = threadStateFlow.filterNotNull().first()
-                processMessage(message, thread)
+                observePendingMessagesUseCase(threadId).collect { message ->
+                    if (message != null) {
+                        val thread = threadStateFlow.filterNotNull().first()
+                        processMessage(message, thread)
+                    }
+                }
             }
-        }
-    }
 
-    private suspend fun processMessage(message: MessageEntity, thread: ThreadEntity) {
-        _status.value = AgentStatus.Thinking
+        private suspend fun processMessage(
+            message: MessageEntity,
+            thread: ThreadEntity,
+        ) {
+            _status.value = AgentStatus.Thinking
 
-        try {
-            val provider = thread.llmModel.providerName
-            val apiKey = getApiKey(provider)
-            if (apiKey == null) {
+            try {
+                val provider = thread.llmModel.providerName
+                val apiKey = getApiKey(provider)
+                if (apiKey == null) {
+                    completeMessageWithError(
+                        message.messageId,
+                        message.threadId,
+                        "API key is missing for ${provider.name}",
+                    )
+                    _status.value = AgentStatus.Idle
+                    return
+                }
+
+                val disconnectedApps = settingsRepository.disconnectedApps.first()
+                val allTools = getAppFunctionsUseCase().first().values.flatten()
+
+                val targetPackageName = message.targetPackageName
+                val queryText = message.textContent
+
+                val tools = filterTools(allTools, disconnectedApps, targetPackageName)
+
+                runInteractionLoop(
+                    message = message,
+                    thread = thread,
+                    apiKey = apiKey,
+                    tools = tools,
+                    initialInput = queryText,
+                )
+
+                _status.value = AgentStatus.Idle
+            } catch (e: Exception) {
+                Log.e("AgentOrchestrator", "Error processing message", e)
                 completeMessageWithError(
                     message.messageId,
                     message.threadId,
-                    "API key is missing for ${provider.name}"
+                    e.message ?: "Unknown error occurred",
                 )
                 _status.value = AgentStatus.Idle
-                return
             }
-
-            val disconnectedApps = settingsRepository.disconnectedApps.first()
-            val allTools = getAppFunctionsUseCase().first().values.flatten()
-
-            val targetPackageName = message.targetPackageName
-            val queryText = message.textContent
-
-            val tools = filterTools(allTools, disconnectedApps, targetPackageName)
-
-            runInteractionLoop(
-                message = message,
-                thread = thread,
-                apiKey = apiKey,
-                tools = tools,
-                initialInput = queryText
-            )
-
-            _status.value = AgentStatus.Idle
-        } catch (e: Exception) {
-            Log.e("AgentOrchestrator", "Error processing message", e)
-            completeMessageWithError(
-                message.messageId,
-                message.threadId,
-                e.message ?: "Unknown error occurred"
-            )
-            _status.value = AgentStatus.Idle
         }
-    }
 
-    private fun filterTools(
-        allTools: List<AppFunctionMetadata>,
-        disconnectedApps: Set<String>,
-        targetPackageName: String?
-    ): List<AppFunctionMetadata> {
-        return allTools.filter { metadata ->
-            metadata.isEnabled &&
-                metadata.packageName !in disconnectedApps &&
-                (targetPackageName == null || metadata.packageName == targetPackageName)
+        private fun filterTools(
+            allTools: List<AppFunctionMetadata>,
+            disconnectedApps: Set<String>,
+            targetPackageName: String?,
+        ): List<AppFunctionMetadata> {
+            return allTools.filter { metadata ->
+                metadata.isEnabled &&
+                    metadata.packageName !in disconnectedApps &&
+                    (targetPackageName == null || metadata.packageName == targetPackageName)
+            }
         }
-    }
 
-    private suspend fun runInteractionLoop(
-        message: MessageEntity,
-        thread: ThreadEntity,
-        apiKey: String,
-        tools: List<AppFunctionMetadata>,
-        initialInput: String
-    ) {
-        val provider = thread.llmModel.providerName
-        val modelName = thread.llmModel.modelName
-        val llmProvider = llmProviderFactory.getProvider(provider)
+        private suspend fun runInteractionLoop(
+            message: MessageEntity,
+            thread: ThreadEntity,
+            apiKey: String,
+            tools: List<AppFunctionMetadata>,
+            initialInput: String,
+        ) {
+            val provider = thread.llmModel.providerName
+            val modelName = thread.llmModel.modelName
+            val llmProvider = llmProviderFactory.getProvider(provider)
 
-        var previousInteractionId = thread.latestInteractionId
-        var currentToolOutputs = emptyList<ToolOutput>()
-        var continueLoop = true
-        var currentInput = initialInput
-        val capturedAttachments = mutableListOf<MessageAttachment>()
+            var previousInteractionId = thread.latestInteractionId
+            var currentToolOutputs = emptyList<ToolOutput>()
+            var continueLoop = true
+            var currentInput = initialInput
+            val capturedAttachments = mutableListOf<MessageAttachment>()
 
-        while (continueLoop) {
-            val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
+            while (continueLoop) {
+                val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
 
-            currentToolOutputs = emptyList()
-            val response =
-                llmProvider.generateResponse(
-                    previousInteractionId = previousInteractionId,
-                    input = llmInput,
-                    tools = tools,
-                    apiKey = apiKey,
-                    modelName = modelName
-                )
+                currentToolOutputs = emptyList()
+                val response =
+                    llmProvider.generateResponse(
+                        previousInteractionId = previousInteractionId,
+                        input = llmInput,
+                        tools = tools,
+                        apiKey = apiKey,
+                        modelName = modelName,
+                    )
 
-            when (
-                val handleResult =
-                    handleLlmResponse(response, message, tools, capturedAttachments)
-            ) {
-                is HandleResult.Continue -> {
-                    currentToolOutputs = handleResult.toolOutputs
-                    previousInteractionId = handleResult.interactionId
-                }
+                when (
+                    val handleResult =
+                        handleLlmResponse(response, message, tools, capturedAttachments)
+                ) {
+                    is HandleResult.Continue -> {
+                        currentToolOutputs = handleResult.toolOutputs
+                        previousInteractionId = handleResult.interactionId
+                    }
 
-                is HandleResult.Stop -> {
-                    continueLoop = false
+                    is HandleResult.Stop -> {
+                        continueLoop = false
+                    }
                 }
             }
         }
-    }
 
-    private suspend fun getApiKey(provider: LlmProviderName): String? {
-        return when (provider) {
-            LlmProviderName.GEMINI -> settingsRepository.geminiApiKey.first()
+        private suspend fun getApiKey(provider: LlmProviderName): String? {
+            return when (provider) {
+                LlmProviderName.GEMINI -> settingsRepository.geminiApiKey.first()
+            }
         }
-    }
 
-    private fun prepareLlmInput(
-        currentToolOutputs: List<ToolOutput>,
-        currentInput: String
-    ): LlmInput {
-        return if (currentToolOutputs.isNotEmpty()) {
-            LlmInput.ToolResponse(currentToolOutputs)
-        } else {
-            LlmInput.UserMessage(currentInput)
+        private fun prepareLlmInput(
+            currentToolOutputs: List<ToolOutput>,
+            currentInput: String,
+        ): LlmInput {
+            return if (currentToolOutputs.isNotEmpty()) {
+                LlmInput.ToolResponse(currentToolOutputs)
+            } else {
+                LlmInput.UserMessage(currentInput)
+            }
         }
-    }
 
-    private sealed class HandleResult {
-        data class Continue(val toolOutputs: List<ToolOutput>, val interactionId: String) :
-            HandleResult()
+        private sealed class HandleResult {
+            data class Continue(val toolOutputs: List<ToolOutput>, val interactionId: String) :
+                HandleResult()
 
-        object Stop : HandleResult()
-    }
+            object Stop : HandleResult()
+        }
 
-    private sealed class ExecuteToolCallsResult {
-        data class Success(val toolOutputs: List<ToolOutput>) : ExecuteToolCallsResult()
+        private sealed class ExecuteToolCallsResult {
+            data class Success(val toolOutputs: List<ToolOutput>) : ExecuteToolCallsResult()
 
-        data class PendingIntentAction(
-            val pendingIntentId: String,
-            val pendingIntent: PendingIntent,
-        ) : ExecuteToolCallsResult()
+            data class PendingIntentAction(
+                val pendingIntentId: String,
+                val pendingIntent: PendingIntent,
+            ) : ExecuteToolCallsResult()
 
-        object Error : ExecuteToolCallsResult()
-    }
+            object Error : ExecuteToolCallsResult()
+        }
 
-    private suspend fun handleLlmResponse(
-        response: LlmResponse,
-        message: MessageEntity,
-        tools: List<AppFunctionMetadata>,
-        capturedAttachments: MutableList<MessageAttachment>
-    ): HandleResult {
-        return when (response) {
-            is LlmResponse.Success -> {
-                updateThreadUseCase(
-                    message.threadId,
-                    UpdateThreadParams(interactionId = response.interactionId)
-                )
-                updateMessageUseCase(
-                    message.messageId,
-                    UpdateMessageParams(status = MessageProcessingStatus.PROCESSED)
-                )
+        private suspend fun handleLlmResponse(
+            response: LlmResponse,
+            message: MessageEntity,
+            tools: List<AppFunctionMetadata>,
+            capturedAttachments: MutableList<MessageAttachment>,
+        ): HandleResult {
+            return when (response) {
+                is LlmResponse.Success -> {
+                    updateThreadUseCase(
+                        message.threadId,
+                        UpdateThreadParams(interactionId = response.interactionId),
+                    )
+                    updateMessageUseCase(
+                        message.messageId,
+                        UpdateMessageParams(status = MessageProcessingStatus.PROCESSED),
+                    )
 
-                val toolCalls = response.parts.filterIsInstance<LlmResponsePart.ToolCall>()
-                val textParts = response.parts.filterIsInstance<LlmResponsePart.Text>()
+                    val toolCalls = response.parts.filterIsInstance<LlmResponsePart.ToolCall>()
+                    val textParts = response.parts.filterIsInstance<LlmResponsePart.Text>()
 
-                val textContent = textParts.joinToString("\n") { it.text }
+                    val textContent = textParts.joinToString("\n") { it.text }
 
-                if (toolCalls.isNotEmpty()) {
-                    when (val toolResult = executeToolCalls(toolCalls, tools, message)) {
-                        is ExecuteToolCallsResult.Success -> {
-                            for (output in toolResult.toolOutputs) {
-                                runCatching {
-                                    val json = JSONObject(output.result)
-                                    val uri = json.optString("imageUri")
-                                    if (uri.isNotBlank()) {
-                                        val mimeType =
-                                            json.optString("mimeType")
-                                                .takeIf { it.isNotBlank() }
-                                                ?: "image/png"
-                                        capturedAttachments.add(
-                                            MessageAttachment(uri = uri, mimeType = mimeType)
-                                        )
+                    if (toolCalls.isNotEmpty()) {
+                        when (val toolResult = executeToolCalls(toolCalls, tools, message)) {
+                            is ExecuteToolCallsResult.Success -> {
+                                for (output in toolResult.toolOutputs) {
+                                    runCatching {
+                                        val json = JSONObject(output.result)
+                                        val uri = json.optString("imageUri")
+                                        if (uri.isNotBlank()) {
+                                            val mimeType =
+                                                json.optString("mimeType")
+                                                    .takeIf { it.isNotBlank() }
+                                                    ?: "image/png"
+                                            capturedAttachments.add(
+                                                MessageAttachment(uri = uri, mimeType = mimeType),
+                                            )
+                                        }
                                     }
                                 }
+                                if (textContent.isNotEmpty()) {
+                                    sendMessageUseCase(
+                                        threadId = message.threadId,
+                                        role = MessageRole.ASSISTANT,
+                                        textContent = textContent,
+                                        processingStatus = MessageProcessingStatus.PROCESSED,
+                                    )
+                                }
+                                HandleResult.Continue(
+                                    toolResult.toolOutputs,
+                                    response.interactionId,
+                                )
                             }
-                            if (textContent.isNotEmpty()) {
+
+                            is ExecuteToolCallsResult.PendingIntentAction -> {
+                                savePendingIntentUseCase(
+                                    toolResult.pendingIntentId,
+                                    toolResult.pendingIntent,
+                                )
                                 sendMessageUseCase(
                                     threadId = message.threadId,
                                     role = MessageRole.ASSISTANT,
                                     textContent = textContent,
-                                    processingStatus = MessageProcessingStatus.PROCESSED
+                                    processingStatus = MessageProcessingStatus.PROCESSED,
+                                    pendingIntentId = toolResult.pendingIntentId,
                                 )
+                                HandleResult.Stop
                             }
-                            HandleResult.Continue(
-                                toolResult.toolOutputs,
-                                response.interactionId
-                            )
-                        }
 
-                        is ExecuteToolCallsResult.PendingIntentAction -> {
-                            savePendingIntentUseCase(
-                                toolResult.pendingIntentId,
-                                toolResult.pendingIntent
-                            )
+                            is ExecuteToolCallsResult.Error -> {
+                                HandleResult.Stop
+                            }
+                        }
+                    } else {
+                        if (textContent.isNotEmpty() || capturedAttachments.isNotEmpty()) {
                             sendMessageUseCase(
                                 threadId = message.threadId,
                                 role = MessageRole.ASSISTANT,
                                 textContent = textContent,
                                 processingStatus = MessageProcessingStatus.PROCESSED,
-                                pendingIntentId = toolResult.pendingIntentId
+                                attachments = capturedAttachments,
                             )
-                            HandleResult.Stop
                         }
+                        HandleResult.Stop
+                    }
+                }
 
-                        is ExecuteToolCallsResult.Error -> {
-                            HandleResult.Stop
-                        }
-                    }
-                } else {
-                    if (textContent.isNotEmpty() || capturedAttachments.isNotEmpty()) {
-                        sendMessageUseCase(
-                            threadId = message.threadId,
-                            role = MessageRole.ASSISTANT,
-                            textContent = textContent,
-                            processingStatus = MessageProcessingStatus.PROCESSED,
-                            attachments = capturedAttachments
-                        )
-                    }
+                is LlmResponse.Error -> {
+                    Log.e("AgentOrchestrator", "LLM Error: ${response.errorMessage}")
+                    completeMessageWithError(
+                        message.messageId,
+                        message.threadId,
+                        response.errorMessage,
+                    )
+                    _status.value = AgentStatus.Idle
                     HandleResult.Stop
                 }
             }
-
-            is LlmResponse.Error -> {
-                Log.e("AgentOrchestrator", "LLM Error: ${response.errorMessage}")
-                completeMessageWithError(
-                    message.messageId,
-                    message.threadId,
-                    response.errorMessage
-                )
-                _status.value = AgentStatus.Idle
-                HandleResult.Stop
-            }
         }
-    }
 
-    private suspend fun executeToolCalls(
-        toolCalls: List<LlmResponsePart.ToolCall>,
-        tools: List<AppFunctionMetadata>,
-        message: MessageEntity
-    ): ExecuteToolCallsResult {
-        val results = mutableListOf<ToolOutput>()
-        for (toolCall in toolCalls) {
-            _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
+        private suspend fun executeToolCalls(
+            toolCalls: List<LlmResponsePart.ToolCall>,
+            tools: List<AppFunctionMetadata>,
+            message: MessageEntity,
+        ): ExecuteToolCallsResult {
+            val results = mutableListOf<ToolOutput>()
+            for (toolCall in toolCalls) {
+                _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
 
-            val matchingTool =
-                tools.find {
-                    it.packageName == toolCall.packageName && it.id == toolCall.functionId
+                val matchingTool =
+                    tools.find {
+                        it.packageName == toolCall.packageName && it.id == toolCall.functionId
+                    }
+
+                if (matchingTool == null) {
+                    completeMessageWithError(
+                        message.messageId,
+                        message.threadId,
+                        "Tool not found: ${toolCall.functionId}",
+                    )
+                    return ExecuteToolCallsResult.Error
                 }
 
-            if (matchingTool == null) {
-                completeMessageWithError(
-                    message.messageId,
-                    message.threadId,
-                    "Tool not found: ${toolCall.functionId}"
-                )
-                return ExecuteToolCallsResult.Error
-            }
+                val convertedInputs = toolCall.arguments.filterValues { it != null } as Map<String, Any>
 
-            val convertedInputs = toolCall.arguments.filterValues { it != null } as Map<String, Any>
-
-            for (value in convertedInputs.values) {
-                if (value is String && value.startsWith("content://")) {
-                    runCatching {
-                        val uri = Uri.parse(value)
-                        context.grantUriPermission(
-                            toolCall.packageName,
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
+                for (value in convertedInputs.values) {
+                    if (value is String && value.startsWith("content://")) {
+                        runCatching {
+                            val uri = Uri.parse(value)
+                            context.grantUriPermission(
+                                toolCall.packageName,
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                            )
+                        }
                     }
                 }
-            }
 
-            val appFunctionDataResult =
-                withContext(Dispatchers.Default) {
-                    convertInputToAppFunctionDataUseCase(
-                        parameters = matchingTool.parameters,
-                        components = matchingTool.components,
-                        inputs = convertedInputs
-                    )
-                }
-
-            if (appFunctionDataResult.isFailure) {
-                completeMessageWithError(
-                    message.messageId,
-                    message.threadId,
-                    "Failed to convert arguments for ${toolCall.functionId}\n ${appFunctionDataResult.exceptionOrNull()}"
-                )
-                return ExecuteToolCallsResult.Error
-            }
-
-            val executionResult =
-                executeAppFunctionUseCase(
-                    function = matchingTool,
-                    parameters = appFunctionDataResult.getOrThrow(),
-                    threadId = message.threadId
-                )
-
-            when (executionResult) {
-                is ExecuteAppFunctionResult.Data -> {
-                    results.add(
-                        ToolOutput(
-                            functionId = toolCall.functionId,
-                            callId = toolCall.callId,
-                            result = executionResult.formattedJson
+                val appFunctionDataResult =
+                    withContext(Dispatchers.Default) {
+                        convertInputToAppFunctionDataUseCase(
+                            parameters = matchingTool.parameters,
+                            components = matchingTool.components,
+                            inputs = convertedInputs,
                         )
-                    )
-                }
-
-                is ExecuteAppFunctionResult.PendingIntentAction -> {
-                    val pendingIntentId = java.util.UUID.randomUUID().toString()
-                    return ExecuteToolCallsResult.PendingIntentAction(
-                        pendingIntentId,
-                        executionResult.pendingIntent
-                    )
-                }
-
-                is ExecuteAppFunctionResult.Error -> {
-                    val exception = executionResult.exception
-                    if (exception is CancellationException) {
-                        throw exception
                     }
-                    val appFunctionException =
-                        AppFunctionExceptionFormatter.getAppFunctionException(exception)
-                    if (appFunctionException != null) {
+
+                if (appFunctionDataResult.isFailure) {
+                    completeMessageWithError(
+                        message.messageId,
+                        message.threadId,
+                        "Failed to convert arguments for ${toolCall.functionId}\n ${appFunctionDataResult.exceptionOrNull()}",
+                    )
+                    return ExecuteToolCallsResult.Error
+                }
+
+                val executionResult =
+                    executeAppFunctionUseCase(
+                        function = matchingTool,
+                        parameters = appFunctionDataResult.getOrThrow(),
+                        threadId = message.threadId,
+                    )
+
+                when (executionResult) {
+                    is ExecuteAppFunctionResult.Data -> {
                         results.add(
                             ToolOutput(
                                 functionId = toolCall.functionId,
                                 callId = toolCall.callId,
-                                result =
-                                    AppFunctionExceptionFormatter.format(
-                                        appFunctionException,
-                                        toolCall.functionId,
-                                    ),
+                                result = executionResult.formattedJson,
                             ),
                         )
-                    } else {
-                        throw IllegalStateException(
-                            "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
-                            exception,
+                    }
+
+                    is ExecuteAppFunctionResult.PendingIntentAction -> {
+                        val pendingIntentId = java.util.UUID.randomUUID().toString()
+                        return ExecuteToolCallsResult.PendingIntentAction(
+                            pendingIntentId,
+                            executionResult.pendingIntent,
                         )
+                    }
+
+                    is ExecuteAppFunctionResult.Error -> {
+                        val exception = executionResult.exception
+                        if (exception is CancellationException) {
+                            throw exception
+                        }
+                        val appFunctionException =
+                            AppFunctionExceptionFormatter.getAppFunctionException(exception)
+                        if (appFunctionException != null) {
+                            results.add(
+                                ToolOutput(
+                                    functionId = toolCall.functionId,
+                                    callId = toolCall.callId,
+                                    result =
+                                        AppFunctionExceptionFormatter.format(
+                                            appFunctionException,
+                                            toolCall.functionId,
+                                        ),
+                                ),
+                            )
+                        } else {
+                            throw IllegalStateException(
+                                "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
+                                exception,
+                            )
+                        }
                     }
                 }
             }
+            return ExecuteToolCallsResult.Success(results)
         }
-        return ExecuteToolCallsResult.Success(results)
-    }
 
-    private suspend fun completeMessageWithError(
-        messageId: String,
-        threadId: String,
-        reason: String
-    ) {
-        updateMessageUseCase(
-            messageId,
-            UpdateMessageParams(status = MessageProcessingStatus.PROCESSED)
-        )
-        sendMessageUseCase(
-            threadId = threadId,
-            role = MessageRole.ASSISTANT,
-            textContent = reason,
-            processingStatus = MessageProcessingStatus.FAILED
-        )
+        private suspend fun completeMessageWithError(
+            messageId: String,
+            threadId: String,
+            reason: String,
+        ) {
+            updateMessageUseCase(
+                messageId,
+                UpdateMessageParams(status = MessageProcessingStatus.PROCESSED),
+            )
+            sendMessageUseCase(
+                threadId = threadId,
+                role = MessageRole.ASSISTANT,
+                textContent = reason,
+                processingStatus = MessageProcessingStatus.FAILED,
+            )
+        }
     }
-}

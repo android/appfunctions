@@ -25,7 +25,6 @@ import android.location.LocationManager
 import android.util.Base64
 import androidx.annotation.RequiresApi
 import androidx.appfunctions.AppFunction
-import androidx.appfunctions.AppFunctionContext
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
@@ -35,17 +34,17 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.appfunctions.agent.BuildConfig
 import com.example.appfunctions.agent.di.settingsDataStore
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 
 /** Built-in AppFunctions for location and geocoding services. */
 @RequiresApi(36)
@@ -63,9 +62,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
      * @return The latitude and longitude coordinates of the address, or null if geocoding fails.
      */
     @AppFunction(isDescribedByKDoc = true)
-    suspend fun geocodeAddress(
-        address: String,
-    ): LatLng? {
+    suspend fun geocodeAddress(address: String): LatLng? {
         if (!Geocoder.isPresent()) {
             return null
         }
@@ -83,7 +80,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
                                 val location = addresses.firstOrNull()
                                 if (location != null) {
                                     continuation.resume(
-                                        LatLng(location.latitude, location.longitude)
+                                        LatLng(location.latitude, location.longitude),
                                     )
                                 } else {
                                     continuation.resume(null)
@@ -93,7 +90,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
                             override fun onError(errorMessage: String?) {
                                 continuation.resume(null)
                             }
-                        }
+                        },
                     )
                 }
             } catch (e: Exception) {
@@ -165,7 +162,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
         /** The latitude coordinate. */
         val latitude: Double,
         /** The longitude coordinate. */
-        val longitude: Double
+        val longitude: Double,
     )
 
     /**
@@ -178,148 +175,149 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
     @AppFunction(isDescribedByKDoc = true)
     suspend fun generateImage(
         prompt: String,
-        aspectRatio: String? = null
-    ): GeneratedImageResult = withContext(Dispatchers.IO) {
-        val context = this@BaseBuiltInAppFunctionService
-        val apiKey =
-            context.settingsDataStore.data
-                .first()[stringPreferencesKey("gemini_api_key")]
-                ?.takeIf { it.isNotBlank() }
-                ?: BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() }
-        if (apiKey.isNullOrBlank()) {
-            throw IllegalStateException(
-                "Gemini API key is not configured. Please set gemini_api_key in settings."
-            )
-        }
+        aspectRatio: String? = null,
+    ): GeneratedImageResult =
+        withContext(Dispatchers.IO) {
+            val context = this@BaseBuiltInAppFunctionService
+            val apiKey =
+                context.settingsDataStore.data
+                    .first()[stringPreferencesKey("gemini_api_key")]
+                    ?.takeIf { it.isNotBlank() }
+                    ?: BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() }
+            if (apiKey.isNullOrBlank()) {
+                throw IllegalStateException(
+                    "Gemini API key is not configured. Please set gemini_api_key in settings.",
+                )
+            }
 
-        val requestJson =
-            JSONObject().apply {
-                put(
-                    "contents",
-                    JSONArray().apply {
-                        put(
-                            JSONObject().apply {
+            val requestJson =
+                JSONObject().apply {
+                    put(
+                        "contents",
+                        JSONArray().apply {
+                            put(
+                                JSONObject().apply {
+                                    put(
+                                        "parts",
+                                        JSONArray().apply {
+                                            put(JSONObject().apply { put("text", prompt) })
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                    put(
+                        "generationConfig",
+                        JSONObject().apply {
+                            put("responseModalities", JSONArray().apply { put("IMAGE") })
+                            if (!aspectRatio.isNullOrBlank()) {
                                 put(
-                                    "parts",
-                                    JSONArray().apply {
-                                        put(JSONObject().apply { put("text", prompt) })
-                                    }
+                                    "imageConfig",
+                                    JSONObject().apply {
+                                        put("aspectRatio", aspectRatio)
+                                    },
                                 )
                             }
-                        )
-                    }
-                )
-                put(
-                    "generationConfig",
-                    JSONObject().apply {
-                        put("responseModalities", JSONArray().apply { put("IMAGE") })
-                        if (!aspectRatio.isNullOrBlank()) {
-                            put(
-                                "imageConfig",
-                                JSONObject().apply {
-                                    put("aspectRatio", aspectRatio)
-                                }
-                            )
-                        }
-                    }
-                )
-            }
-
-        val endpointUrl =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=$apiKey"
-        val url = URL(endpointUrl)
-        val connection =
-            (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                setRequestProperty("Content-Type", "application/json")
-                doOutput = true
-                connectTimeout = 30000
-                readTimeout = 60000
-            }
-
-        try {
-            connection.outputStream.use { os ->
-                os.write(requestJson.toString().toByteArray(Charsets.UTF_8))
-            }
-
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                val errorBody =
-                    connection.errorStream?.bufferedReader()?.use { it.readText() }
-                        ?: "HTTP $responseCode"
-                throw IllegalStateException(
-                    "Image generation failed ($responseCode): $errorBody"
-                )
-            }
-
-            val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-            val responseJson = JSONObject(responseText)
-            val candidates = responseJson.optJSONArray("candidates")
-            if (candidates == null || candidates.length() == 0) {
-                throw IllegalStateException(
-                    "No candidates returned from Gemini image generation API"
-                )
-            }
-
-            val parts =
-                candidates
-                    .getJSONObject(0)
-                    .optJSONObject("content")
-                    ?.optJSONArray("parts")
-            if (parts == null || parts.length() == 0) {
-                throw IllegalStateException(
-                    "No parts returned in candidate content. Gemini response: $responseText"
-                )
-            }
-
-            var base64Data: String? = null
-            var mimeType = "image/png"
-            for (i in 0 until parts.length()) {
-                val part = parts.getJSONObject(i)
-                val inlineData =
-                    part.optJSONObject("inlineData")
-                        ?: part.optJSONObject("inline_data")
-                if (inlineData != null) {
-                    base64Data = inlineData.optString("data")
-                    val returnedMime =
-                        inlineData
-                            .optString("mimeType")
-                            .takeIf { it.isNotBlank() }
-                            ?: inlineData.optString("mime_type")
-                    if (returnedMime.isNotBlank()) {
-                        mimeType = returnedMime
-                    }
-                    break
+                        },
+                    )
                 }
-            }
 
-            if (base64Data.isNullOrBlank()) {
-                throw IllegalStateException(
-                    "No inlineData image found in response parts. Gemini response: $responseText"
+            val endpointUrl =
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=$apiKey"
+            val url = URL(endpointUrl)
+            val connection =
+                (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    doOutput = true
+                    connectTimeout = 30000
+                    readTimeout = 60000
+                }
+
+            try {
+                connection.outputStream.use { os ->
+                    os.write(requestJson.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                val responseCode = connection.responseCode
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    val errorBody =
+                        connection.errorStream?.bufferedReader()?.use { it.readText() }
+                            ?: "HTTP $responseCode"
+                    throw IllegalStateException(
+                        "Image generation failed ($responseCode): $errorBody",
+                    )
+                }
+
+                val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                val responseJson = JSONObject(responseText)
+                val candidates = responseJson.optJSONArray("candidates")
+                if (candidates == null || candidates.length() == 0) {
+                    throw IllegalStateException(
+                        "No candidates returned from Gemini image generation API",
+                    )
+                }
+
+                val parts =
+                    candidates
+                        .getJSONObject(0)
+                        .optJSONObject("content")
+                        ?.optJSONArray("parts")
+                if (parts == null || parts.length() == 0) {
+                    throw IllegalStateException(
+                        "No parts returned in candidate content. Gemini response: $responseText",
+                    )
+                }
+
+                var base64Data: String? = null
+                var mimeType = "image/png"
+                for (i in 0 until parts.length()) {
+                    val part = parts.getJSONObject(i)
+                    val inlineData =
+                        part.optJSONObject("inlineData")
+                            ?: part.optJSONObject("inline_data")
+                    if (inlineData != null) {
+                        base64Data = inlineData.optString("data")
+                        val returnedMime =
+                            inlineData
+                                .optString("mimeType")
+                                .takeIf { it.isNotBlank() }
+                                ?: inlineData.optString("mime_type")
+                        if (returnedMime.isNotBlank()) {
+                            mimeType = returnedMime
+                        }
+                        break
+                    }
+                }
+
+                if (base64Data.isNullOrBlank()) {
+                    throw IllegalStateException(
+                        "No inlineData image found in response parts. Gemini response: $responseText",
+                    )
+                }
+
+                val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                val extension =
+                    if (mimeType.contains("jpeg") || mimeType.contains("jpg")) "jpg" else "png"
+                val cachedFile =
+                    File(
+                        context.cacheDir,
+                        "generated_${UUID.randomUUID()}.$extension",
+                    )
+                cachedFile.writeBytes(imageBytes)
+
+                val authority = "${context.packageName}.fileprovider"
+                val contentUri = FileProvider.getUriForFile(context, authority, cachedFile)
+                GeneratedImageResult(
+                    imageUri = contentUri.toString(),
+                    mimeType = mimeType,
+                    prompt = prompt,
                 )
+            } finally {
+                connection.disconnect()
             }
-
-            val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
-            val extension =
-                if (mimeType.contains("jpeg") || mimeType.contains("jpg")) "jpg" else "png"
-            val cachedFile =
-                File(
-                    context.cacheDir,
-                    "generated_${UUID.randomUUID()}.$extension"
-                )
-            cachedFile.writeBytes(imageBytes)
-
-            val authority = "${context.packageName}.fileprovider"
-            val contentUri = FileProvider.getUriForFile(context, authority, cachedFile)
-            GeneratedImageResult(
-                imageUri = contentUri.toString(),
-                mimeType = mimeType,
-                prompt = prompt
-            )
-        } finally {
-            connection.disconnect()
         }
-    }
 
     /** Represents the result of an image generation request. */
     @AppFunctionSerializable
@@ -329,6 +327,6 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
         /** The MIME type of the generated image. */
         val mimeType: String,
         /** The original prompt used to generate the image. */
-        val prompt: String
+        val prompt: String,
     )
 }

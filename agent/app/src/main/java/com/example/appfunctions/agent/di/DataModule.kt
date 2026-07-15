@@ -39,8 +39,8 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
-import javax.inject.Singleton
 import kotlinx.serialization.json.Json
+import javax.inject.Singleton
 
 val Context.settingsDataStore: DataStore<Preferences> by
     preferencesDataStore(name = "settings")
@@ -58,30 +58,32 @@ abstract class DataModule {
 
     @Binds
     @Singleton
-    abstract fun bindPendingIntentRepository(
-        impl: InMemoryPendingIntentRepository
-    ): PendingIntentRepository
+    abstract fun bindPendingIntentRepository(impl: InMemoryPendingIntentRepository): PendingIntentRepository
 
     @Binds
     @Singleton
     abstract fun bindLlmProviderFactory(
-        impl: com.example.appfunctions.agent.data.LlmProviderFactoryImpl
+        impl: com.example.appfunctions.agent.data.LlmProviderFactoryImpl,
     ): com.example.appfunctions.agent.domain.LlmProviderFactory
 
     companion object {
         @Provides
         @Singleton
-        fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> {
+        fun provideDataStore(
+            @ApplicationContext context: Context,
+        ): DataStore<Preferences> {
             return context.settingsDataStore
         }
 
         @Provides
         @Singleton
-        fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
+        fun provideAppDatabase(
+            @ApplicationContext context: Context,
+        ): AppDatabase {
             return Room.databaseBuilder(
                 context,
                 AppDatabase::class.java,
-                "app_database"
+                "app_database",
             )
                 .fallbackToDestructiveMigration()
                 .build()
@@ -103,7 +105,7 @@ abstract class DataModule {
                             ignoreUnknownKeys = true
                             prettyPrint = true
                             isLenient = true
-                        }
+                        },
                     )
                 }
                 install(HttpTimeout) { socketTimeoutMillis = 30000 }

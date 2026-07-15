@@ -70,9 +70,10 @@ fun WearChatScreen(
                 title = { Text(text = if (message.isInbound) message.senderName ?: "Sender" else "Me") },
             ) {
                 val linkColor = MaterialTheme.colorScheme.primary
-                val annotatedText = remember(message.content, linkColor) {
-                    linkifyString(text = message.content, linkColor = linkColor)
-                }
+                val annotatedText =
+                    remember(message.content, linkColor) {
+                        linkifyString(text = message.content, linkColor = linkColor)
+                    }
                 Text(text = annotatedText)
             }
         }

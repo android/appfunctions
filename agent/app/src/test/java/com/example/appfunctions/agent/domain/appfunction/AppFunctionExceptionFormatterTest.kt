@@ -86,7 +86,8 @@ class AppFunctionExceptionFormatterTest {
                 "com.example.chatapp.appfunctions.BaseChatAppFunctionService#send",
             )
         assertEquals(
-            "Tool execution failed for com.example.chatapp.appfunctions.BaseChatAppFunctionService#send: Error: AppFunctionInvalidArgumentException - Message body cannot be empty",
+            "Tool execution failed for com.example.chatapp.appfunctions.BaseChatAppFunctionService#send: " +
+                "Error: AppFunctionInvalidArgumentException - Message body cannot be empty",
             formatted,
         )
     }

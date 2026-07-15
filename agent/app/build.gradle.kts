@@ -61,13 +61,14 @@ android {
             dimension = "mode"
             buildConfigField("Boolean", "IS_RETAIL", "true")
 
-            val containsRetail = gradle.startParameter.taskNames.any {
-                it.contains("Retail", ignoreCase = true)
-            }
+            val containsRetail =
+                gradle.startParameter.taskNames.any {
+                    it.contains("Retail", ignoreCase = true)
+                }
             val apiKey = project.findProperty("GEMINI_API_KEY") as? String ?: ""
             if (containsRetail && apiKey.isEmpty()) {
                 throw GradleException(
-                    "GEMINI_API_KEY project property is required for retail builds. Pass it using -PGEMINI_API_KEY=your_key"
+                    "GEMINI_API_KEY project property is required for retail builds. Pass it using -PGEMINI_API_KEY=your_key",
                 )
             }
             buildConfigField("String", "GEMINI_API_KEY", "\"$apiKey\"")
