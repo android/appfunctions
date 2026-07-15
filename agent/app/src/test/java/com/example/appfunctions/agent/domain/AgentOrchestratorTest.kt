@@ -395,7 +395,7 @@ class AgentOrchestratorTest {
     }
 
     @Test
-    fun `observeAndProcessMessages extracts attachments when tool returns imageUri and mimeType`() =
+    fun `observeAndProcessMessages extracts attachments when tool returns imageUri and mimeType`() {
         runTest {
             val threadId = "thread_1"
             val message = createUserMessage(threadId, "generate image of a dog")
@@ -413,51 +413,14 @@ class AgentOrchestratorTest {
                     arguments = mapOf("prompt" to "dog"),
                     callId = "call_1",
                 )
-
-            val firstResponse =
-                LlmResponse.Success(
-                    interactionId = "interaction_1",
-                    parts = listOf(toolCall),
-                )
-            val secondResponse =
-                LlmResponse.Success(
-                    interactionId = "interaction_2",
-                    parts = listOf(LlmResponsePart.Text("Here is your image!")),
-                )
-
-            coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns firstResponse
-
-            coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = "interaction_1",
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns secondResponse
-
-            coEvery {
-                convertInputToAppFunctionDataUseCase(any(), any(), any())
-            } returns Result.success(AppFunctionData.EMPTY)
-
-            coEvery {
-                executeAppFunctionUseCase(any(), any(), any())
-            } returns
-                ExecuteAppFunctionResult.Data(
-                    data = AppFunctionData.EMPTY,
-                    formattedJson =
-                        """{"imageUri":"content://com.example.appfunctions.agent.fileprovider/cache/test.jpg",""" +
-                            """"mimeType":"image/jpeg","prompt":"dog"}""",
-                )
+            setupTwoStepToolCallAndExecution(
+                llmProvider = llmProvider,
+                toolCall = toolCall,
+                secondResponseText = "Here is your image!",
+                toolResultJson =
+                    """{"imageUri":"content://com.example.appfunctions.agent.fileprovider/cache/test.jpg",""" +
+                        """"mimeType":"image/jpeg","prompt":"dog"}""",
+            )
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
@@ -475,9 +438,10 @@ class AgentOrchestratorTest {
                 )
             }
         }
+    }
 
     @Test
-    fun `observeAndProcessMessages grants URI read permission when tool is called with content URI argument`() =
+    fun `observeAndProcessMessages grants URI read permission when tool is called with content URI argument`() {
         runTest {
             val threadId = "thread_1"
             val message = createUserMessage(threadId, "set wallpaper")
@@ -496,46 +460,12 @@ class AgentOrchestratorTest {
                     arguments = mapOf("uri" to contentUri),
                     callId = "call_2",
                 )
-
-            coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns
-                LlmResponse.Success(
-                    interactionId = "interaction_1",
-                    parts = listOf(toolCall),
-                )
-
-            coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = "interaction_1",
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns
-                LlmResponse.Success(
-                    interactionId = "interaction_2",
-                    parts = listOf(LlmResponsePart.Text("Wallpaper set")),
-                )
-
-            coEvery {
-                convertInputToAppFunctionDataUseCase(any(), any(), any())
-            } returns Result.success(AppFunctionData.EMPTY)
-
-            coEvery {
-                executeAppFunctionUseCase(any(), any(), any())
-            } returns
-                ExecuteAppFunctionResult.Data(
-                    data = AppFunctionData.EMPTY,
-                    formattedJson = """{"success":true}""",
-                )
+            setupTwoStepToolCallAndExecution(
+                llmProvider = llmProvider,
+                toolCall = toolCall,
+                secondResponseText = "Wallpaper set",
+                toolResultJson = """{"success":true}""",
+            )
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
@@ -547,4 +477,55 @@ class AgentOrchestratorTest {
                 )
             }
         }
+    }
+
+    private fun setupTwoStepToolCallAndExecution(
+        llmProvider: LlmProvider,
+        toolCall: LlmResponsePart.ToolCall,
+        secondResponseText: String,
+        toolResultJson: String,
+    ) {
+        val firstResponse =
+            LlmResponse.Success(
+                interactionId = "interaction_1",
+                parts = listOf(toolCall),
+            )
+        val secondResponse =
+            LlmResponse.Success(
+                interactionId = "interaction_2",
+                parts = listOf(LlmResponsePart.Text(secondResponseText)),
+            )
+
+        coEvery {
+            llmProvider.generateResponse(
+                previousInteractionId = null,
+                input = any(),
+                tools = any(),
+                apiKey = any(),
+                modelName = any(),
+            )
+        } returns firstResponse
+
+        coEvery {
+            llmProvider.generateResponse(
+                previousInteractionId = "interaction_1",
+                input = any(),
+                tools = any(),
+                apiKey = any(),
+                modelName = any(),
+            )
+        } returns secondResponse
+
+        coEvery {
+            convertInputToAppFunctionDataUseCase(any(), any(), any())
+        } returns Result.success(AppFunctionData.EMPTY)
+
+        coEvery {
+            executeAppFunctionUseCase(any(), any(), any())
+        } returns
+            ExecuteAppFunctionResult.Data(
+                data = AppFunctionData.EMPTY,
+                formattedJson = toolResultJson,
+            )
+    }
 }
