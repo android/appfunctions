@@ -44,11 +44,11 @@ jobs:
         working-directory: agent
 
       - name: Run unit tests
-        run: ./gradlew test -PGEMINI_API_KEY=dummy
+        run: ./gradlew test -PGEMINI_API_KEY=dummy_key
         working-directory: agent
 
       - name: Build Debug and Release APKs
-        run: ./gradlew assembleDebug assembleRelease -PGEMINI_API_KEY=dummy
+        run: ./gradlew assembleDebug assembleRelease -PGEMINI_API_KEY=dummy_key
         working-directory: agent
 
       - name: Upload Agent APKs
@@ -66,14 +66,14 @@ jobs:
       - name: Run instrumentation tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 36
-          target: google_apis
+          api-level: 37.1
+          target: google_apis_ps16k
           arch: x86_64
           force-avd-creation: false
           emulator-options: -no-window -gpu libswiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: agent
-          script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest -PGEMINI_API_KEY=dummy
+          script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest -PGEMINI_API_KEY=dummy_key
 
   chatapp-build:
     name: "ChatApp build & test"
@@ -127,8 +127,8 @@ jobs:
       - name: Run instrumentation tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          target: google_apis
+          api-level: 37.1
+          target: google_apis_ps16k
           arch: x86_64
           force-avd-creation: false
           emulator-options: -no-window -gpu libswiftshader_indirect -noaudio -no-boot-anim -camera-back none
