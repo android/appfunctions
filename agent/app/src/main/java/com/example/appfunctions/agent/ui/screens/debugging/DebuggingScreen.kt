@@ -18,20 +18,25 @@ package com.example.appfunctions.agent.ui.screens.debugging
 import android.app.PendingIntent
 import android.content.res.Resources
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
@@ -43,7 +48,10 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -57,19 +65,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
+import com.example.appfunctions.agent.ui.contracts.DebuggingScreenLayout
+import com.example.appfunctions.agent.ui.layout.rememberFormFactor
+import com.example.appfunctions.agent.ui.layout.FormFactor
+import com.example.appfunctions.agent.ui.mobile.debugging.MobileDebuggingLayout
 import com.example.appfunctions.agent.ui.theme.AppFunctionsAgentTheme
+import com.example.appfunctions.agent.ui.tv.debugging.TvDebuggingLayout
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,188 +129,29 @@ fun DebuggingScreenContent(
     onLaunchPendingIntent: (PendingIntent) -> Unit,
     onTogglePin: (AppInfo) -> Unit,
 ) {
-    val focusManager = LocalFocusManager.current
-    LaunchedEffect(Unit) { focusManager.clearFocus() }
-
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = Color.Unspecified,
-        topBar = {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Searchable Dropdown
-                AppDropdown(
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    appGroups = uiState.filteredApps,
-                    searchQuery = uiState.searchQuery,
-                    onSearchQueryChanged = onSearchQueryChanged,
-                    onAppSelected = onAppSelected,
-                    onClearSelectedApp = onClearSelectedApp,
-                    onTogglePin = onTogglePin,
-                )
-            }
-        },
-    ) { paddingValues ->
-        Box(
-            modifier =
-                Modifier.fillMaxSize().padding(top = paddingValues.calculateTopPadding()),
-        ) {
-            when (val searchAppResultState = uiState.searchAppResultState) {
-                is SearchAppResultState.Idle -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.debugging_select_app_prompt),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
-                is SearchAppResultState.FunctionsFoundState -> {
-                    FunctionsFoundContent(
-                        state = searchAppResultState,
-                        onFunctionExpandedChange = onFunctionExpandedChange,
-                        onFunctionInputsChange = onFunctionInputsChange,
-                        onInvoke = onInvoke,
-                        onClearResult = onClearResult,
-                        onLaunchPendingIntent = onLaunchPendingIntent,
-                    )
-                }
-                is SearchAppResultState.TroubleshootUiState -> {
-                    TroubleshootResult(
-                        state = searchAppResultState,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
+    val formFactor = rememberFormFactor()
+    val layout: DebuggingScreenLayout = when (formFactor) {
+        FormFactor.TV -> TvDebuggingLayout
+        FormFactor.WEAR, FormFactor.AUTO, FormFactor.XR, FormFactor.MOBILE -> MobileDebuggingLayout
     }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AppDropdown(
-    appGroups: AppsGroupState,
-    searchQuery: String,
-    onSearchQueryChanged: (String) -> Unit,
-    onAppSelected: (AppInfo) -> Unit,
-    onClearSelectedApp: () -> Unit,
-    onTogglePin: (AppInfo) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        modifier = modifier,
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-    ) {
-        Surface(
-            modifier = Modifier.padding(bottom = 8.dp),
-            shadowElevation = 2.dp,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceBright,
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                shape = CircleShape,
-                singleLine = true,
-                placeholder = { Text(text = stringResource(R.string.debugging_search_app)) },
-                onValueChange = {
-                    onSearchQueryChanged(it)
-                    expanded = true
-                },
-                trailingIcon = {
-                    Row(
-                        modifier = Modifier.padding(end = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { onClearSelectedApp() }) {
-                                Icon(Icons.Filled.Clear, contentDescription = "Clear")
-                            }
-                        }
-                    }
-                },
-                colors =
-                    ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedBorderColor = Color.Transparent,
-                    ),
-                modifier =
-                    Modifier.fillMaxWidth()
-                        .menuAnchor(
-                            ExposedDropdownMenuAnchorType.Companion.PrimaryEditable,
-                            enabled = true,
-                        ),
-            )
-        }
-
-        val sections = appGroups.sections
-        val pinnedPackageNames =
-            remember(sections) {
-                sections
-                    .find { it.titleRes == Resources.ID_NULL }
-                    ?.apps
-                    ?.map { it.packageName }
-                    ?.toSet() ?: emptySet()
-            }
-
-        LazyExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.exposedDropdownSize(),
-            containerColor = MaterialTheme.colorScheme.surfaceBright,
-            shape = RoundedCornerShape(28.dp),
-        ) {
-            sections.forEachIndexed { index, section ->
-                if (index > 0) {
-                    item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 24.dp),
-                        )
-                    }
-                }
-
-                // Not showing pinned section title
-                if (index != 0) {
-                    item {
-                        Text(
-                            text = stringResource(id = section.titleRes),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                    }
-                }
-
-                items(
-                    items = section.apps,
-                    key = { app -> "${section.titleRes}_${app.packageName}" },
-                ) { app ->
-                    AppDropdownItem(
-                        app = app,
-                        isPinned = pinnedPackageNames.contains(app.packageName),
-                        onAppSelected = onAppSelected,
-                        onSearchQueryChanged = onSearchQueryChanged,
-                        onTogglePin = onTogglePin,
-                        onExpandedChange = { expanded = it },
-                        showPin = section.showPin,
-                    )
-                }
-            }
-        }
-    }
+    layout.Content(
+        uiState = uiState,
+        onSearchQueryChanged = onSearchQueryChanged,
+        onAppSelected = onAppSelected,
+        onClearSelectedApp = onClearSelectedApp,
+        onFunctionInputsChange = onFunctionInputsChange,
+        onInvoke = onInvoke,
+        onClearResult = onClearResult,
+        onFunctionExpandedChange = onFunctionExpandedChange,
+        onLaunchPendingIntent = onLaunchPendingIntent,
+        onTogglePin = onTogglePin,
+        modifier = Modifier,
+    )
 }
 
 @Composable
-private fun AppDropdownItem(
+internal fun AppDropdownItem(
     app: AppInfo,
     isPinned: Boolean,
     onAppSelected: (AppInfo) -> Unit,

@@ -37,7 +37,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -49,12 +56,15 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import com.example.appfunctions.agent.ui.layout.AdaptiveInputContainer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -180,8 +190,7 @@ fun AppFunctionDataTypeInput(
             )
 
             if (showSheet) {
-                ModalBottomSheet(
-                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                AdaptiveInputContainer(
                     onDismissRequest = { showSheet = false },
                 ) {
                     AppFunctionObjectTypeSheetContent(
@@ -227,8 +236,7 @@ fun AppFunctionDataTypeInput(
                 )
 
                 if (showSheet) {
-                    ModalBottomSheet(
-                        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    AdaptiveInputContainer(
                         onDismissRequest = { showSheet = false },
                     ) {
                         AppFunctionObjectTypeSheetContent(
@@ -275,30 +283,14 @@ fun PrimitiveTextInput(
     modifier: Modifier = Modifier,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
-    OutlinedTextField(
+    com.example.appfunctions.agent.ui.components.TvSurfaceTextField(
         value = value,
         onValueChange = onValueChange,
-        label = {
-            Row {
-                Text(label)
-                if (isRequired) {
-                    Text(
-                        text = stringResource(R.string.debugging_required_indicator),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        },
-        modifier = modifier.height(72.dp).fillMaxWidth(),
-        singleLine = true,
+        placeholder = label,
+        label = if (isRequired) "$label *" else label,
+        modifier = modifier.fillMaxWidth(),
         keyboardOptions = keyboardOptions,
         shape = MaterialTheme.shapes.medium,
-        colors =
-            OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                focusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-            ),
     )
 }
 

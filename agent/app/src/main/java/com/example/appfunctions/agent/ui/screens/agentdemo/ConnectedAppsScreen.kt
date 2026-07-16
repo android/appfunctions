@@ -44,11 +44,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.domain.appfunction.ConnectedAppInfo
+import com.example.appfunctions.agent.ui.contracts.ConnectedAppsScreenLayout
+import com.example.appfunctions.agent.ui.layout.FormFactor
+import com.example.appfunctions.agent.ui.layout.rememberFormFactor
+import com.example.appfunctions.agent.ui.mobile.agentdemo.MobileConnectedAppsLayout
+import com.example.appfunctions.agent.ui.tv.agentdemo.TvConnectedAppsLayout
 
 /** Stateful composable for the Connected Apps screen. */
 @Composable
@@ -73,74 +78,18 @@ fun ConnectedAppsScreenContent(
     onBack: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
 ) {
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = Color.Unspecified,
-        topBar = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    modifier = Modifier.clickable { onBack() },
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = stringResource(id = R.string.connected_apps_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-            }
-        },
-    ) { paddingValues ->
-        Column(
-            modifier =
-                Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 24.dp),
-        ) {
-            LazyColumn {
-                items(
-                    items = uiState.connectedApps,
-                    key = { app -> app.packageName },
-                ) { app ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    ) {
-                        if (app.icon != null) {
-                            Image(
-                                painter = rememberAsyncImagePainter(app.icon),
-                                contentDescription = null,
-                                modifier = Modifier.size(40.dp),
-                            )
-                        } else {
-                            Box(modifier = Modifier.size(40.dp).background(Color.Gray))
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = app.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            if (!app.description.isNullOrEmpty()) {
-                                Text(
-                                    text = app.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        Switch(
-                            checked = app.isConnected,
-                            onCheckedChange = { connected ->
-                                onToggleApp(app.packageName, connected)
-                            },
-                        )
-                    }
-                }
-            }
-        }
+    val formFactor = rememberFormFactor()
+    val layout: ConnectedAppsScreenLayout = when (formFactor) {
+        FormFactor.TV -> TvConnectedAppsLayout
+        FormFactor.WEAR, FormFactor.AUTO, FormFactor.XR, FormFactor.MOBILE -> MobileConnectedAppsLayout
     }
+
+    layout.Content(
+        uiState = uiState,
+        onBack = onBack,
+        onToggleApp = onToggleApp,
+        modifier = Modifier,
+    )
 }
 
 @Preview(showBackground = true)
