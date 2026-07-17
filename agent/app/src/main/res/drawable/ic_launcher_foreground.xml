@@ -1,31 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  ~ Copyright 2026 The Android Open Source Project
-  ~
-  ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ you may not use this file except in compliance with the License.
-  ~ You may obtain a copy of the License at
-  ~
-  ~     https://www.apache.org/licenses/LICENSE-2.0
-  ~
-  ~ Unless required by applicable law or agreed to in writing, software
-  ~ distributed under the License is distributed on an "AS IS" BASIS,
-  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  ~ See the License for the specific language governing permissions and
-  ~ limitations under the License.
-  -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- 960x960 viewport of original icon scaled to fit comfortably inside the 108x108 adaptive icon boundary,
+         which requires elements to remain within a 72x72 inner safe zone. -->
     <group
-        android:scaleX="3.2"
-        android:scaleY="3.2"
-        android:translateX="15.6"
-        android:translateY="15.6">
+        android:scaleX="0.065"
+        android:scaleY="0.065"
+        android:translateX="22.8"
+        android:translateY="22.8">
         <path
             android:fillColor="#FFFFFF"
-            android:pathData="M8,3A2,2 0 0,0 6,5V9A2,2 0 0,1 4,11H3V13H4A2,2 0 0,1 6,15V19A2,2 0 0,0 8,21H10V19H8V14A2,2 0 0,0 6,12A2,2 0 0,0 8,10V5H10V3M16,3A2,2 0 0,1 18,5V9A2,2 0 0,0 20,11H21V13H20A2,2 0 0,0 18,15V19A2,2 0 0,1 16,21H14V19H16V14A2,2 0 0,1 18,12A2,2 0 0,1 16,10V5H14V3H16Z" />
+            android:pathData="M221,840Q176,840 148,816Q120,792 120,752Q120,720 137,700.5Q154,681 180,681Q205,681 222.5,698Q240,715 240,739Q240,744 239.5,748Q239,752 238,757Q238,757 238,757Q238,757 238,757Q243,756 246.5,751.5Q250,747 252,739L314,400L240,400Q223,400 211.5,388.5Q200,377 200,360Q200,343 211.5,331.5Q223,320 240,320L329,320L350,206Q357,168 387.5,144Q418,120 460,120Q504,120 532,146Q560,172 560,211Q560,241 543,260.5Q526,280 500,280Q475,280 457.5,263Q440,246 440,221Q440,216 440.5,212Q441,208 442,203Q442,203 442,203Q442,203 442,203Q436,205 433,209Q430,213 428,221L411,320L560,320Q577,320 588.5,331.5Q600,343 600,360Q600,375 590.5,386Q581,397 567,399L567,399L620,459L673,399L673,399Q659,397 649.5,386Q640,375 640,360Q640,343 651.5,331.5Q663,320 680,320L800,320Q817,320 828.5,331.5Q840,343 840,360Q840,377 828.5,388.5Q817,400 800,400L778,400L673,520L778,640L800,640Q817,640 828.5,651.5Q840,663 840,680Q840,697 828.5,708.5Q817,720 800,720L680,720Q663,720 651.5,708.5Q640,697 640,680Q640,665 649.5,654Q659,643 673,641L673,641L620,580L567,641L567,641Q581,643 590.5,654Q600,665 600,680Q600,697 588.5,708.5Q577,720 560,720L440,720Q423,720 411.5,708.5Q400,697 400,680Q400,663 411.5,651.5Q423,640 440,640L462,640L567,520L462,400L396,400L332,744Q324,789 295,814.5Q266,840 221,840Z" />
     </group>
 </vector>
