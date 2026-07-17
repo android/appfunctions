@@ -18,7 +18,7 @@ concurrency:
 jobs:
   agent-build:
     name: "Agent build & test"
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 45
 
     steps:
@@ -79,7 +79,7 @@ jobs:
 
   chatapp-build:
     name: "ChatApp build & test"
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 45
 
     steps:
