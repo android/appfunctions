@@ -71,6 +71,8 @@ jobs:
           arch: x86_64
           force-avd-creation: false
           emulator-options: -no-window -gpu libswiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disk-size: 6000M
+          heap-size: 600M
           disable-animations: true
           working-directory: agent
           script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest -PGEMINI_API_KEY=dummy_key
@@ -133,5 +135,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu libswiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
+          disk-size: 6000M
+          heap-size: 600M
           working-directory: ChatApp
           script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest
