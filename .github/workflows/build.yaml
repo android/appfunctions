@@ -68,7 +68,7 @@ jobs:
           arch: arm64-v8a
           emulator-boot-timeout: 900
           force-avd-creation: true
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -partition-size 4096
+          emulator-options: -no-window -noaudio -no-boot-anim -camera-back none -partition-size 4096
           heap-size: 600M
           disable-animations: true
           working-directory: agent
@@ -128,7 +128,7 @@ jobs:
           arch: arm64-v8a
           emulator-boot-timeout: 900
           force-avd-creation: true
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -partition-size 4096
+          emulator-options: -no-window -noaudio -no-boot-anim -camera-back none -partition-size 4096
           heap-size: 600M
           disable-animations: true
           working-directory: ChatApp
