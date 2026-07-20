@@ -84,12 +84,13 @@ class WallpaperRepositoryImpl
             withContext(Dispatchers.IO) {
                 try {
                     val dir = File(context.filesDir, "wallpapers").apply { mkdirs() }
-                    dir.listFiles { f -> f.name.startsWith("wallpaper_${chatId}_") }?.forEach { it.delete() }
-                    val file = File(dir, "wallpaper_${chatId}_${System.currentTimeMillis()}.jpg")
-                    file.outputStream().use { output ->
+                    val newFile = File(dir, "wallpaper_${chatId}_${System.currentTimeMillis()}.jpg")
+                    newFile.outputStream().use { output ->
                         inputStream.copyTo(output)
                     }
-                    wallpapers.update { current -> current + (chatId to file.absolutePath) }
+                    dir.listFiles { f -> f.name.startsWith("wallpaper_${chatId}_") && f != newFile }
+                        ?.forEach { it.delete() }
+                    wallpapers.update { current -> current + (chatId to newFile.absolutePath) }
                     true
                 } catch (e: Exception) {
                     false
