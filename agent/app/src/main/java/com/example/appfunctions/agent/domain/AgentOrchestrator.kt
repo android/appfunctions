@@ -152,11 +152,14 @@ class AgentOrchestrator
             disconnectedApps: Set<String>,
             targetPackageName: String?,
         ): List<AppFunctionMetadata> {
-            return allTools.filter { metadata ->
-                metadata.isEnabled &&
-                    metadata.packageName !in disconnectedApps &&
-                    (targetPackageName == null || metadata.packageName == targetPackageName)
-            }
+            return allTools
+                .filter { metadata ->
+                    metadata.isEnabled &&
+                        metadata.packageName !in disconnectedApps &&
+                        (targetPackageName == null || metadata.packageName == targetPackageName)
+                }
+                .sortedByDescending { metadata -> metadata.id.startsWith(metadata.packageName) }
+                .distinctBy { metadata -> metadata.id }
         }
 
         private suspend fun runInteractionLoop(
