@@ -33,9 +33,25 @@ import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Repository for managing custom chat background wallpapers.
+ */
 interface WallpaperRepository {
+    /**
+     * Retrieves the wallpaper file path for a specific chat.
+     *
+     * @param chatId The ID of the chat.
+     * @return A [Flow] emitting the wallpaper file path, or `null` if no custom wallpaper is set.
+     */
     fun getWallpaper(chatId: String): Flow<String?>
 
+    /**
+     * Saves a wallpaper image for a specific chat.
+     *
+     * @param chatId The ID of the chat.
+     * @param inputStream The input stream of the wallpaper image.
+     * @return `true` if the wallpaper was saved successfully, `false` otherwise.
+     */
     suspend fun setWallpaper(
         chatId: String,
         inputStream: InputStream,
