@@ -34,7 +34,7 @@
             </gradient>
         </aapt:attr>
     </path>
-    
+
     <!-- Faint Grid Pattern -->
     <path
         android:pathData="M12,0v108 M24,0v108 M36,0v108 M48,0v108 M60,0v108 M72,0v108 M84,0v108 M96,0v108 M0,12h108 M0,24h108 M0,36h108 M0,48h108 M0,60h108 M0,72h108 M0,84h108 M0,96h108"
