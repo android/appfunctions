@@ -15,7 +15,6 @@
  */
 package com.example.appfunctions.agent.data
 
-import androidx.annotation.RequiresApi
 import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionService
@@ -23,13 +22,12 @@ import androidx.appfunctions.AppFunctionServiceEntryPoint
 import dagger.hilt.android.AndroidEntryPoint
 
 /** Fake AppFunction service used for testing and verification. */
-@RequiresApi(36)
 @AndroidEntryPoint
 @AppFunctionServiceEntryPoint(
     serviceName = "FakeAppFunctionService",
     appFunctionXmlFileName = "fake_app_function_service",
 )
-abstract class BaseFakeAppFunctionService : AppFunctionService() {
+abstract class AbstractFakeAppFunctionService : AppFunctionService() {
     /**
      * Execute a fake function for testing purposes.
      *
