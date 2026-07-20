@@ -58,21 +58,20 @@ jobs:
           name: agent-apks
           path: agent/app/build/outputs/apk/**/*.apk
 
+      - name: Setup GMD
+        run: |
+          ./gradlew :app:pixel7Api35Setup \
+          --info \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: agent
+
       - name: Run instrumentation tests
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL: 180
-        with:
-          api-level: 35
-          target: google_apis
-          arch: arm64-v8a
-          emulator-boot-timeout: 900
-          force-avd-creation: true
-          emulator-options: -no-window -noaudio -no-boot-anim -camera-back none -partition-size 4096
-          heap-size: 600M
-          disable-animations: true
-          working-directory: agent
-          script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest -PGEMINI_API_KEY=dummy_key
+        run: |
+          ./gradlew :app:pixel7Api35Check -PGEMINI_API_KEY=dummy_key \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: agent
 
   chatapp-build:
     name: "ChatApp build & test"
@@ -118,18 +117,32 @@ jobs:
             ChatApp/app/build/outputs/apk/**/*.apk
             ChatApp/wear/build/outputs/apk/**/*.apk
 
+      - name: Setup GMD
+        run: |
+          ./gradlew :app:pixel7Api35Setup \
+          --info \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: ChatApp
+
       - name: Run instrumentation tests
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL: 180
-        with:
-          api-level: 35
-          target: google_apis
-          arch: arm64-v8a
-          emulator-boot-timeout: 900
-          force-avd-creation: true
-          emulator-options: -no-window -noaudio -no-boot-anim -camera-back none -partition-size 4096
-          heap-size: 600M
-          disable-animations: true
-          working-directory: ChatApp
-          script: adb shell wm dismiss-keyguard && ./gradlew :app:connectedAndroidTest
+        run: |
+          ./gradlew :app:pixel7Api35Check \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: ChatApp
+
+      - name: Setup WearOS GMD
+        run: |
+          ./gradlew :wear:wearOS34Setup \
+          --info \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: ChatApp
+
+      - name: Run WearOS instrumentation tests
+        run: |
+          ./gradlew :wear:wearOS34Check \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: ChatApp

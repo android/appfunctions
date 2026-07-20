@@ -85,6 +85,15 @@ android {
         screenshotTests {
             imageDifferenceThreshold = 0.01f // 1%
         }
+        managedDevices {
+            localDevices {
+                create("pixel7Api35") {
+                    device = "Pixel 7"
+                    apiLevel = 35
+                    systemImageSource = "aosp-atd"
+                }
+            }
+        }
     }
 
     lint {
