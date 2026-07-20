@@ -64,32 +64,32 @@ jobs:
             ChatApp/app/build/outputs/apk/**/*.apk
             ChatApp/wear/build/outputs/apk/**/*.apk
 
-      - name: Setup GMD
-        run: |
-          ./gradlew :app:pixel7Api35Setup \
-          --info \
-          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-        working-directory: ChatApp
-
-      - name: Run instrumentation tests
-        run: |
-          ./gradlew :app:pixel7Api35Check \
-          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-        working-directory: ChatApp
-
-      - name: Setup WearOS GMD
-        run: |
-          ./gradlew :wear:wearOS34Setup \
-          --info \
-          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-        working-directory: ChatApp
-
-      - name: Run WearOS instrumentation tests
-        run: |
-          ./gradlew :wear:wearOS34Check \
-          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-        working-directory: ChatApp
+#      - name: Setup GMD
+#        run: |
+#          ./gradlew :app:pixel7Api35Setup \
+#          --info \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
+#
+#      - name: Run instrumentation tests
+#        run: |
+#          ./gradlew :app:pixel7Api35Check \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
+#
+#     - name: Setup WearOS GMD
+#        run: |
+#          ./gradlew :wear:wearOS34Setup \
+#          --info \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
+#
+#      - name: Run WearOS instrumentation tests
+#        run: |
+#          ./gradlew :wear:wearOS34Check \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp

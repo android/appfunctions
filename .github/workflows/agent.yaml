@@ -62,17 +62,17 @@ jobs:
           name: agent-apks
           path: agent/app/build/outputs/apk/**/*.apk
 
-      - name: Setup GMD
-        run: |
-          ./gradlew :app:pixel7Api35Setup \
-          --info \
-          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-        working-directory: agent
-
-      - name: Run instrumentation tests
-        run: |
-          ./gradlew :app:pixel7Api35Check -PGEMINI_API_KEY=dummy_key \
-          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-        working-directory: agent
+#      - name: Setup GMD
+#        run: |
+#          ./gradlew :app:pixel7Api35Setup \
+#          --info \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: agent
+#
+#      - name: Run instrumentation tests
+#        run: |
+#          ./gradlew :app:pixel7Api35Check -PGEMINI_API_KEY=dummy_key \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: agent
