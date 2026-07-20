@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -58,7 +59,7 @@ abstract class LlmProviderIntegrationTestBase {
     fun setUp() {
         val arguments = androidx.test.platform.app.InstrumentationRegistry.getArguments()
         apiKey = arguments.getString(apiKeyArgumentKey) ?: ""
-        assertTrue(
+        assumeTrue(
             "API key is required. Please provide it via instrumentation arguments.",
             apiKey.isNotEmpty() && apiKey != "PLACEHOLDER",
         )

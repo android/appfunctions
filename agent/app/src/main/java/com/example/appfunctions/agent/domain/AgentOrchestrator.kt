@@ -41,7 +41,6 @@ import com.example.appfunctions.agent.domain.chat.UpdateMessageUseCase
 import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -53,7 +52,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
