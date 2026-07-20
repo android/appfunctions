@@ -71,7 +71,8 @@ class AppFunctionExceptionFormatterTest {
     @Test
     fun `getAppFunctionException extracts exception from cause chain`() {
         val appException = AppFunctionInvalidArgumentException("Invalid arg")
-        val wrappedException = RuntimeException("Wrapper", RuntimeException("Inner wrapper", appException))
+        val wrappedException =
+            RuntimeException("Wrapper", RuntimeException("Inner wrapper", appException))
 
         val extracted = AppFunctionExceptionFormatter.getAppFunctionException(wrappedException)
         assertEquals(appException, extracted)
@@ -86,7 +87,8 @@ class AppFunctionExceptionFormatterTest {
                 "com.example.chatapp.appfunctions.BaseChatAppFunctionService#send",
             )
         assertEquals(
-            "Tool execution failed for com.example.chatapp.appfunctions.BaseChatAppFunctionService#send: " +
+            "Tool execution failed for " +
+                "com.example.chatapp.appfunctions.BaseChatAppFunctionService#send: " +
                 "Error: AppFunctionInvalidArgumentException - Message body cannot be empty",
             formatted,
         )

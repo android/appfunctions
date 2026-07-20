@@ -44,6 +44,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("wearOS34") {
+                    device = "Wear OS XL Round"
+                    apiLevel = 34
+                    systemImageSource = "android-wear"
+                }
+            }
+        }
+    }
 }
 
 dependencies {
@@ -67,7 +79,6 @@ dependencies {
     // App functions
     implementation(libs.androidx.appfunctions)
     ksp(libs.androidx.appfunctions.compiler)
-
 }
 
 // AppFunctions ksp option

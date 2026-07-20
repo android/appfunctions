@@ -296,14 +296,16 @@ fun MessageBubble(
                     }
                 }
                 if (message.content.isNotEmpty()) {
-                    val linkColor = if (message.isInbound) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.inversePrimary
-                    }
-                    val annotatedText = remember(message.content, linkColor) {
-                        linkifyString(message.content, linkColor = linkColor)
-                    }
+                    val linkColor =
+                        if (message.isInbound) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.inversePrimary
+                        }
+                    val annotatedText =
+                        remember(message.content, linkColor) {
+                            linkifyString(message.content, linkColor = linkColor)
+                        }
                     Text(
                         modifier = Modifier.padding(16.dp),
                         text = annotatedText,
