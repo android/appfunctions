@@ -1,0 +1,95 @@
+name: ChatApp
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ChatApp/**'
+      - '.github/workflows/chatapp.yaml'
+      - '.github/ci-gradle.properties'
+  pull_request:
+    paths:
+      - 'ChatApp/**'
+      - '.github/workflows/chatapp.yaml'
+      - '.github/ci-gradle.properties'
+  workflow_dispatch:
+
+concurrency:
+  group: chatapp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chatapp-build:
+    name: "ChatApp build & test"
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy CI gradle.properties
+        run: mkdir -p ~/.gradle ; cp .github/ci-gradle.properties ~/.gradle/gradle.properties
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Run spotless
+        run: ./gradlew spotlessCheck
+        working-directory: ChatApp
+
+      - name: Run unit tests
+        run: ./gradlew test
+        working-directory: ChatApp
+
+      - name: Build Debug and Release APKs
+        run: ./gradlew assembleDebug assembleRelease
+        working-directory: ChatApp
+
+      - name: Upload ChatApp APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatapp-apks
+          path: |
+            ChatApp/app/build/outputs/apk/**/*.apk
+            ChatApp/wear/build/outputs/apk/**/*.apk
+
+#      - name: Setup GMD
+#        run: |
+#          ./gradlew :app:pixel7Api35Setup \
+#          --info \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
+#
+#      - name: Run instrumentation tests
+#        run: |
+#          ./gradlew :app:pixel7Api35Check \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
+#
+#     - name: Setup WearOS GMD
+#        run: |
+#          ./gradlew :wear:wearOS34Setup \
+#          --info \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
+#
+#      - name: Run WearOS instrumentation tests
+#        run: |
+#          ./gradlew :wear:wearOS34Check \
+#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+#        working-directory: ChatApp
