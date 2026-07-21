@@ -22,24 +22,24 @@ concurrency:
 jobs:
   chatapp-build:
     name: "ChatApp build & test"
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Copy CI gradle.properties
         run: mkdir -p ~/.gradle ; cp .github/ci-gradle.properties ~/.gradle/gradle.properties
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -57,7 +57,7 @@ jobs:
         working-directory: ChatApp
 
       - name: Upload ChatApp APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chatapp-apks
           path: |

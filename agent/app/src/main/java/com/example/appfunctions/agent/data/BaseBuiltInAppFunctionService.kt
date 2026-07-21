@@ -201,7 +201,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
     private fun buildImageGenerationPayload(
         prompt: String,
         aspectRatio: String?,
-    ): String =
+    ): JSONObject =
         JSONObject().apply {
             put(
                 "contents",
@@ -232,16 +232,17 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
                     }
                 },
             )
-        }.toString()
+        }
 
     private fun executeImageRequest(
         apiKey: String,
-        requestPayload: String,
+        requestJson: JSONObject,
     ): String {
         val endpointUrl =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=$apiKey"
+        val url = URL(endpointUrl)
         val connection =
-            (URL(endpointUrl).openConnection() as HttpURLConnection).apply {
+            (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json")
                 doOutput = true
@@ -249,9 +250,9 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
                 readTimeout = 60000
             }
 
-        return try {
+        try {
             connection.outputStream.use { os ->
-                os.write(requestPayload.toByteArray(Charsets.UTF_8))
+                os.write(requestJson.toString().toByteArray(Charsets.UTF_8))
             }
 
             val responseCode = connection.responseCode
@@ -264,13 +265,11 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
                 )
             }
 
-            connection.inputStream.bufferedReader().use { it.readText() }
+            return connection.inputStream.bufferedReader().use { it.readText() }
         } finally {
             connection.disconnect()
         }
     }
-
-    private data class ImageInlineData(val base64: String, val mimeType: String)
 
     private fun saveBase64ImageToCache(
         responseText: String,
@@ -295,7 +294,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
             )
         }
 
-        val inlineResult =
+        val candidateData =
             (0 until parts.length())
                 .asSequence()
                 .mapNotNull { i ->
@@ -304,28 +303,32 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
                         part.optJSONObject("inlineData")
                             ?: part.optJSONObject("inline_data")
                     if (inlineData != null) {
-                        val data = inlineData.optString("data")
-                        val mime =
+                        val base64 = inlineData.optString("data")
+                        val returnedMime =
                             inlineData
                                 .optString("mimeType")
                                 .takeIf { it.isNotBlank() }
-                                ?: inlineData.optString("mime_type").takeIf { it.isNotBlank() }
+                                ?: inlineData.optString("mime_type")
+                                    .takeIf { it.isNotBlank() }
                                 ?: "image/png"
-                        if (data.isNotBlank()) ImageInlineData(data, mime) else null
+                        base64 to returnedMime
                     } else {
                         null
                     }
                 }
                 .firstOrNull()
-                ?: throw IllegalStateException(
-                    "No inlineData image found in response parts. Gemini response: $responseText",
-                )
 
-        val imageBytes = Base64.decode(inlineResult.base64, Base64.DEFAULT)
+        if (candidateData == null || candidateData.first.isBlank()) {
+            throw IllegalStateException(
+                "No inlineData image found in response parts. Gemini response: $responseText",
+            )
+        }
+
+        val (base64Data, mimeType) = candidateData
+        val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
         val extension =
             when {
-                inlineResult.mimeType.contains("jpeg", ignoreCase = true) ||
-                    inlineResult.mimeType.contains("jpg", ignoreCase = true) -> "jpg"
+                mimeType.contains("jpeg") || mimeType.contains("jpg") -> "jpg"
                 else -> "png"
             }
         val cachedFile =
@@ -339,7 +342,7 @@ abstract class BaseBuiltInAppFunctionService : AppFunctionService() {
         val contentUri = FileProvider.getUriForFile(this, authority, cachedFile)
         return GeneratedImageResult(
             imageUri = contentUri.toString(),
-            mimeType = inlineResult.mimeType,
+            mimeType = mimeType,
             prompt = prompt,
         )
     }

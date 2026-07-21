@@ -57,21 +57,22 @@ class GeminiProviderImpl
             apiKey: String,
             modelName: String,
         ): LlmResponse {
-            val sortedTools = tools.sortedByDescending { it.id.startsWith(it.packageName) }
-            val uniqueTools = sortedTools.distinctBy { toolConverter.getToolName(it) }
             val convertedTools =
-                uniqueTools.mapNotNull { tool ->
-                    try {
-                        buildJsonObject {
-                            put(KEY_TYPE, JsonPrimitive(VALUE_FUNCTION))
-                            val functionSchema = toolConverter.convert(tool)
-                            functionSchema.forEach { (key, value) -> put(key, value) }
+                tools
+                    .sortedByDescending { it.id.startsWith(it.packageName) }
+                    .distinctBy { toolConverter.getToolName(it) }
+                    .mapNotNull { tool ->
+                        try {
+                            buildJsonObject {
+                                put(KEY_TYPE, JsonPrimitive(VALUE_FUNCTION))
+                                val functionSchema = toolConverter.convert(tool)
+                                functionSchema.forEach { (key, value) -> put(key, value) }
+                            }
+                        } catch (e: IllegalArgumentException) {
+                            Log.e(TAG, "Failed to convert tool ${tool.id}: ${e.message}", e)
+                            null
                         }
-                    } catch (e: IllegalArgumentException) {
-                        Log.e(TAG, "Failed to convert tool ${tool.id}: ${e.message}", e)
-                        null
                     }
-                }
 
             val requestBody =
                 buildJsonObject {
