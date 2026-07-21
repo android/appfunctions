@@ -42,7 +42,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import javax.inject.Singleton
 
-private val Context.settingsDataStore: DataStore<Preferences> by
+val Context.settingsDataStore: DataStore<Preferences> by
     preferencesDataStore(name = "settings")
 
 @Module

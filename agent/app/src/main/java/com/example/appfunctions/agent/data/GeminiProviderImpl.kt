@@ -58,18 +58,20 @@ class GeminiProviderImpl
             modelName: String,
         ): LlmResponse {
             val convertedTools =
-                tools.mapNotNull { tool ->
-                    try {
-                        buildJsonObject {
-                            put(KEY_TYPE, JsonPrimitive(VALUE_FUNCTION))
-                            val functionSchema = toolConverter.convert(tool)
-                            functionSchema.forEach { (key, value) -> put(key, value) }
+                tools
+                    .distinctBy { toolConverter.getToolName(it) }
+                    .mapNotNull { tool ->
+                        try {
+                            buildJsonObject {
+                                put(KEY_TYPE, JsonPrimitive(VALUE_FUNCTION))
+                                val functionSchema = toolConverter.convert(tool)
+                                functionSchema.forEach { (key, value) -> put(key, value) }
+                            }
+                        } catch (e: IllegalArgumentException) {
+                            Log.e(TAG, "Failed to convert tool ${tool.id}: ${e.message}", e)
+                            null
                         }
-                    } catch (e: IllegalArgumentException) {
-                        Log.e(TAG, "Failed to convert tool ${tool.id}: ${e.message}", e)
-                        null
                     }
-                }
 
             val requestBody =
                 buildJsonObject {
@@ -187,7 +189,9 @@ class GeminiProviderImpl
                         }
                         val callId =
                             stepObj["id"]?.jsonPrimitive?.content
-                                ?: return LlmResponse.Error("Function call missing call_id in response")
+                                ?: return LlmResponse.Error(
+                                    "Function call missing call_id in response",
+                                )
                         parts.add(
                             LlmResponsePart.ToolCall(
                                 packageName = packageName,
@@ -223,7 +227,12 @@ class GeminiProviderImpl
 
         private fun getSystemInstruction(): String {
             val currentDate = LocalDate.now().toString()
-            return "You are an assistant running on Android. Be concise, direct and helpful. Today's date is $currentDate."
+            return """
+                You are an AI assistant running on Android. Today's date is $currentDate.
+                Always reply to the user using concise, friendly, natural human language. Never respond to the user with raw JSON or structured code blocks unless explicitly asked to write code.
+                When a user asks you to generate an image, call the generateImage tool. After generateImage completes, confirm to the user in a natural sentence (for example: "I have generated that image for you.").
+                When a user asks you to generate an image and use it in an app (for example, setting a chat wallpaper or attaching an image to a note), first call generateImage, then call the target app function passing the returned imageUri.
+                """.trimIndent()
         }
 
         companion object {

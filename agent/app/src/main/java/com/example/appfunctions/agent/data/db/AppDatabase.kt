@@ -17,11 +17,14 @@ package com.example.appfunctions.agent.data.db
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.example.appfunctions.agent.data.db.dao.ChatDao
+import com.example.appfunctions.agent.data.db.entities.MessageAttachmentConverter
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 
-@Database(entities = [ThreadEntity::class, MessageEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ThreadEntity::class, MessageEntity::class], version = 3, exportSchema = false)
+@TypeConverters(MessageAttachmentConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 }
