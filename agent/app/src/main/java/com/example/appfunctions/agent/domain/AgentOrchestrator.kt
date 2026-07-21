@@ -396,6 +396,19 @@ class AgentOrchestrator
 
                 grantContentUriPermissionsRecursively(context, toolCall.packageName, convertedInputs)
 
+                for (value in convertedInputs.values) {
+                    if (value is String && value.startsWith("content://")) {
+                        runCatching {
+                            val uri = Uri.parse(value)
+                            context.grantUriPermission(
+                                toolCall.packageName,
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                            )
+                        }
+                    }
+                }
+
                 val appFunctionDataResult =
                     withContext(Dispatchers.Default) {
                         convertInputToAppFunctionDataUseCase(
