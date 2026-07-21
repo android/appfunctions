@@ -412,6 +412,7 @@ class AgentOrchestratorTest {
                     functionId = "generateImage",
                     arguments = mapOf("prompt" to "dog"),
                     callId = "call_1",
+                )
             setupTwoStepToolCallAndExecution(
                 llmProvider = llmProvider,
                 toolCall = toolCall,

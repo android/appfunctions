@@ -20,6 +20,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.appfunctions.metadata.AppFunctionArrayTypeMetadata
+import androidx.appfunctions.metadata.AppFunctionDataTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
@@ -58,6 +60,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -481,7 +486,6 @@ class AgentOrchestrator
                 processingStatus = MessageProcessingStatus.FAILED,
             )
         }
-<<<<<<< HEAD
 
         private fun resolveRemoteFileReferencesRecursively(
             context: Context,
