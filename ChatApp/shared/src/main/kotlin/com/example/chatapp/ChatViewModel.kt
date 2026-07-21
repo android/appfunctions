@@ -18,11 +18,12 @@ package com.example.chatapp
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.chatapp.appfunctions.AppFunctions.Recipient
+import com.example.chatapp.appfunctions.Recipient
 import com.example.chatapp.data.CallManager
 import com.example.chatapp.data.DisplayMessage
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
+import com.example.chatapp.data.WallpaperRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -64,6 +65,8 @@ data class ChatbotUiState(
     val messages: List<DisplayMessage> = listOf(),
     /** The current state of the bot's response generation. */
     val botMessageState: BotMessageState = BotMessageState.WaitingForMessage,
+    /** Optional path to a custom wallpaper image for this chat. */
+    val wallpaperPath: String? = null,
 )
 
 @HiltViewModel(assistedFactory = ChatViewModel.Factory::class)
@@ -74,6 +77,7 @@ class ChatViewModel
         private val messageRepository: MessageRepository,
         private val callManager: CallManager,
         private val recipientsRepository: RecipientsRepository,
+        private val wallpaperRepository: WallpaperRepository,
     ) : ViewModel() {
         @AssistedFactory
         interface Factory {
@@ -100,6 +104,11 @@ class ChatViewModel
             viewModelScope.launch {
                 messageRepository.getMessages(recipientId).collect { msgs ->
                     _uiState.update { it.copy(messages = msgs) }
+                }
+            }
+            viewModelScope.launch {
+                wallpaperRepository.getWallpaper(recipientId).collect { path ->
+                    _uiState.update { it.copy(wallpaperPath = path) }
                 }
             }
         }

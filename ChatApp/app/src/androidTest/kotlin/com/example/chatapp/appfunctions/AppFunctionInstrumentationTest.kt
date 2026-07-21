@@ -51,8 +51,6 @@ class AppFunctionInstrumentationTest {
 
     @Inject lateinit var recipientsRepository: RecipientsRepository
 
-    @Inject lateinit var appFunctions: AppFunctions
-
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val appFunctionManager: AppFunctionManager =
         checkNotNull(AppFunctionManager.getInstance(context))
@@ -72,12 +70,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == AppFunctionsIds.SEND_ID }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    AppFunctionsIds.SEND_ID,
+                    ChatAppFunctionService.FUNCTION_ID_SEND,
                     AppFunctionData.Builder(
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
@@ -111,12 +109,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == AppFunctionsIds.SEND_ID }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    AppFunctionsIds.SEND_ID,
+                    ChatAppFunctionService.FUNCTION_ID_SEND,
                     AppFunctionData.Builder(
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
@@ -142,12 +140,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == AppFunctionsIds.SEARCH_CONTACTS_ID }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS }
 
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    AppFunctionsIds.SEARCH_CONTACTS_ID,
+                    ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS,
                     AppFunctionData.Builder(
                         getRecipientsFunctionMetadata.parameters,
                         getRecipientsFunctionMetadata.components,
@@ -164,10 +162,10 @@ class AppFunctionInstrumentationTest {
                     .getAppFunctionDataList(
                         ExecuteAppFunctionResponse.Success.PROPERTY_RETURN_VALUE,
                     )
-                    ?.map { it.deserialize(AppFunctions.ContactSearchResult::class.java) },
+                    ?.map { it.deserialize(ContactSearchResult::class.java) },
             )
                 .containsExactly(
-                    AppFunctions.ContactSearchResult(endpointValue = "1", endpointType = "INDIVIDUAL", displayName = "Alice Smith"),
+                    ContactSearchResult(endpointValue = "1", endpointType = "INDIVIDUAL", displayName = "Alice Smith"),
                 )
         }
 }

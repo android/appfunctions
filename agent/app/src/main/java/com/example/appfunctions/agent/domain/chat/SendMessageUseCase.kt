@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.domain.chat
 
 import com.example.appfunctions.agent.data.ChatRepository
+import com.example.appfunctions.agent.data.db.entities.MessageAttachment
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
@@ -43,6 +44,7 @@ class SendMessageUseCase
             processingStatus: MessageProcessingStatus,
             pendingIntentId: String? = null,
             targetPackageName: String? = null,
+            attachments: List<MessageAttachment> = emptyList(),
         ) {
             val message =
                 MessageEntity(
@@ -54,6 +56,7 @@ class SendMessageUseCase
                     processingStatus = processingStatus,
                     pendingIntentId = pendingIntentId,
                     targetPackageName = targetPackageName,
+                    attachments = attachments,
                 )
             chatRepository.sendMessage(message)
         }

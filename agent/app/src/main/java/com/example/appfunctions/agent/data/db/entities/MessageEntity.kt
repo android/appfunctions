@@ -19,6 +19,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Entity(
     tableName = "messages",
@@ -46,7 +49,34 @@ data class MessageEntity(
      */
     val pendingIntentId: String? = null,
     val targetPackageName: String? = null,
+    val attachments: List<MessageAttachment> = emptyList(),
 )
+
+@Serializable
+data class MessageAttachment(
+    val uri: String,
+    val mimeType: String,
+)
+
+class MessageAttachmentConverter {
+    private val dbJson =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
+
+    @androidx.room.TypeConverter
+    fun fromAttachments(attachments: List<MessageAttachment>): String = dbJson.encodeToString(attachments)
+
+    @androidx.room.TypeConverter
+    fun toAttachments(jsonString: String?): List<MessageAttachment> =
+        if (jsonString.isNullOrBlank()) {
+            emptyList()
+        } else {
+            runCatching { dbJson.decodeFromString<List<MessageAttachment>>(jsonString) }
+                .getOrDefault(emptyList())
+        }
+}
 
 enum class MessageRole {
     USER,

@@ -49,6 +49,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("pixel7Api35") {
+                    device = "Pixel 7"
+                    apiLevel = 35
+                    systemImageSource = "aosp-atd"
+                }
+            }
+        }
+    }
 }
 
 dependencies {
@@ -71,7 +83,6 @@ dependencies {
 
     // App functions
     implementation(libs.androidx.appfunctions)
-    implementation(libs.androidx.appfunctions.service)
     ksp(libs.androidx.appfunctions.compiler)
 
     testImplementation(libs.junit)
