@@ -27,6 +27,7 @@ import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
 import androidx.appfunctions.AppFunctionStringValueConstraint
 import com.example.chatapp.data.CallManager
+import com.example.chatapp.data.DisplayMessage
 import com.example.chatapp.data.MessageRepository
 import com.example.chatapp.data.RecipientsRepository
 import com.example.chatapp.data.WallpaperRepository
@@ -238,15 +239,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
                         endpointValue = id,
                         messages =
                             matchingMessages.map {
-                                val senderDisplayName =
-                                    it.senderName
-                                        ?: if (it.isInbound) {
-                                            recipientsRepository.getRecipientById(id)?.name
-                                                ?: recipientsRepository.getGroupById(id)?.name
-                                                ?: "Other"
-                                        } else {
-                                            "Me"
-                                        }
+                                val senderDisplayName = getSenderDisplayName(it, id)
                                 Message(
                                     messageBody = it.content,
                                     timestamp = it.sentAt,
@@ -259,5 +252,19 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
         }
 
         return results
+    }
+
+    private fun getSenderDisplayName(
+        message: DisplayMessage,
+        endpointId: String,
+    ): String {
+        return message.senderName
+            ?: if (message.isInbound) {
+                recipientsRepository.getRecipientById(endpointId)?.name
+                    ?: recipientsRepository.getGroupById(endpointId)?.name
+                    ?: "Other"
+            } else {
+                "Me"
+            }
     }
 }
