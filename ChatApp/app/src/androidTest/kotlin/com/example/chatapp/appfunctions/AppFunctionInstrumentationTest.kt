@@ -70,12 +70,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    ChatAppFunctionService.FUNCTION_ID_SEND,
+                    ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE,
                     AppFunctionData.Builder(
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
@@ -89,8 +89,7 @@ class AppFunctionInstrumentationTest {
             val successResponse = assertIs<ExecuteAppFunctionResponse.Success>(response)
             assertThat(
                 successResponse.returnValue
-                    .getAppFunctionData(ExecuteAppFunctionResponse.Success.PROPERTY_RETURN_VALUE)
-                    ?.getString("message"),
+                    .getString(ExecuteAppFunctionResponse.Success.PROPERTY_RETURN_VALUE),
             )
                 .isEqualTo("Message sent to: Alice Smith.")
             // Verify that the message was actually saved in the repository
@@ -109,12 +108,12 @@ class AppFunctionInstrumentationTest {
                     )
                     .first()
                     .flatMap { it.appFunctions }
-                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND }
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
                 ExecuteAppFunctionRequest(
                     targetPackageName = context.packageName,
-                    ChatAppFunctionService.FUNCTION_ID_SEND,
+                    ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE,
                     AppFunctionData.Builder(
                         sendMessageFunctionMetadata.parameters,
                         sendMessageFunctionMetadata.components,
@@ -151,7 +150,7 @@ class AppFunctionInstrumentationTest {
                         getRecipientsFunctionMetadata.components,
                     )
                         .setString("query", "Alice")
-                        .setString("filterType", "INDIVIDUAL")
+                        .setString("contactType", "INDIVIDUAL")
                         .build(),
                 )
 
@@ -165,7 +164,12 @@ class AppFunctionInstrumentationTest {
                     ?.map { it.deserialize(ContactSearchResult::class.java) },
             )
                 .containsExactly(
-                    ContactSearchResult(endpointValue = "1", endpointType = "INDIVIDUAL", displayName = "Alice Smith"),
+                    AppFunctions.ContactSearchResult(
+                        contactDisplayName = "Alice Smith",
+                        contactType = "INDIVIDUAL",
+                        endpointValue = "1",
+                        endpointDisplayName = "alice@example.com",
+                    ),
                 )
         }
 }
