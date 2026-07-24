@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
+import com.example.appfunctions.agent.data.ServiceTier
 
 /** Screenshot test for [SettingsScreen]. */
 @PreviewTest
@@ -27,6 +28,10 @@ import com.android.tools.screenshot.PreviewTest
 fun SettingsScreenScreenshotPreview() {
     SettingsScreenContent(
         geminiApiKeyState = rememberTextFieldState("AIzaSy..."),
+        serviceTier = ServiceTier.STANDARD,
+        onServiceTierSelected = {
+            // no-op
+        },
         onOpenLicenses = {
             // no-op
         },

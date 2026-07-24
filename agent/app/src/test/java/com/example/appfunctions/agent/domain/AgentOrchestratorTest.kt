@@ -21,6 +21,7 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
+import com.example.appfunctions.agent.data.ServiceTier
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
@@ -132,7 +133,7 @@ class AgentOrchestratorTest {
             coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
 
             val errorMsg = "LLM failed"
-            coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
+            coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any(), any()) } returns
                 LlmResponse.Error(errorMsg)
 
             agentOrchestrator.observeAndProcessMessages(threadId)
@@ -167,11 +168,8 @@ class AgentOrchestratorTest {
             coEvery { getAppFunctionsUseCase() } returns flowOf(emptyMap())
 
             val responseText = "Hi there"
-            coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any()) } returns
-                LlmResponse.Success(
-                    "interaction_123",
-                    listOf(LlmResponsePart.Text(responseText)),
-                )
+            coEvery { llmProvider.generateResponse(any(), any(), any(), any(), any(), any()) } returns
+                LlmResponse.Success("interaction_123", listOf(LlmResponsePart.Text(responseText)))
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
@@ -215,7 +213,7 @@ class AgentOrchestratorTest {
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
             coEvery {
-                llmProvider.generateResponse(any(), any(), any(), any(), any())
+                llmProvider.generateResponse(any(), any(), any(), any(), any(), any())
             } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
 
             agentOrchestrator.observeAndProcessMessages(threadId)
@@ -247,7 +245,7 @@ class AgentOrchestratorTest {
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
             coEvery {
-                llmProvider.generateResponse(any(), any(), any(), any(), any())
+                llmProvider.generateResponse(any(), any(), any(), any(), any(), any())
             } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
 
             agentOrchestrator.observeAndProcessMessages(threadId)
@@ -391,6 +389,7 @@ class AgentOrchestratorTest {
         coEvery { manageThreadsUseCase.getThread(threadId) } returns flowOf(thread)
         coEvery { settingsRepository.geminiApiKey } returns flowOf(apiKey)
         coEvery { settingsRepository.disconnectedApps } returns flowOf(disconnectedApps)
+        coEvery { settingsRepository.serviceTier } returns flowOf(ServiceTier.STANDARD)
         coEvery { llmProviderFactory.getProvider(LlmProviderName.GEMINI) } returns llmProvider
     }
 

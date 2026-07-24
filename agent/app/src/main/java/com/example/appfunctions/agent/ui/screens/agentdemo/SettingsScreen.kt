@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import android.content.Intent
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,7 +35,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -47,7 +52,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,8 +67,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.appfunctions.agent.BuildConfig
 import com.example.appfunctions.agent.R
+import com.example.appfunctions.agent.data.ServiceTier
 import com.google.android.gms.oss.licenses.v2.OssLicensesMenuActivity
 import kotlin.OptIn
 
@@ -78,9 +87,12 @@ fun SettingsScreen(
         remember(context) {
             { context.startActivity(Intent(context, OssLicensesMenuActivity::class.java)) }
         }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     SettingsScreenContent(
         geminiApiKeyState = viewModel.geminiApiKeyState,
+        serviceTier = uiState.serviceTier,
+        onServiceTierSelected = viewModel::setServiceTier,
         onOpenLicenses = onOpenLicensesClick,
         onNavigateToConnectedApps = onNavigateToConnectedApps,
     )
@@ -91,6 +103,8 @@ fun SettingsScreen(
 @Composable
 fun SettingsScreenContent(
     geminiApiKeyState: TextFieldState,
+    serviceTier: ServiceTier,
+    onServiceTierSelected: (ServiceTier) -> Unit,
     onOpenLicenses: () -> Unit,
     onNavigateToConnectedApps: () -> Unit,
 ) {
@@ -173,6 +187,24 @@ fun SettingsScreenContent(
                 }
             }
 
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(
+                    text = stringResource(id = R.string.settings_service_tier),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                ServiceTierDropdown(
+                    selectedTier = serviceTier,
+                    onTierSelected = onServiceTierSelected,
+                )
+                Text(
+                    text = stringResource(id = R.string.settings_service_tier_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
             ListItem(
                 headlineContent = {
                     Text(
@@ -236,7 +268,60 @@ fun SettingsScreenContent(
 fun SettingsScreenPreview() {
     SettingsScreenContent(
         geminiApiKeyState = rememberTextFieldState("AIzaSy..."),
+        serviceTier = ServiceTier.STANDARD,
+        onServiceTierSelected = {},
         onOpenLicenses = {},
         onNavigateToConnectedApps = {},
     )
 }
+
+/** Dropdown allowing the user to pick the Gemini [ServiceTier] for agent requests. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ServiceTierDropdown(
+    selectedTier: ServiceTier,
+    onTierSelected: (ServiceTier) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = stringResource(id = selectedTier.labelRes()),
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            shape = CircleShape,
+            colors =
+                ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
+                ),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ServiceTier.entries.forEach { tier ->
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(id = tier.labelRes())) },
+                    onClick = {
+                        onTierSelected(tier)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@StringRes
+private fun ServiceTier.labelRes(): Int =
+    when (this) {
+        ServiceTier.STANDARD -> R.string.settings_service_tier_standard
+        ServiceTier.PRIORITY -> R.string.settings_service_tier_priority
+    }

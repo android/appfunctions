@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import com.example.appfunctions.agent.data.LlmProviderName
+import com.example.appfunctions.agent.data.ServiceTier
 import com.example.appfunctions.agent.data.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,9 @@ class FakeSettingsRepository : SettingsRepository {
     private val _selectedProvider = MutableStateFlow<LlmProviderName>(LlmProviderName.GEMINI)
     override val selectedProvider: Flow<LlmProviderName> = _selectedProvider
 
+    private val _serviceTier = MutableStateFlow(ServiceTier.STANDARD)
+    override val serviceTier: Flow<ServiceTier> = _serviceTier
+
     private val _pinnedApps = MutableStateFlow<Set<String>>(emptySet())
     override val pinnedApps: Flow<Set<String>> = _pinnedApps
 
@@ -36,6 +40,10 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun setSelectedProvider(provider: LlmProviderName) {
         _selectedProvider.value = provider
+    }
+
+    override suspend fun setServiceTier(tier: ServiceTier) {
+        _serviceTier.value = tier
     }
 
     override suspend fun setAppPinned(

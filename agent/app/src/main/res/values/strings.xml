@@ -84,6 +84,10 @@
     <string name="settings_title">Agent Settings</string>
     <string name="settings_agent">Agent</string>
     <string name="settings_gemini_api_key">Gemini API Key</string>
+    <string name="settings_service_tier">Service tier</string>
+    <string name="settings_service_tier_description">Priority lowers response latency but requires Tier 2+ billing and costs more.</string>
+    <string name="settings_service_tier_standard">Standard</string>
+    <string name="settings_service_tier_priority">Priority</string>
     <string name="settings_provider_title">Preferred Provider</string>
     <string name="settings_provider_gemini">Gemini</string>
     <string name="settings_open_source_licenses">Open source licenses</string>

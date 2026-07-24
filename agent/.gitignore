@@ -17,6 +17,9 @@ captures/
 *.apk
 output-metadata.json
 
+# Release bundles produced by bundle.sh
+AppFunctionTestingAgent_*.zip
+
 # IntelliJ
 *.iml
 .idea/

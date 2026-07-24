@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.domain
 
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.data.ServiceTier
 
 /** Interface for LLM providers to generate responses. */
 interface LlmProvider {
@@ -28,6 +29,7 @@ interface LlmProvider {
      * @param tools The list of available tools (AppFunctions).
      * @param apiKey The API key for the LLM provider.
      * @param modelName The name of the model to use.
+     * @param serviceTier The processing tier to request for this call.
      * @return The response from the LLM, including the new interaction ID.
      */
     suspend fun generateResponse(
@@ -36,6 +38,7 @@ interface LlmProvider {
         tools: List<AppFunctionMetadata>,
         apiKey: String,
         modelName: String,
+        serviceTier: ServiceTier = ServiceTier.STANDARD,
     ): LlmResponse
 }
 

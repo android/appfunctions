@@ -181,6 +181,7 @@ class AgentOrchestrator
             val provider = thread.llmModel.providerName
             val modelName = thread.llmModel.modelName
             val llmProvider = llmProviderFactory.getProvider(provider)
+            val serviceTier = settingsRepository.serviceTier.first()
 
             var previousInteractionId = thread.latestInteractionId
             var currentToolOutputs = emptyList<ToolOutput>()
@@ -199,6 +200,7 @@ class AgentOrchestrator
                         tools = tools,
                         apiKey = apiKey,
                         modelName = modelName,
+                        serviceTier = serviceTier,
                     )
 
                 when (

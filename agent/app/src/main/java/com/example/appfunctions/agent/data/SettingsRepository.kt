@@ -31,6 +31,12 @@ interface SettingsRepository {
     /** Sets the selected LLM provider. */
     suspend fun setSelectedProvider(provider: LlmProviderName)
 
+    /** Flow of the service tier requested for LLM API calls. */
+    val serviceTier: Flow<ServiceTier>
+
+    /** Sets the service tier requested for LLM API calls. */
+    suspend fun setServiceTier(tier: ServiceTier)
+
     /** Flow of pinned app package names. */
     val pinnedApps: Flow<Set<String>>
 
