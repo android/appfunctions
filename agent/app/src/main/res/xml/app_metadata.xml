@@ -14,13 +14,11 @@
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
   -->
-
 <AppFunctionAppMetadata xmlns:appfn="http://schemas.android.com/apk/androidx.appfunctions"
-    appfn:description="Provides functions for managing chat conversations on WearOS, searching contacts, sending messages, and initiating voice calls.
-Operational Patterns:
-  - Always call 'searchContacts' first to resolve contact or group names to an 'endpointValue' before calling 'send' or 'makeCall'.
-  - Passing a blank query string to 'searchContacts' retrieves the most recently contacted entities.
-Constraints:
-  - Message content cannot be empty or blank when calling 'send'.
-  - Calls and messages must use valid endpointValue identifiers returned by 'searchContacts'."
-    appfn:displayDescription="@string/app_function_app_display_description"/>
+    appfn:description="AppFunction Testing Agent provides location geocoding and test functions for AI agents and debugging.
+    Operational Patterns:
+    - Use 'geocodeAddress' to resolve physical address strings to latitude and longitude coordinates.
+    - Use 'getCurrentLocation' to retrieve the device's current coordinates when permission is granted.
+    Constraints:
+    - Location retrieval requires location permissions to be granted by the user."
+    appfn:displayDescription="@string/app_name" />

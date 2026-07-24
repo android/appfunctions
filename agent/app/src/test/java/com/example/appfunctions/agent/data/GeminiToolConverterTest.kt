@@ -408,4 +408,116 @@ class GeminiToolConverterTest {
 
         assertEquals(expectedJson, schema)
     }
+
+    @Test
+    fun convert_stringParameterEndingWithUri_injectsFileReferenceFormat() {
+        val parameter =
+            AppFunctionParameterMetadata(
+                name = "wallpaperUri",
+                isRequired = true,
+                dataType = AppFunctionStringTypeMetadata(isNullable = false),
+                description = "A URI parameter",
+            )
+        val tool =
+            AppFunctionMetadata(
+                id = "com.example.my_function",
+                packageName = "com.example",
+                isEnabled = true,
+                schema = null,
+                parameters = listOf(parameter),
+                response =
+                    AppFunctionResponseMetadata(
+                        valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                        description = "",
+                    ),
+                components = AppFunctionComponentsMetadata(emptyMap()),
+                description = "Test function",
+                deprecation = null,
+            )
+
+        val schema = converter.convert(tool)
+
+        val expectedJson =
+            Json.parseToJsonElement(
+                """
+            {
+                "name": "com_example_my_function",
+                "description": "Test function",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "wallpaperUri": {
+                            "type": "string",
+                            "format": "file_reference",
+                            "description": "A URI parameter"
+                        }
+                    },
+                    "required": ["wallpaperUri"]
+                }
+            }
+        """,
+            )
+
+        assertEquals(expectedJson, schema)
+    }
+
+    @Test
+    fun convert_uriObjectType_injectsFileReferenceFormat() {
+        val uriObjectMetadata =
+            AppFunctionObjectTypeMetadata(
+                properties = emptyMap(),
+                required = emptyList(),
+                qualifiedName = "android.net.Uri",
+                isNullable = false,
+                description = "Uri object",
+            )
+        val parameter =
+            AppFunctionParameterMetadata(
+                name = "customUri",
+                isRequired = true,
+                dataType = uriObjectMetadata,
+                description = "A Uri object parameter",
+            )
+        val tool =
+            AppFunctionMetadata(
+                id = "com.example.my_function",
+                packageName = "com.example",
+                isEnabled = true,
+                schema = null,
+                parameters = listOf(parameter),
+                response =
+                    AppFunctionResponseMetadata(
+                        valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                        description = "",
+                    ),
+                components = AppFunctionComponentsMetadata(emptyMap()),
+                description = "Test function",
+                deprecation = null,
+            )
+
+        val schema = converter.convert(tool)
+
+        val expectedJson =
+            Json.parseToJsonElement(
+                """
+            {
+                "name": "com_example_my_function",
+                "description": "Test function",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "customUri": {
+                            "type": "string",
+                            "format": "file_reference",
+                            "description": "A Uri object parameter"
+                        }
+                    },
+                    "required": ["customUri"]
+                }
+            }
+        """,
+            )
+
+        assertEquals(expectedJson, schema)
+    }
 }

@@ -27,8 +27,8 @@ android {
 
     defaultConfig {
         applicationId = "com.example.chatapp.wear"
-        minSdk = 30
-        targetSdk = 35
+        minSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
     }
@@ -44,6 +44,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("wearOS34") {
+                    device = "Wear OS XL Round"
+                    apiLevel = 34
+                    systemImageSource = "android-wear"
+                }
+            }
+        }
+    }
 }
 
 dependencies {
@@ -66,9 +78,7 @@ dependencies {
 
     // App functions
     implementation(libs.androidx.appfunctions)
-    implementation(libs.androidx.appfunctions.service)
     ksp(libs.androidx.appfunctions.compiler)
-
 }
 
 // AppFunctions ksp option

@@ -16,6 +16,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.screenshot)
@@ -30,7 +31,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.appfunctions.agent"
-        minSdk = 35
+        minSdk = 36
         targetSdk = 37
         versionCode = 1
         versionName = "0.0.0"
@@ -60,7 +61,10 @@ android {
             dimension = "mode"
             buildConfigField("Boolean", "IS_RETAIL", "true")
 
-            val containsRetail = gradle.startParameter.taskNames.any { it.contains("Retail", ignoreCase = true) }
+            val containsRetail =
+                gradle.startParameter.taskNames.any {
+                    it.contains("Retail", ignoreCase = true)
+                }
             val apiKey = project.findProperty("GEMINI_API_KEY") as? String ?: ""
             if (containsRetail && apiKey.isEmpty()) {
                 throw GradleException(
@@ -85,6 +89,15 @@ android {
         screenshotTests {
             imageDifferenceThreshold = 0.01f // 1%
         }
+        managedDevices {
+            localDevices {
+                create("pixel7Api35") {
+                    device = "Pixel 7"
+                    apiLevel = 35
+                    systemImageSource = "aosp-atd"
+                }
+            }
+        }
     }
 
     lint {
@@ -100,7 +113,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.appfunctions)
-    implementation(libs.androidx.appfunctions.service)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)

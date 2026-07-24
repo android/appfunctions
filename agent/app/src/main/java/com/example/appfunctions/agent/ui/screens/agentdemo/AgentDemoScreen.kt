@@ -88,6 +88,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -118,6 +119,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
@@ -671,15 +673,19 @@ fun MessageBubble(
                             Spacer(modifier = Modifier.width(8.dp))
                         }
                         val contentText =
-                            if (message.textContent.isEmpty() &&
+                            if (
+                                message.textContent.isEmpty() &&
                                 message.pendingIntentId != null
                             ) {
                                 stringResource(R.string.agent_demo_action_confirmation_needed)
                             } else {
                                 message.textContent
                             }
+
                         if (message.role != MessageRole.USER) {
-                            Markdown(content = contentText)
+                            if (contentText.isNotEmpty()) {
+                                Markdown(content = contentText)
+                            }
                         } else {
                             val chipBgColor = MaterialTheme.colorScheme.primary
                             val chipTextColor = MaterialTheme.colorScheme.onPrimary
@@ -706,7 +712,10 @@ fun MessageBubble(
                                                 "|",
                                             ) { Regex.escape(it.label) }
                                         val regex =
-                                            Regex("@($appLabelsPattern)\\b", RegexOption.IGNORE_CASE)
+                                            Regex(
+                                                "@($appLabelsPattern)\\b",
+                                                RegexOption.IGNORE_CASE,
+                                            )
                                         regex.findAll(contentText).forEachIndexed { index, match ->
                                             val id = "chip_$index"
                                             val appName = match.value
@@ -794,6 +803,24 @@ fun MessageBubble(
                             },
                         )
                     }
+                }
+            }
+        }
+
+        if (message.role != MessageRole.USER) {
+            message.attachments.forEach { attachment ->
+                if (attachment.mimeType.startsWith("image/", ignoreCase = true)) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    AsyncImage(
+                        model = attachment.uri,
+                        contentDescription = "Generated Image",
+                        modifier =
+                            Modifier
+                                .fillMaxWidth(0.85f)
+                                .height(240.dp)
+                                .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
                 }
             }
         }

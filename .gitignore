@@ -6,3 +6,4 @@ app/build
 gradle/gradle-daemon-jvm.properties
 local.properties
 .DS_Store
+!.editorconfig
