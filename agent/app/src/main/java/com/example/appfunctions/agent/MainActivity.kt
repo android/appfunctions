@@ -21,6 +21,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -30,16 +33,16 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -50,6 +53,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.example.appfunctions.agent.ui.layout.AdaptiveMainNavigation
 import com.example.appfunctions.agent.ui.screens.agentdemo.AgentDemoScreen
 import com.example.appfunctions.agent.ui.screens.agentdemo.ConnectedAppsScreen
 import com.example.appfunctions.agent.ui.screens.agentdemo.SettingsScreen
@@ -155,38 +159,16 @@ fun MainScreen(
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        bottomBar = {
-            NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-                items.forEachIndexed { index, screen ->
-                    NavigationBarItem(
-                        icon = { Icon(icons[index], contentDescription = labels[index]) },
-                        label = { Text(labels[index]) },
-                        selected =
-                            currentDestination?.hierarchy?.any {
-                                it.route?.startsWith(screen) == true
-                            } == true,
-                        onClick = {
-                            navController.navigate(screen) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                    )
-                }
-            }
-        },
-    ) { innerPadding ->
+    AdaptiveMainNavigation(
+        navController = navController,
+        items = items,
+        icons = icons,
+        labels = labels,
+    ) { contentModifier ->
         NavHost(
             navController = navController,
             startDestination = "debugging",
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            modifier = contentModifier,
         ) {
             composable("debugging") { DebuggingScreen() }
             composable(
