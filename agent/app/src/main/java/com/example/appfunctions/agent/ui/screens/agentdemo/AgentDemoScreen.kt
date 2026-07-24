@@ -136,8 +136,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun AgentDemoScreen(viewModel: AgentDemoViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val messageText by viewModel.messageText.collectAsStateWithLifecycle()
 
-    AgentDemoContent(uiState = uiState, onEvent = viewModel::onEvent)
+    AgentDemoContent(
+        uiState = uiState,
+        onEvent = viewModel::onEvent,
+        messageText = messageText,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,6 +150,7 @@ fun AgentDemoScreen(viewModel: AgentDemoViewModel = hiltViewModel()) {
 fun AgentDemoContent(
     uiState: AgentUiState,
     onEvent: (AgentUiEvent) -> Unit,
+    messageText: String = "",
     initialSidePanelVisible: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -174,6 +180,7 @@ fun AgentDemoContent(
                         drawerState = drawerState,
                         scope = scope,
                         packageManager = packageManager,
+                        messageText = messageText,
                         initialSidePanelVisible = initialSidePanelVisible,
                     )
                 }
@@ -224,9 +231,12 @@ fun AgentDemoLoadedScreen(
     drawerState: DrawerState,
     scope: CoroutineScope,
     packageManager: PackageManager,
+    messageText: String = "",
     initialSidePanelVisible: Boolean = false,
 ) {
-    var messageText by remember { mutableStateOf(TextFieldValue("")) }
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(messageText, TextRange(messageText.length)))
+    }
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
     var selectedAppPackageName by remember { mutableStateOf<String?>(null) }
 
@@ -339,15 +349,15 @@ fun AgentDemoLoadedScreen(
                 }
 
                 val sendMessage = {
-                    val textStr = messageText.text
+                    val textStr = textFieldValue.text
                     if (textStr.isNotBlank() && uiState.status == AgentStatus.Idle) {
                         onEvent(AgentUiEvent.OnSendMessage(textStr, selectedAppPackageName))
-                        messageText = TextFieldValue("")
+                        textFieldValue = TextFieldValue("")
                         selectedAppPackageName = null
                     }
                 }
 
-                val textStr = messageText.text
+                val textStr = textFieldValue.text
                 val lastAtIndex = textStr.lastIndexOf('@')
                 val showAutocomplete =
                     lastAtIndex >= 0 &&
@@ -403,9 +413,10 @@ fun AgentDemoLoadedScreen(
                 // Input area
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
-                        value = messageText,
+                        value = textFieldValue,
                         onValueChange = { newValue ->
-                            messageText = newValue
+                            textFieldValue = newValue
+                            onEvent(AgentUiEvent.OnMessageTextChanged(newValue.text))
                             val currentText = newValue.text
                             if (selectedAppPackageName != null && appMentionRegex != null) {
                                 if (!appMentionRegex.containsMatchIn(currentText)) {
@@ -443,7 +454,7 @@ fun AgentDemoLoadedScreen(
                             IconButton(
                                 onClick = sendMessage,
                                 enabled =
-                                    messageText.text.isNotBlank() &&
+                                    textFieldValue.text.isNotBlank() &&
                                         uiState.status == AgentStatus.Idle,
                             ) {
                                 Icon(
@@ -475,8 +486,8 @@ fun AgentDemoLoadedScreen(
                                         DropdownMenuItem(
                                             text = { Text(app.label) },
                                             onClick = {
-                                                val currentText = messageText.text
-                                                val selectionStart = messageText.selection.start
+                                                val currentText = textFieldValue.text
+                                                val selectionStart = textFieldValue.selection.start
                                                 val textBeforeCursor =
                                                     currentText.take(
                                                         selectionStart,
@@ -496,7 +507,7 @@ fun AgentDemoLoadedScreen(
                                                         "$textBeforeMention@${app.label} $textAfterCursor"
                                                     val newCursorPosition =
                                                         mentionIndex + app.label.length + 2
-                                                    messageText =
+                                                    textFieldValue =
                                                         TextFieldValue(
                                                             text = newText,
                                                             selection =
@@ -504,6 +515,9 @@ fun AgentDemoLoadedScreen(
                                                                     newCursorPosition,
                                                                 ),
                                                         )
+                                                    onEvent(
+                                                        AgentUiEvent.OnMessageTextChanged(newText),
+                                                    )
                                                     selectedAppPackageName = app.packageName
                                                 }
                                             },
@@ -947,12 +961,9 @@ fun ChatHistorySidePanel(
 
                 Surface(
                     modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                onEvent(AgentUiEvent.OnThreadSelected(thread.threadId))
-                            },
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
+                            onEvent(AgentUiEvent.OnThreadSelected(thread.threadId))
+                        },
                     shape = MaterialTheme.shapes.medium,
                     color = backgroundColor,
                     contentColor = textColor,
