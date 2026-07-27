@@ -25,6 +25,7 @@ enum class LlmModel private constructor(val providerName: LlmProviderName, val m
     // Stable (GA) models: consistent latency and production rate limits. Prefer these.
     GEMINI_3_5_FLASH(LlmProviderName.GEMINI, "gemini-3.5-flash"),
     GEMINI_3_1_FLASH_LITE(LlmProviderName.GEMINI, "gemini-3.1-flash-lite"),
+
     // Preview models: newer capabilities but restrictive rate limits and no latency SLA.
     GEMINI_3_1_PRO_PREVIEW(LlmProviderName.GEMINI, "gemini-3.1-pro-preview"),
     GEMINI_3_FLASH_PREVIEW(LlmProviderName.GEMINI, "gemini-3-flash-preview"),
