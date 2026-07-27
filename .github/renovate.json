@@ -3,7 +3,7 @@
   "extends": [
     "local>android/.github:renovate-config"
   ],
-  "baseBranches": [
+  "baseBranchPatterns": [
     "main"
   ],
   "gitIgnoredAuthors": [
