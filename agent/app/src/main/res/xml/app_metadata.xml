@@ -15,10 +15,5 @@
   ~ limitations under the License.
   -->
 <AppFunctionAppMetadata xmlns:appfn="http://schemas.android.com/apk/androidx.appfunctions"
-    appfn:description="AppFunction Testing Agent provides location geocoding and test functions for AI agents and debugging.
-    Operational Patterns:
-    - Use 'geocodeAddress' to resolve physical address strings to latitude and longitude coordinates.
-    - Use 'getCurrentLocation' to retrieve the device's current coordinates when permission is granted.
-    Constraints:
-    - Location retrieval requires location permissions to be granted by the user."
+    appfn:description="Sample Agent app for testing and debugging AppFunctions."
     appfn:displayDescription="@string/app_name" />
