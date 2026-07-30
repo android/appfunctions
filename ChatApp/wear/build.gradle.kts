@@ -59,27 +59,21 @@ android {
 }
 
 dependencies {
-    implementation(project(":shared"))
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-
-    implementation(libs.androidx.wear.compose.material3)
-    implementation(libs.androidx.wear.compose.foundation)
+    implementation(libs.androidx.appfunctions)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
-    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
-    implementation(libs.kotlinx.serialization.json)
-
-    // Hilt
+    implementation(libs.androidx.wear.compose.foundation)
+    implementation(libs.androidx.wear.compose.material3)
     implementation(libs.hilt.android.core)
-    implementation(libs.androidx.hilt.navigation.compose)
-    ksp(libs.hilt.compiler)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(project(":shared"))
 
-    // App functions
-    implementation(libs.androidx.appfunctions)
     ksp(libs.androidx.appfunctions.compiler)
+    ksp(libs.hilt.compiler)
 }
 
-// AppFunctions ksp option
-ksp { arg("appfunctions:aggregateAppFunctions", "true") }
