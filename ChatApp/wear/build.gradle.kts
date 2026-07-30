@@ -76,4 +76,3 @@ dependencies {
     ksp(libs.androidx.appfunctions.compiler)
     ksp(libs.hilt.compiler)
 }
-
