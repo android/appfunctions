@@ -35,17 +35,13 @@ android {
 }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-
+    implementation(libs.androidx.appfunctions)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-
-    // Hilt
+    implementation(libs.androidx.ui)
     implementation(libs.hilt.android.core)
-    ksp(libs.hilt.compiler)
+    implementation(platform(libs.androidx.compose.bom))
 
-    // App functions
-    implementation(libs.androidx.appfunctions)
     ksp(libs.androidx.appfunctions.compiler)
+    ksp(libs.hilt.compiler)
 }
