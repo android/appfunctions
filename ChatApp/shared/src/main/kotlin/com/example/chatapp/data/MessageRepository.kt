@@ -108,7 +108,7 @@ class MessageRepositoryImpl
             imageUris: List<String>?,
         ): String {
             // Simulate network delay
-            randomDelay()
+//            randomDelay()
             val sentAt = System.currentTimeMillis()
 
             recipientIds.forEach { id ->
