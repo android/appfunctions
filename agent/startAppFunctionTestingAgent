@@ -69,11 +69,33 @@ if ! $ADB shell pm list packages | grep -q "$PACKAGE_NAME"; then
     exit 1
 fi
 
+echo "🔑 Extracting package fingerprint from device..."
+FINGERPRINT=$($ADB shell dumpsys package $PACKAGE_NAME | grep PackageSignatures | awk -F 'signatures:\\[' '{print $2}' | awk -F '\\]' '{print $1}' | tr '[:upper:]' '[:lower:]')
+
+if [[ -z "$FINGERPRINT" ]]; then
+    echo "❌ Could not extract fingerprint from device for package $PACKAGE_NAME."
+    exit 1
+fi
+echo "✅ Using fingerprint: $FINGERPRINT"
+
 SDK_VERSION=$($ADB shell getprop ro.build.version.sdk)
 if [[ $SDK_VERSION -ge 37 ]]; then
   echo "🔑 Adding package to allowlist..."
-  $ADB shell cmd app_function purge-allowlist-cache
-  $ADB shell cmd allowlist add-package-multimap 2 ${PACKAGE_NAME}:2b2a355227c3fa4b666269bcdb2dbda5287142603927956e6cecae41a8e949ec "'*'"
+  # Replaced by flush-allowlist-change in 17.1
+  if $ADB shell cmd app_function help 2>&1 | grep -q "purge-allowlist-cache"; then
+    $ADB shell cmd app_function purge-allowlist-cache
+  fi
+  if $ADB shell cmd app_function add-package-with-metadata-multimap 2>&1 | grep -q "add-package-with-metadata-multimap"; then
+    $ADB shell cmd allowlist add-package-with-metadata-multimap 2 ${PACKAGE_NAME}:${FINGERPRINT} android.allowlist.metadata.key.APP_FUNCTION_TYPE_DOWNLOADED:boolean:true "'*'" ignore:string:default
+  else
+    $ADB shell cmd allowlist add-package-multimap 2 ${PACKAGE_NAME}:${FINGERPRINT} "'*'"
+  fi
+  # flush-allowlist-changes is not in help page. Use set-temporary-caller as proxy since it is
+  # guarded with the same flag
+  if $ADB shell cmd app_function help 2>&1 | grep -q "set-temporary-caller"; then
+    echo "Flush allowlist changes"
+    $ADB shell cmd app_function flush-allowlist-changes
+  fi
 else
   echo "Skipping allowlist for SDK version $SDK_VERSION..."
 fi
