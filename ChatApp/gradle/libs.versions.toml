@@ -23,6 +23,7 @@ navigation3 = "1.1.4"
 kotlinxSerialization = "1.11.0"
 #noinspection UnusedVersionCatalogEntry - Accessed dynamically
 ktlint = "1.2.1"
+composeNavigation3 = "1.6.2"
 
 [libraries]
 androidx-appfunctions = { module = "androidx.appfunctions:appfunctions", version.ref = "appfunctions" }
@@ -58,6 +59,7 @@ androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigat
 androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
 androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycleRuntimeKtx" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+androidx-compose-navigation3 = { group = "androidx.wear.compose", name = "compose-navigation3", version.ref = "composeNavigation3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -19,14 +19,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.navigation3.rememberSwipeDismissableSceneStrategy
 import com.example.chatapp.wear.uicomponents.WearAppFunctionsScreen
 import com.example.chatapp.wear.uicomponents.WearCallScreen
 import com.example.chatapp.wear.uicomponents.WearChatScreen
@@ -36,13 +37,17 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 sealed interface Screen : NavKey {
-    @Serializable data object Recipients : Screen
+    @Serializable
+    data object Recipients : Screen
 
-    @Serializable data object Settings : Screen
+    @Serializable
+    data object Settings : Screen
 
-    @Serializable data class Chat(val recipientId: String) : Screen
+    @Serializable
+    data class Chat(val recipientId: String) : Screen
 
-    @Serializable data class Call(val recipientId: String) : Screen
+    @Serializable
+    data class Call(val recipientId: String) : Screen
 }
 
 @AndroidEntryPoint
@@ -57,45 +62,50 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun WearApp() {
-    val backStack = remember { mutableStateListOf<Screen>(Screen.Recipients) }
+    val backStack = rememberNavBackStack(Screen.Recipients)
 
     MaterialTheme {
-        NavDisplay(
-            backStack = backStack,
-            onBack = {
-                if (backStack.size > 1) {
-                    backStack.removeAt(backStack.size - 1)
-                }
-            },
-            entryDecorators =
-                listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-            entryProvider =
-                entryProvider {
-                    entry<Screen.Recipients> {
-                        WearRecipientsScreen(
-                            onRecipientClick = { id -> backStack.add(Screen.Chat(id)) },
-                            onSettingsClick = { backStack.add(Screen.Settings) },
-                        )
-                    }
-                    entry<Screen.Settings> {
-                        WearAppFunctionsScreen()
-                    }
-                    entry<Screen.Chat> { key ->
-                        WearChatScreen(
-                            recipientId = key.recipientId,
-                            onCallClick = { backStack.add(Screen.Call(key.recipientId)) },
-                        )
-                    }
-                    entry<Screen.Call> { key ->
-                        WearCallScreen(
-                            recipientId = key.recipientId,
-                            onEndCall = { backStack.removeAt(backStack.size - 1) },
-                        )
+        AppScaffold {
+            val swipeDismissableSceneStrategy = rememberSwipeDismissableSceneStrategy<NavKey>()
+
+            NavDisplay(
+                backStack = backStack,
+                onBack = {
+                    if (backStack.size > 1) {
+                        backStack.removeAt(backStack.size - 1)
                     }
                 },
-        )
+                entryDecorators =
+                    listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    ),
+                entryProvider =
+                    entryProvider<NavKey> {
+                        entry<Screen.Recipients> {
+                            WearRecipientsScreen(
+                                onRecipientClick = { id -> backStack.add(Screen.Chat(id)) },
+                                onSettingsClick = { backStack.add(Screen.Settings) },
+                            )
+                        }
+                        entry<Screen.Settings> {
+                            WearAppFunctionsScreen()
+                        }
+                        entry<Screen.Chat> { key ->
+                            WearChatScreen(
+                                recipientId = key.recipientId,
+                                onCallClick = { backStack.add(Screen.Call(key.recipientId)) },
+                            )
+                        }
+                        entry<Screen.Call> { key ->
+                            WearCallScreen(
+                                recipientId = key.recipientId,
+                                onEndCall = { backStack.removeAt(backStack.size - 1) },
+                            )
+                        }
+                    },
+                sceneStrategies = listOf(swipeDismissableSceneStrategy),
+            )
+        }
     }
 }

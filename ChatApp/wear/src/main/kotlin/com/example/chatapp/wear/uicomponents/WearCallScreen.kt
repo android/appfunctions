@@ -26,13 +26,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import com.example.chatapp.ChatViewModel
+import com.example.chatapp.wear.R
 
 @Composable
 fun WearCallScreen(
@@ -52,23 +55,25 @@ fun WearCallScreen(
         viewModel.startCall()
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(text = "Calling...")
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(text = activeCall?.name ?: viewModel.recipient.name)
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                viewModel.endCall()
-                onEndCall()
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+    ScreenScaffold {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Text("End")
+            Text(text = stringResource(R.string.calling))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = activeCall?.name ?: viewModel.recipient.name)
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    viewModel.endCall()
+                    onEndCall()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+            ) {
+                Text("End")
+            }
         }
     }
 }
