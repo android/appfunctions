@@ -27,6 +27,7 @@ data class DebuggingUiState(
     val searchQuery: String = "",
     val isLoading: Boolean = false,
     val searchAppResultState: SearchAppResultState = SearchAppResultState.Idle,
+    val toastMessage: String? = null,
 )
 
 data class AppsGroupState(

@@ -16,7 +16,6 @@
 package com.example.appfunctions.agent.ui.screens.debugging
 
 import android.app.PendingIntent
-import android.content.res.Resources
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.lifecycle.ViewModel
@@ -32,7 +31,6 @@ import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import com.example.appfunctions.agent.domain.troubleshoot.TroubleshootAppUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,7 +56,6 @@ class DebuggingViewModel
         private val troubleshootAppUseCase: TroubleshootAppUseCase,
         private val launchPendingIntentUseCase: LaunchPendingIntentUseCase,
         private val settingsRepository: SettingsRepository,
-        @ApplicationContext private val context: android.content.Context,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow(DebuggingUiState())
         val uiState: StateFlow<DebuggingUiState> = _uiState.asStateFlow()
@@ -69,8 +66,16 @@ class DebuggingViewModel
             emptyMap()
 
         init {
-            loadInstalledApps()
-            loadAppFunctions()
+            _uiState.update { it.copy(isLoading = true) }
+            viewModelScope.launch {
+                allInstalledApps = getInstalledAppsUseCase()
+                getAppFunctionsUseCase().collect { appFunctionsMap ->
+                    allAppFunctions = appFunctionsMap
+                    _uiState.update { state ->
+                        state.copy(filteredApps = filterApps(state.searchQuery), isLoading = false)
+                    }
+                }
+            }
             observePinnedApps()
         }
 
@@ -83,27 +88,9 @@ class DebuggingViewModel
             }
         }
 
-        private fun loadAppFunctions() {
-            viewModelScope.launch {
-                _uiState.update { it.copy(isLoading = true) }
-                getAppFunctionsUseCase().collect { appFunctionsMap ->
-                    allAppFunctions = appFunctionsMap
-                    updateAppsGroupState()
-                }
-            }
-        }
-
-        private fun loadInstalledApps() {
-            viewModelScope.launch {
-                val apps = getInstalledAppsUseCase()
-                allInstalledApps = apps
-                updateAppsGroupState()
-            }
-        }
-
         private fun updateAppsGroupState() {
             _uiState.update { state ->
-                state.copy(filteredApps = filterApps(state.searchQuery), isLoading = false)
+                state.copy(filteredApps = filterApps(state.searchQuery))
             }
         }
 
@@ -111,8 +98,8 @@ class DebuggingViewModel
         fun onAppSelected(appInfo: AppInfo) {
             val functions =
                 allAppFunctions.entries.find { it.key.packageName == appInfo.packageName }?.value
-            if (functions == null) {
-                runTroubleshooting(appInfo.packageName)
+            if (functions.isNullOrEmpty()) {
+                runTroubleshooting(appInfo)
             } else {
                 _uiState.update { state ->
                     state.copy(
@@ -122,6 +109,10 @@ class DebuggingViewModel
                     )
                 }
             }
+        }
+
+        fun onToastShown() {
+            _uiState.update { it.copy(toastMessage = null) }
         }
 
         fun onClearSelectedApp() {
@@ -302,15 +293,16 @@ class DebuggingViewModel
             }
         }
 
-        private fun runTroubleshooting(packageName: String) {
+        private fun runTroubleshooting(appInfo: AppInfo) {
             viewModelScope.launch {
                 _uiState.update {
                     it.copy(
                         searchAppResultState =
                             SearchAppResultState.TroubleshootUiState(isLoading = true),
+                        toastMessage = "${appInfo.label} does not have any AppFunctions",
                     )
                 }
-                val report = troubleshootAppUseCase(packageName)
+                val report = troubleshootAppUseCase(appInfo.packageName)
                 _uiState.update {
                     it.copy(
                         searchAppResultState =
@@ -336,7 +328,7 @@ class DebuggingViewModel
                 buildList {
                     val filteredPinned = pinnedApps.filter { it.label.contains(query, ignoreCase = true) }
                     if (filteredPinned.isNotEmpty()) {
-                        add(AppSection(Resources.ID_NULL, filteredPinned, true))
+                        add(AppSection(R.string.debugging_pinned_apps, filteredPinned, true))
                     }
 
                     val filteredSupported =

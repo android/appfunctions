@@ -31,6 +31,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -57,12 +58,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -94,12 +99,25 @@ fun AppFunctionItem(
                 },
         )
 
+    var isCardFocused by remember { mutableStateOf(false) }
+    val cardScale by animateFloatAsState(if (isCardFocused) 1.02f else 1.0f, label = "cardScale")
+
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        tonalElevation = tonalElevation,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .scale(cardScale)
+                .onFocusChanged { isCardFocused = it.isFocused },
+        tonalElevation = if (isCardFocused) 8.dp else tonalElevation,
         shadowElevation = shadowElevation,
         shape = MaterialTheme.shapes.large,
-        color = surfaceColor,
+        color = if (isCardFocused) MaterialTheme.colorScheme.surfaceBright else surfaceColor,
+        border =
+            if (isCardFocused) {
+                BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
+            } else {
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            },
     ) {
         Column(
             modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 8.dp, bottom = 16.dp),

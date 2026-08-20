@@ -31,8 +31,10 @@
 
     <!-- Debugging -->
     <string name="debugging_title">Debugging Page</string>
-    <string name="debugging_supported">Supported</string>
-    <string name="debugging_unsupported">Unsupported</string>
+    <string name="debugging_installed_apps_title">Installed Apps</string>
+    <string name="debugging_pinned_apps">Pinned Apps</string>
+    <string name="debugging_supported">Apps with AppFunctions</string>
+    <string name="debugging_unsupported">Apps without AppFunctions</string>
     <string name="debugging_search_app">Search App</string>
     <string name="debugging_select_app_prompt">Select an app to see its functions</string>
     <string name="debugging_functions_for_app">Functions for %1$s:</string>
@@ -102,8 +104,8 @@
     <string name="agent_demo_new_thread">New Thread</string>
     <string name="agent_demo_ask_agent">Ask Agent</string>
     <string name="agent_demo_send">Send</string>
-    <string name="agent_demo_thinking">Thinking...</string>
-    <string name="agent_demo_connecting">Connecting...</string>
+    <string name="agent_demo_thinking">Thinking…</string>
+    <string name="agent_demo_connecting">Connecting…</string>
     <string name="agent_demo_error">Error: %1$s</string>
     <string name="agent_demo_select_model_to_create_thread">Select a model to create a thread</string>
     <string name="agent_demo_select_model_placeholder">Select a model from the dropdown above to start a conversation</string>
