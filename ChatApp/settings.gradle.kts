@@ -15,6 +15,9 @@
  */
 pluginManagement {
     repositories {
+        maven {
+            url = uri("https://androidx.dev/snapshots/builds/16181473/artifacts/repository")
+        }
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -29,6 +32,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven {
+            url = uri("https://androidx.dev/snapshots/builds/16181473/artifacts/repository")
+        }
         google()
         mavenCentral()
     }

@@ -26,6 +26,7 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
+import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import androidx.core.content.FileProvider
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmProviderName
@@ -549,8 +550,7 @@ class AgentOrchestrator
         ): Any {
             return when (value) {
                 is String -> {
-                    val shouldResolve =
-                        isFileReferenceParameter(paramName) || isUriMetadata(dataType)
+                    val shouldResolve = isUriMetadata(dataType)
                     if (shouldResolve && (
                             value.startsWith(
                                 "http://",
@@ -661,16 +661,19 @@ class AgentOrchestrator
             }
         }
 
-        private fun isFileReferenceParameter(parameterName: String?): Boolean {
-            if (parameterName == null) return false
-            if (parameterName in KNOWN_FILE_REFERENCE_PARAM_NAMES) return true
-            return parameterName.endsWith("Uri", ignoreCase = true) ||
-                parameterName.endsWith("Uris", ignoreCase = true)
-        }
-
         private fun isUriMetadata(dataType: AppFunctionDataTypeMetadata?): Boolean {
             if (dataType == null) return false
-            if (dataType is AppFunctionObjectTypeMetadata && dataType.qualifiedName == "android.net.Uri") return true
+            if (dataType is AppFunctionObjectTypeMetadata && dataType.qualifiedName == "android.net.Uri") {
+                val innerProp = dataType.properties["uri"] as? AppFunctionStringTypeMetadata
+                val pattern = innerProp?.pattern
+                return pattern == null || pattern.contains("content") || innerProp?.format == AppFunctionStringTypeMetadata.FORMAT_URI
+            }
+            if (dataType is AppFunctionStringTypeMetadata) {
+                val pattern = dataType.pattern
+                return (pattern != null && pattern.contains("content")) ||
+                    dataType.format == AppFunctionStringTypeMetadata.FORMAT_URI ||
+                    dataType.format == "uri"
+            }
             if (dataType is AppFunctionReferenceTypeMetadata && dataType.referenceDataType == "android.net.Uri") return true
             return false
         }
@@ -718,18 +721,5 @@ class AgentOrchestrator
                     else -> throw IllegalArgumentException("Unknown internal tool: ${toolCall.functionId}")
                 }
             }
-        }
-
-        companion object {
-            private val KNOWN_FILE_REFERENCE_PARAM_NAMES =
-                setOf(
-                    "wallpaperUri",
-                    "imageUri",
-                    "attachmentUri",
-                    "ringtoneUri",
-                    "profilePictureUri",
-                    "audioUri",
-                    "voiceNoteUri",
-                )
         }
     }

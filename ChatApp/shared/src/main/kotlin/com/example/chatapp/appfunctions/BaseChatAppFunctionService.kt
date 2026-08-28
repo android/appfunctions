@@ -16,6 +16,7 @@
 package com.example.chatapp.appfunctions
 
 import android.app.PendingIntent
+import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.RequiresApi
@@ -26,6 +27,7 @@ import androidx.appfunctions.AppFunctionInvalidArgumentException
 import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
 import androidx.appfunctions.AppFunctionStringValueConstraint
+import androidx.appfunctions.AppFunctionUriValueConstraint
 import com.example.chatapp.data.CallManager
 import com.example.chatapp.data.DisplayMessage
 import com.example.chatapp.data.MessageRepository
@@ -184,6 +186,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
     @AppFunction(isDescribedByKDoc = true)
     suspend fun updateChatWallpaper(
         chatId: String,
+        @AppFunctionUriValueConstraint(allowedSchemes = [ContentResolver.SCHEME_CONTENT])
         wallpaperUri: Uri,
     ): Boolean {
         val resolvedId =
