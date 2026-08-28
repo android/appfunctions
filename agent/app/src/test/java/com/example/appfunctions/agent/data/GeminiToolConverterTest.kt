@@ -410,12 +410,16 @@ class GeminiToolConverterTest {
     }
 
     @Test
-    fun convert_stringParameterEndingWithUri_injectsFileReferenceFormat() {
+    fun convert_stringParameterWithUriFormat_injectsFileReferenceFormat() {
         val parameter =
             AppFunctionParameterMetadata(
                 name = "wallpaperUri",
                 isRequired = true,
-                dataType = AppFunctionStringTypeMetadata(isNullable = false),
+                dataType =
+                    AppFunctionStringTypeMetadata(
+                        isNullable = false,
+                        format = AppFunctionStringTypeMetadata.FORMAT_URI,
+                    ),
                 description = "A URI parameter",
             )
         val tool =

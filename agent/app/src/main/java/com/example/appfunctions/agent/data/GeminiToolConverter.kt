@@ -134,7 +134,7 @@ class GeminiToolConverter
                 is AppFunctionStringTypeMetadata ->
                     buildJsonObject {
                         put(KEY_TYPE, JsonPrimitive(VALUE_STRING))
-                        if (isFileReferenceParameter(parameterName)) {
+                        if (dataType.format == AppFunctionStringTypeMetadata.FORMAT_URI || dataType.format == "uri") {
                             put(KEY_FORMAT, JsonPrimitive(VALUE_FILE_REFERENCE))
                         }
                         val enumValues = dataType.enumValues
@@ -261,13 +261,6 @@ class GeminiToolConverter
             }
         }
 
-        private fun isFileReferenceParameter(parameterName: String?): Boolean {
-            if (parameterName == null) return false
-            if (parameterName in KNOWN_FILE_REFERENCE_PARAM_NAMES) return true
-            return parameterName.endsWith("Uri", ignoreCase = true) ||
-                parameterName.endsWith("Uris", ignoreCase = true)
-        }
-
         companion object {
             private const val TOOL_ID_SEPARATOR = "_"
             private const val KEY_NAME = "name"
@@ -276,15 +269,6 @@ class GeminiToolConverter
             private const val KEY_TYPE = "type"
             private const val KEY_FORMAT = "format"
             private const val VALUE_FILE_REFERENCE = "file_reference"
-            private val KNOWN_FILE_REFERENCE_PARAM_NAMES =
-                setOf(
-                    "wallpaperUri",
-                    "imageUri",
-                    "attachmentUri",
-                    "ringtoneUri",
-                    "profilePictureUri",
-                    "audioUri",
-                )
             private const val VALUE_OBJECT = "object"
             private const val KEY_PROPERTIES = "properties"
             private const val KEY_REQUIRED = "required"

@@ -1,6 +1,6 @@
 [versions]
 agp = "9.3.1"
-appfunctions = "1.0.0-alpha10"
+appfunctions = "1.0.0-SNAPSHOT"
 kotlin = "2.4.10"
 coreKtx = "1.19.0"
 junit = "4.13.2"
