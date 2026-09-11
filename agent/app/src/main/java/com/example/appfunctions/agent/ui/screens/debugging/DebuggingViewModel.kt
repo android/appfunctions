@@ -17,7 +17,10 @@ package com.example.appfunctions.agent.ui.screens.debugging
 
 import android.app.PendingIntent
 import android.content.res.Resources
+import android.util.Log
+import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +30,7 @@ import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
@@ -52,6 +56,7 @@ class DebuggingViewModel
     @Inject
     constructor(
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
+        private val getAppFunctionStatesUseCase: GetAppFunctionStatesUseCase,
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
@@ -67,6 +72,7 @@ class DebuggingViewModel
         private var pinnedPackages: Set<String> = emptySet()
         private var allAppFunctions: Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>> =
             emptyMap()
+        private var allAppFunctionStates: Map<AppFunctionName, AppFunctionState> = emptyMap()
 
         init {
             loadInstalledApps()
@@ -87,7 +93,10 @@ class DebuggingViewModel
             viewModelScope.launch {
                 _uiState.update { it.copy(isLoading = true) }
                 getAppFunctionsUseCase().collect { appFunctionsMap ->
+                    val allFunctionNames = appFunctionsMap.values.flatten().map { it.name }
+                    val appFunctionStates = getAppFunctionStatesUseCase(allFunctionNames)
                     allAppFunctions = appFunctionsMap
+                    allAppFunctionStates = appFunctionStates.associateBy { it.functionName }
                     updateAppsGroupState()
                 }
             }
@@ -114,11 +123,25 @@ class DebuggingViewModel
             if (functions == null) {
                 runTroubleshooting(appInfo.packageName)
             } else {
+                val enabledStates =
+                    buildMap {
+                        for (function in functions) {
+                            val enabledState = allAppFunctionStates[function.name]
+                            if (enabledState == null) {
+                                Log.w(TAG, "Unable to find enabled state for ${function.name}")
+                            } else {
+                                put(function.name, enabledState.isEnabled)
+                            }
+                        }
+                    }
                 _uiState.update { state ->
                     state.copy(
                         selectedApp = appInfo,
                         searchAppResultState =
-                            SearchAppResultState.FunctionsFoundState(functions = functions),
+                            SearchAppResultState.FunctionsFoundState(
+                                functions = functions,
+                                enabledState = enabledStates,
+                            ),
                     )
                 }
             }
@@ -352,5 +375,9 @@ class DebuggingViewModel
                     }
                 }
             return AppsGroupState(sections = sections)
+        }
+
+        private companion object {
+            const val TAG = "DebuggingViewModel"
         }
     }

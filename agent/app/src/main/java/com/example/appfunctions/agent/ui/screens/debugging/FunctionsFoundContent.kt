@@ -18,6 +18,10 @@ package com.example.appfunctions.agent.ui.screens.debugging
 import android.app.PendingIntent
 import android.widget.Toast
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionName
+import androidx.appfunctions.metadata.AppFunctionPackageMetadata
+import androidx.appfunctions.metadata.AppFunctionResponseMetadata
+import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +42,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -93,11 +98,17 @@ fun FunctionsFoundContent(
             items = state.functions,
             key = { function -> function.id },
         ) { function ->
+            val isEnabled = state.enabledState[function.name]
+            if (isEnabled == null) {
+                AppFunctionErrorItem(function = function)
+                return@items
+            }
             val expanded = state.expandedFunctions.contains(function.id)
             val inputValues = state.functionInputs[function.id] ?: emptyMap()
 
             AppFunctionItem(
                 function = function,
+                isEnabled = isEnabled,
                 expanded = expanded,
                 inputValues = inputValues,
                 onExpandedChange = { isExpanded ->
@@ -249,12 +260,123 @@ fun FunctionsFoundContent(
     }
 }
 
+@Composable
+fun AppFunctionErrorItem(
+    function: AppFunctionMetadata,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Column {
+                val name = function.name.functionIdentifier
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Text(
+                    text = "Unable to determine enabled state",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun AppFunctionErrorItemPreview() {
+    val functionName = AppFunctionName("com.example.test", "testFunction")
+    val stringType = AppFunctionStringTypeMetadata(isNullable = false)
+    val response =
+        AppFunctionResponseMetadata(
+            valueType = stringType,
+            description = "Returns a string",
+        )
+    val fakeMetadata =
+        AppFunctionMetadata(
+            name = functionName,
+            schema = null,
+            parameters = emptyList(),
+            response = response,
+            description = "Test function description",
+            deprecation = null,
+            packageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = "com.example.test",
+                    appFunctions = listOf(),
+                    components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
+                ),
+        )
+    AppFunctionsAgentTheme {
+        AppFunctionErrorItem(function = fakeMetadata)
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun FunctionsFoundContentPreview() {
+    val stringType = AppFunctionStringTypeMetadata(isNullable = false)
+    val response =
+        AppFunctionResponseMetadata(
+            valueType = stringType,
+            description = "Returns a string",
+        )
+
+    val function1Name = AppFunctionName("com.example.test", "normalFunction")
+    val function1 =
+        AppFunctionMetadata(
+            name = function1Name,
+            schema = null,
+            parameters = emptyList(),
+            response = response,
+            description = "A normal function",
+            deprecation = null,
+            packageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = "com.example.test",
+                    appFunctions = listOf(),
+                    components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
+                ),
+        )
+
+    val function2Name = AppFunctionName("com.example.test", "errorFunction")
+    val function2 =
+        AppFunctionMetadata(
+            name = function2Name,
+            schema = null,
+            parameters = emptyList(),
+            response = response,
+            description = "A function with error state",
+            deprecation = null,
+            packageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = "com.example.test",
+                    appFunctions = listOf(),
+                    components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
+                ),
+        )
+
     val dummyState =
         SearchAppResultState.FunctionsFoundState(
-            functions = emptyList(),
+            functions = listOf(function1, function2),
+            enabledState = mapOf(function1Name to true),
             expandedFunctions = emptySet(),
             functionInputs = emptyMap(),
             executionResult = null,

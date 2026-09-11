@@ -102,6 +102,7 @@ android {
 
     lint {
         disable += "Instantiatable"
+        fatal += "RestrictedApi"
     }
 }
 

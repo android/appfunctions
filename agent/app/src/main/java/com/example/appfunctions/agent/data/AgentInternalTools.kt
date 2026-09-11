@@ -24,10 +24,13 @@ import android.location.Geocoder
 import android.location.LocationManager
 import android.util.Base64
 import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionDoubleTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
+import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
@@ -49,6 +52,7 @@ import java.net.URL
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.collections.emptyList
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
@@ -345,7 +349,7 @@ class AgentInternalTools
          * Generates a list of AppFunctionMetadata representing these internal tools so the LLM provider
          * can convert them to standard schemas.
          */
-        fun getInternalToolsMetadata(): List<AppFunctionMetadata> {
+        fun getInternalToolsMetadata(): List<Pair<AppFunctionMetadata, AppFunctionState>> {
             val latLngType =
                 AppFunctionObjectTypeMetadata(
                     properties =
@@ -373,26 +377,27 @@ class AgentInternalTools
 
             val getCurrentLocationTool =
                 AppFunctionMetadata(
-                    id = "getCurrentLocation",
-                    packageName = INTERNAL_TOOL_PACKAGE,
-                    isEnabled = true,
+                    name = AppFunctionName(INTERNAL_TOOL_PACKAGE, "getCurrentLocation"),
                     schema = null,
-                    parameters = emptyList(),
+                    parameters = emptyList<AppFunctionParameterMetadata>(),
                     response =
                         AppFunctionResponseMetadata(
                             valueType = latLngType,
                             description = "The current location coordinates of the device, or null.",
                         ),
-                    components = AppFunctionComponentsMetadata(emptyMap()),
                     description = "Retrieve the current latitude and longitude coordinates of the device.",
                     deprecation = null,
+                    packageMetadata =
+                        AppFunctionPackageMetadata(
+                            packageName = INTERNAL_TOOL_PACKAGE,
+                            appFunctions = listOf(),
+                            components = AppFunctionComponentsMetadata(),
+                        ),
                 )
 
             val geocodeAddressTool =
                 AppFunctionMetadata(
-                    id = "geocodeAddress",
-                    packageName = INTERNAL_TOOL_PACKAGE,
-                    isEnabled = true,
+                    name = AppFunctionName(INTERNAL_TOOL_PACKAGE, "geocodeAddress"),
                     schema = null,
                     parameters =
                         listOf(
@@ -408,16 +413,19 @@ class AgentInternalTools
                             valueType = latLngType,
                             description = "The latitude and longitude coordinates of the address, or null.",
                         ),
-                    components = AppFunctionComponentsMetadata(emptyMap()),
                     description = "Geocode a physical address string into its latitude and longitude coordinates.",
                     deprecation = null,
+                    packageMetadata =
+                        AppFunctionPackageMetadata(
+                            packageName = INTERNAL_TOOL_PACKAGE,
+                            appFunctions = listOf(),
+                            components = AppFunctionComponentsMetadata(),
+                        ),
                 )
 
             val generateImageTool =
                 AppFunctionMetadata(
-                    id = "generateImage",
-                    packageName = INTERNAL_TOOL_PACKAGE,
-                    isEnabled = true,
+                    name = AppFunctionName(INTERNAL_TOOL_PACKAGE, "generateImage"),
                     schema = null,
                     parameters =
                         listOf(
@@ -439,12 +447,22 @@ class AgentInternalTools
                             valueType = imageResultType,
                             description = "A GeneratedImageResult containing the generated remote image URI.",
                         ),
-                    components = AppFunctionComponentsMetadata(emptyMap()),
                     description = "Generates an image from a text prompt and returns the remote image URI.",
                     deprecation = null,
+                    packageMetadata =
+                        AppFunctionPackageMetadata(
+                            packageName = INTERNAL_TOOL_PACKAGE,
+                            appFunctions = listOf(),
+                            components = AppFunctionComponentsMetadata(),
+                        ),
                 )
 
-            return listOf(getCurrentLocationTool, geocodeAddressTool, generateImageTool)
+            @SuppressLint("RestrictedApi")
+            return listOf(
+                getCurrentLocationTool to AppFunctionState(functionName = getCurrentLocationTool.name, isEnabled = true),
+                geocodeAddressTool to AppFunctionState(functionName = geocodeAddressTool.name, isEnabled = true),
+                generateImageTool to AppFunctionState(functionName = generateImageTool.name, isEnabled = true),
+            )
         }
 
         /** Represents the latitude and longitude coordinates. */

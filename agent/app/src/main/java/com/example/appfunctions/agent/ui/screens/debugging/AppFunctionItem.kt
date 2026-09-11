@@ -18,6 +18,8 @@ package com.example.appfunctions.agent.ui.screens.debugging
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionDataTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionName
+import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
@@ -75,6 +77,7 @@ import com.example.appfunctions.agent.ui.theme.GoogleSansCodeFontFamily
 @Composable
 fun AppFunctionItem(
     function: AppFunctionMetadata,
+    isEnabled: Boolean,
     expanded: Boolean,
     inputValues: Map<String, Any>,
     onExpandedChange: (Boolean) -> Unit,
@@ -111,9 +114,9 @@ fun AppFunctionItem(
             Row(
                 modifier =
                     Modifier.fillMaxWidth()
-                        .alpha(if (function.isEnabled) 1f else 0.6f)
+                        .alpha(if (isEnabled) 1f else 0.6f)
                         .clickable(
-                            enabled = function.isEnabled,
+                            enabled = isEnabled,
                             interactionSource = interactionSource,
                             indication = null,
                         ) {
@@ -153,7 +156,7 @@ fun AppFunctionItem(
                             modifier = Modifier.weight(1f, fill = false),
                         )
 
-                        if (!function.isEnabled) {
+                        if (!isEnabled) {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 shape = MaterialTheme.shapes.extraSmall,
@@ -195,7 +198,7 @@ fun AppFunctionItem(
                 Box(
                     modifier =
                         Modifier.padding(end = 2.dp).size(48.dp).clip(CircleShape).clickable(
-                            enabled = function.isEnabled,
+                            enabled = isEnabled,
                             interactionSource = interactionSource,
                             indication = ripple(),
                         ) {
@@ -230,7 +233,7 @@ fun AppFunctionItem(
 
                         // Parameters List
                         Column(
-                            modifier = Modifier.alpha(if (function.isEnabled) 1f else 0.6f),
+                            modifier = Modifier.alpha(if (isEnabled) 1f else 0.6f),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             for (parameter in function.parameters) {
@@ -259,7 +262,7 @@ fun AppFunctionItem(
                         onClick = { onInvoke(inputValues) },
                         modifier = Modifier.height(48.dp).fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(),
-                        enabled = function.isEnabled,
+                        enabled = isEnabled,
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
@@ -299,13 +302,13 @@ private fun ParameterInput(
 @Preview(showBackground = true)
 @Composable
 fun AppFunctionItemPreview() {
+    val functionName = AppFunctionName("com.example.test", "testFunction")
     val stringType = AppFunctionStringTypeMetadata(isNullable = false)
     val response =
         AppFunctionResponseMetadata(
             valueType = stringType,
             description = "Returns a string",
         )
-    val components = AppFunctionComponentsMetadata(emptyMap())
     val parameter =
         AppFunctionParameterMetadata(
             name = "param1",
@@ -316,19 +319,22 @@ fun AppFunctionItemPreview() {
 
     val fakeMetadata =
         AppFunctionMetadata(
-            id = "testFunction",
-            packageName = "com.example.test",
-            isEnabled = true,
+            name = functionName,
             schema = null,
             parameters = listOf(parameter, parameter, parameter),
             response = response,
-            components = components,
             description = "Test function description",
             deprecation = null,
+            packageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = "com.example.test",
+                    appFunctions = listOf(),
+                ),
         )
 
     AppFunctionItem(
         function = fakeMetadata,
+        isEnabled = false,
         expanded = true,
         inputValues = emptyMap(),
         onExpandedChange = {},
@@ -340,29 +346,32 @@ fun AppFunctionItemPreview() {
 @Preview(showBackground = true)
 @Composable
 fun AppFunctionItem_NoParams_Preview() {
+    val functionName = AppFunctionName("com.example.test", "testFunction")
     val stringType = AppFunctionStringTypeMetadata(isNullable = false)
     val response =
         AppFunctionResponseMetadata(
             valueType = stringType,
             description = "Returns a string",
         )
-    val components = AppFunctionComponentsMetadata(emptyMap())
 
     val fakeMetadata =
         AppFunctionMetadata(
-            id = "testFunction",
-            packageName = "com.example.test",
-            isEnabled = true,
+            name = functionName,
             schema = null,
             parameters = emptyList(),
             response = response,
-            components = components,
             description = "Test function description",
             deprecation = null,
+            packageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = "com.example.test",
+                    appFunctions = listOf(),
+                ),
         )
 
     AppFunctionItem(
         function = fakeMetadata,
+        isEnabled = true,
         expanded = true,
         inputValues = emptyMap(),
         onExpandedChange = {},

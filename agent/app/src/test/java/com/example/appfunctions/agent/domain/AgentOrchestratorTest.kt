@@ -17,7 +17,9 @@ package com.example.appfunctions.agent.domain
 
 import android.content.Intent
 import androidx.appfunctions.AppFunctionData
+import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmModel
@@ -32,6 +34,7 @@ import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
@@ -66,6 +69,7 @@ class AgentOrchestratorTest {
     private val settingsRepository: SettingsRepository = mockk()
     private val llmProviderFactory: LlmProviderFactory = mockk()
     private val getAppFunctionsUseCase: GetAppFunctionsUseCase = mockk()
+    private val getAppFunctionStatesUseCase: GetAppFunctionStatesUseCase = mockk()
     private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase = mockk()
     private val sendMessageUseCase: SendMessageUseCase = mockk(relaxed = true)
     private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
@@ -88,11 +92,22 @@ class AgentOrchestratorTest {
                 llmProviderFactory = llmProviderFactory,
                 settingsRepository = settingsRepository,
                 getAppFunctionsUseCase = getAppFunctionsUseCase,
+                getAppFunctionStatesUseCase = getAppFunctionStatesUseCase,
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
                 savePendingIntentUseCase = savePendingIntentUseCase,
                 agentInternalTools = agentInternalTools,
             )
+
+        coEvery { getAppFunctionStatesUseCase(any()) } answers {
+            val names = firstArg<List<AppFunctionName>>()
+            names.map { name ->
+                val state = mockk<AppFunctionState>()
+                every { state.functionName } returns name
+                every { state.isEnabled } returns true
+                state
+            }
+        }
     }
 
     @Test
@@ -367,6 +382,7 @@ class AgentOrchestratorTest {
         val tool = mockk<AppFunctionMetadata>(relaxed = true)
         every { tool.packageName } returns packageName
         every { tool.id } returns id
+        every { tool.name } returns AppFunctionName(packageName, id)
         every { tool.isEnabled } returns isEnabled
         return tool
     }
@@ -530,4 +546,45 @@ class AgentOrchestratorTest {
                 formattedJson = toolResultJson,
             )
     }
+
+    @Test
+    fun `observeAndProcessMessages filters out disabled tools`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "run geo code address for n1c4ag")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+
+            val enabledTool = createMockTool("com.google.android.appfunctiontestingagent", "enabled_tool")
+            val disabledTool = createMockTool("com.google.android.appfunctiontestingagent", "disabled_tool")
+            mockAppFunctions(listOf(enabledTool, disabledTool))
+
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+
+            coEvery { getAppFunctionStatesUseCase(any()) } answers {
+                val names = firstArg<List<AppFunctionName>>()
+                names.map { name ->
+                    val state = mockk<AppFunctionState>()
+                    every { state.functionName } returns name
+                    every { state.isEnabled } returns (name.toString().contains("enabled_tool"))
+                    state
+                }
+            }
+
+            coEvery {
+                llmProvider.generateResponse(any(), any(), any(), any(), any(), any())
+            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = null,
+                    input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
+                    tools = listOf(enabledTool),
+                    apiKey = "dummy_key",
+                    modelName = any(),
+                )
+            }
+        }
 }

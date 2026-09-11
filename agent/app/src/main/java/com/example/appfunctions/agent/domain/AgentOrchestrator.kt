@@ -39,6 +39,7 @@ import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFor
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
@@ -82,6 +83,7 @@ class AgentOrchestrator
         private val llmProviderFactory: LlmProviderFactory,
         private val settingsRepository: SettingsRepository,
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
+        private val getAppFunctionStatesUseCase: GetAppFunctionStatesUseCase,
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val savePendingIntentUseCase: SavePendingIntentUseCase,
@@ -133,7 +135,7 @@ class AgentOrchestrator
                 val disconnectedApps = settingsRepository.disconnectedApps.first()
                 val allTools =
                     getAppFunctionsUseCase().first().values.flatten() +
-                        agentInternalTools.getInternalToolsMetadata()
+                        agentInternalTools.getInternalToolsMetadata().map { it.first }
 
                 val targetPackageName = message.targetPackageName
                 val queryText = message.textContent
@@ -160,14 +162,24 @@ class AgentOrchestrator
             }
         }
 
-        private fun filterTools(
+        private suspend fun filterTools(
             allTools: List<AppFunctionMetadata>,
             disconnectedApps: Set<String>,
             targetPackageName: String?,
         ): List<AppFunctionMetadata> {
+            val functionNames = allTools.map { it.name }
+            val states = getAppFunctionStatesUseCase(functionNames) + agentInternalTools.getInternalToolsMetadata().map { it.second }
+            val stateMap = states.associateBy { it.functionName }
+
             return allTools
                 .filter { metadata ->
-                    metadata.isEnabled &&
+                    val isEnabled =
+                        if (metadata.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
+                            true
+                        } else {
+                            stateMap[metadata.name]?.isEnabled ?: false
+                        }
+                    isEnabled &&
                         metadata.packageName !in disconnectedApps &&
                         (targetPackageName == null || metadata.packageName == targetPackageName)
                 }

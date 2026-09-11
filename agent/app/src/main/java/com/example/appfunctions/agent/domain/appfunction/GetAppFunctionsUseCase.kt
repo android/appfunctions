@@ -19,10 +19,15 @@ import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionSearchSpec
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Use case to get all available AppFunctions grouped by package name. */
 class GetAppFunctionsUseCase
@@ -35,14 +40,24 @@ class GetAppFunctionsUseCase
          *
          * @return A Flow emitting a map of package names to their list of AppFunctionMetadata.
          */
+        @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
         operator fun invoke(): Flow<Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>>> {
             if (appFunctionManager == null) {
                 return flowOf(emptyMap())
             }
-            // AppFunctionSearchSpec without filters searches all visible functions
-            val searchSpec = AppFunctionSearchSpec()
-            return appFunctionManager.observeAppFunctions(searchSpec).map { packageMetadataList ->
-                packageMetadataList.associateWith { it.appFunctions }
-            }
+            return appFunctionManager.observeAppFunctions()
+                .debounce(500.milliseconds)
+                .mapLatest { _ ->
+                    appFunctionManager.search()
+                }
+                .onStart {
+                    emit(appFunctionManager.search())
+                }
+        }
+
+        private suspend fun AppFunctionManager.search(): Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>> {
+            return searchAppFunctions(AppFunctionSearchSpec()).groupBy(
+                AppFunctionMetadata::packageMetadata,
+            )
         }
     }

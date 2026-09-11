@@ -21,7 +21,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.R
@@ -29,10 +31,12 @@ import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import com.example.appfunctions.agent.domain.troubleshoot.TroubleshootAppUseCase
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +64,7 @@ class DebuggingViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
 
     private lateinit var mockGetAppFunctionsUseCase: GetAppFunctionsUseCase
+    private lateinit var mockGetAppFunctionStatesUseCase: GetAppFunctionStatesUseCase
     private lateinit var mockConvertInputToAppFunctionDataUseCase:
         ConvertInputToAppFunctionDataUseCase
     private lateinit var mockExecuteAppFunctionUseCase: ExecuteAppFunctionUseCase
@@ -74,6 +79,7 @@ class DebuggingViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         mockGetAppFunctionsUseCase = mockk()
+        mockGetAppFunctionStatesUseCase = mockk()
         mockConvertInputToAppFunctionDataUseCase = mockk()
         mockExecuteAppFunctionUseCase = mockk()
         mockGetInstalledAppsUseCase = mockk()
@@ -82,6 +88,15 @@ class DebuggingViewModelTest {
         mockSettingsRepository = mockk()
         context = ApplicationProvider.getApplicationContext()
 
+        coEvery { mockGetAppFunctionStatesUseCase(any()) } answers {
+            val names = firstArg<List<AppFunctionName>>()
+            names.map { name ->
+                val state = mockk<AppFunctionState>()
+                every { state.functionName } returns name
+                every { state.isEnabled } returns true
+                state
+            }
+        }
         every { mockGetInstalledAppsUseCase() } returns emptyList()
         every { mockSettingsRepository.pinnedApps } returns flowOf(emptySet())
     }
@@ -94,7 +109,11 @@ class DebuggingViewModelTest {
     @Test
     fun `initial state loads apps`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
             val expectedAppInfo = AppInfo("com.example.app", "com.example.app", null)
@@ -105,6 +124,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -125,7 +145,11 @@ class DebuggingViewModelTest {
     @Test
     fun `initial state loads apps with resolved metadata`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             val packageName = "com.example.app.resolved"
             every { mockPackageMetadata.packageName } returns packageName
@@ -156,6 +180,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -182,7 +207,11 @@ class DebuggingViewModelTest {
     @Test
     fun `onSearchQueryChanged filters apps`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata1 = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata1.packageName } returns "com.example.app1"
             val mockPackageMetadata2 = mockk<AppFunctionPackageMetadata>()
@@ -202,6 +231,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -224,7 +254,11 @@ class DebuggingViewModelTest {
     @Test
     fun `onAppSelected updates selected app and functions`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
             every { mockGetAppFunctionsUseCase() } returns
@@ -233,6 +267,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -255,7 +290,11 @@ class DebuggingViewModelTest {
     @Test
     fun `onClearSelectedApp clears selected app and functions`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
             every { mockGetAppFunctionsUseCase() } returns
@@ -264,6 +303,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -294,7 +334,11 @@ class DebuggingViewModelTest {
     @Test
     fun `onFunctionInputsChange updates state`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
             every { mockGetAppFunctionsUseCase() } returns
@@ -303,6 +347,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -328,7 +373,11 @@ class DebuggingViewModelTest {
     @Test
     fun `launchPendingIntent calls use case and clears result on success`() =
         runTest {
-            val mockMetadata = mockk<AppFunctionMetadata>()
+            val mockMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns AppFunctionName("com.example.app", "test_function")
+                    every { id } returns "test_function"
+                }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
             every { mockGetAppFunctionsUseCase() } returns
@@ -340,6 +389,7 @@ class DebuggingViewModelTest {
             viewModel =
                 DebuggingViewModel(
                     mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
                     mockConvertInputToAppFunctionDataUseCase,
                     mockExecuteAppFunctionUseCase,
                     mockGetInstalledAppsUseCase,
@@ -359,5 +409,82 @@ class DebuggingViewModelTest {
             val state = viewModel.uiState.value
             val functionsState = state.searchAppResultState as SearchAppResultState.FunctionsFoundState
             assertEquals(null, functionsState.executionResult)
+        }
+
+    @Test
+    fun `onAppSelected populates enabled states from use case`() =
+        runTest {
+            val enabledFunctionName = AppFunctionName("com.example.app", "enabled_function")
+            val disabledFunctionName = AppFunctionName("com.example.app", "disabled_function")
+            val missingFunctionName = AppFunctionName("com.example.app", "missing_function")
+
+            val mockEnabledMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns enabledFunctionName
+                    every { id } returns "enabled_function"
+                }
+            val mockDisabledMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns disabledFunctionName
+                    every { id } returns "disabled_function"
+                }
+            val mockMissingMetadata =
+                mockk<AppFunctionMetadata>(relaxed = true) {
+                    every { name } returns missingFunctionName
+                    every { id } returns "missing_function"
+                }
+
+            val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
+            every { mockPackageMetadata.packageName } returns "com.example.app"
+            every { mockGetAppFunctionsUseCase() } returns
+                flowOf(
+                    mapOf(
+                        mockPackageMetadata to
+                            listOf(mockEnabledMetadata, mockDisabledMetadata, mockMissingMetadata),
+                    ),
+                )
+
+            coEvery { mockGetAppFunctionStatesUseCase(any()) } answers {
+                val names = firstArg<List<AppFunctionName>>()
+                names.mapNotNull { name ->
+                    when (name) {
+                        enabledFunctionName ->
+                            mockk<AppFunctionState> {
+                                every { functionName } returns name
+                                every { isEnabled } returns true
+                            }
+                        disabledFunctionName ->
+                            mockk<AppFunctionState> {
+                                every { functionName } returns name
+                                every { isEnabled } returns false
+                            }
+                        else -> null
+                    }
+                }
+            }
+
+            viewModel =
+                DebuggingViewModel(
+                    mockGetAppFunctionsUseCase,
+                    mockGetAppFunctionStatesUseCase,
+                    mockConvertInputToAppFunctionDataUseCase,
+                    mockExecuteAppFunctionUseCase,
+                    mockGetInstalledAppsUseCase,
+                    mockTroubleshootAppUseCase,
+                    mockLaunchPendingIntentUseCase,
+                    mockSettingsRepository,
+                    context,
+                )
+            advanceUntilIdle()
+
+            viewModel.onAppSelected(AppInfo("com.example.app", "com.example.app", null))
+
+            val state = viewModel.uiState.value
+            val functionsState = state.searchAppResultState as SearchAppResultState.FunctionsFoundState
+
+            assertEquals(
+                mapOf(enabledFunctionName to true, disabledFunctionName to false),
+                functionsState.enabledState,
+            )
         }
 }
