@@ -54,4 +54,10 @@ interface SettingsRepository {
         packageName: String,
         connected: Boolean,
     )
+
+    /** Flow indicating whether A2UI rendering is enabled. */
+    val a2uiEnabled: Flow<Boolean>
+
+    /** Sets whether A2UI rendering is enabled. */
+    suspend fun setA2uiEnabled(enabled: Boolean)
 }

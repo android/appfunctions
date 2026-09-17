@@ -30,6 +30,10 @@ data class ContactSearchResult(
     val endpointValue: String,
     /** The human-readable label/display name of the endpoint. */
     val endpointDisplayName: String,
+    /** Human-readable fallback text for models and clients without A2UI support. */
+    val fallbackText: String? = null,
+    /** Declarative A2UI JSON payload for clients that support rich UI rendering. */
+    val a2uiPayload: String? = null,
 )
 
 /**

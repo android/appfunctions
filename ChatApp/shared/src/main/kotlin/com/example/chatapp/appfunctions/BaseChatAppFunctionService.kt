@@ -102,6 +102,13 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
                 "$contactType with name $query not found. Ask the user to clarify the name",
             )
         }
+
+        if (recipients.size > 1) {
+            val fallback = ContactPickerA2uiBuilder.createFallbackText(query, recipients)
+            val a2ui = ContactPickerA2uiBuilder.createContactPickerA2ui(query, recipients)
+            return recipients.map { it.copy(fallbackText = fallback, a2uiPayload = a2ui) }
+        }
+
         return recipients
     }
 

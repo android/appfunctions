@@ -17,6 +17,7 @@ package com.example.appfunctions.agent.data
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -39,13 +40,17 @@ class DataStoreSettingsRepository
             val SERVICE_TIER = stringPreferencesKey("service_tier")
             val PINNED_APPS = stringSetPreferencesKey("pinned_apps")
             val DISCONNECTED_APPS = stringSetPreferencesKey("disconnected_apps")
+            val A2UI_ENABLED = booleanPreferencesKey("a2ui_enabled")
         }
 
         override val geminiApiKey: Flow<String?> =
             if (BuildConfig.IS_RETAIL) {
                 flowOf(BuildConfig.GEMINI_API_KEY)
             } else {
-                dataStore.data.map { preferences -> preferences[PreferencesKeys.GEMINI_API_KEY] }
+                dataStore.data.map { preferences ->
+                    preferences[PreferencesKeys.GEMINI_API_KEY]?.takeIf { it.isNotBlank() }
+                        ?: BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() }
+                }
             }
 
         override val selectedProvider: Flow<LlmProviderName> =
@@ -116,6 +121,17 @@ class DataStoreSettingsRepository
                         currentDisconnected + packageName
                     }
                 preferences[PreferencesKeys.DISCONNECTED_APPS] = newDisconnected
+            }
+        }
+
+        override val a2uiEnabled: Flow<Boolean> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.A2UI_ENABLED] ?: false
+            }
+
+        override suspend fun setA2uiEnabled(enabled: Boolean) {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.A2UI_ENABLED] = enabled
             }
         }
     }

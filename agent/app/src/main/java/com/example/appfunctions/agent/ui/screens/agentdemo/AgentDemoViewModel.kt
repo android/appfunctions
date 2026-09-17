@@ -109,16 +109,19 @@ class AgentDemoViewModel
                     agentOrchestrator.status,
                     savedStateHandle.getStateFlow<String?>(MainActivity.ARG_THREAD_ID, null),
                     installedApps,
-                ) {
-                        threads,
-                        provider,
-                        status,
-                        targetThreadId,
-                        apps,
-                    ->
-                    ThreadConfig(threads, provider, status, targetThreadId, apps)
+                    settingsRepository.a2uiEnabled,
+                ) { args ->
+                    @Suppress("UNCHECKED_CAST")
+                    ThreadConfig(
+                        threads = args[0] as List<ThreadEntity>,
+                        provider = args[1] as LlmProviderName,
+                        status = args[2] as AgentStatus,
+                        targetThreadId = args[3] as String?,
+                        installedApps = args[4] as List<AppInfo>,
+                        a2uiEnabled = args[5] as Boolean,
+                    )
                 }
-                    .collectLatest { (threads, provider, status, targetThreadId, apps) ->
+                    .collectLatest { (threads, provider, status, targetThreadId, apps, a2uiEnabled) ->
                         val currentThread =
                             threads.find { it.threadId == targetThreadId } ?: threads.firstOrNull()
 
@@ -140,6 +143,7 @@ class AgentDemoViewModel
                                     activePendingActionIds =
                                         currentLoadedState?.activePendingActionIds ?: emptySet(),
                                     installedApps = apps,
+                                    a2uiEnabled = a2uiEnabled,
                                 )
 
                             // Start observing messages for the current thread if not already doing so
@@ -222,4 +226,5 @@ private data class ThreadConfig(
     val status: AgentStatus,
     val targetThreadId: String?,
     val installedApps: List<AppInfo>,
+    val a2uiEnabled: Boolean,
 )

@@ -70,4 +70,11 @@ class FakeSettingsRepository : SettingsRepository {
             _disconnectedApps.value += packageName
         }
     }
+
+    private val _a2uiEnabled = MutableStateFlow(false)
+    override val a2uiEnabled: Flow<Boolean> = _a2uiEnabled
+
+    override suspend fun setA2uiEnabled(enabled: Boolean) {
+        _a2uiEnabled.value = enabled
+    }
 }

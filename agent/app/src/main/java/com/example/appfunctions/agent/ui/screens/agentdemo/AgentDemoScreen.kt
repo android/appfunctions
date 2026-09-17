@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -128,6 +129,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
+import com.example.appfunctions.agent.ui.components.A2UiSurface
 import com.example.appfunctions.agent.ui.screens.debugging.LazyExposedDropdownMenu
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.CoroutineScope
@@ -333,7 +335,11 @@ fun AgentDemoLoadedScreen(
                             isValidAction =
                                 message.pendingIntentId in uiState.activePendingActionIds,
                             installedApps = uiState.installedApps,
+                            a2uiEnabled = uiState.a2uiEnabled,
                             onConfirmAction = { onEvent(AgentUiEvent.OnConfirmAction(it)) },
+                            onSendMessage = { prompt ->
+                                onEvent(AgentUiEvent.OnSendMessage(prompt, selectedAppPackageName))
+                            },
                         )
                     }
                 }
@@ -632,7 +638,9 @@ fun MessageBubble(
     message: MessageEntity,
     isValidAction: Boolean,
     installedApps: List<AppInfo>,
+    a2uiEnabled: Boolean = false,
     onConfirmAction: (String) -> Unit,
+    onSendMessage: (String) -> Unit = {},
 ) {
     val alignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start
     val isError = message.processingStatus == MessageProcessingStatus.FAILED
@@ -683,8 +691,26 @@ fun MessageBubble(
                             }
 
                         if (message.role != MessageRole.USER) {
-                            if (contentText.isNotEmpty()) {
-                                Markdown(content = contentText)
+                            if (a2uiEnabled && message.a2uiPayload != null) {
+                                DisableSelection {
+                                    A2UiSurface(
+                                        payloadJson = message.a2uiPayload,
+                                        fallbackText = contentText.ifEmpty { null },
+                                        onAction = { action ->
+                                            val prompt =
+                                                action.prompt
+                                                    ?: (action.parameters["contactDisplayName"] as? String)?.let {
+                                                        "Select $it"
+                                                    }
+                                                    ?: "Select ${action.name}"
+                                            onSendMessage(prompt)
+                                        },
+                                    )
+                                }
+                            } else {
+                                if (contentText.isNotEmpty()) {
+                                    Markdown(content = contentText)
+                                }
                             }
                         } else {
                             val chipBgColor = MaterialTheme.colorScheme.primary

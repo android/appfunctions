@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,7 +59,10 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFormatter
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
+import com.example.appfunctions.agent.ui.components.A2UiSurface
 import com.example.appfunctions.agent.ui.theme.AppFunctionsAgentTheme
 import com.example.appfunctions.agent.ui.theme.GoogleSansCodeFontFamily
 import org.json.JSONArray
@@ -402,8 +407,42 @@ private fun ExecutionResultDataView(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val flatItems = remember(formattedJson) { parseJsonToDisplayItems(formattedJson) }
+    val (a2uiPayload, fallbackText) = remember(formattedJson) { extractA2uiFromJson(formattedJson) }
+    var showA2uiPreview by remember(a2uiPayload) { mutableStateOf(a2uiPayload != null) }
 
     Column(modifier = modifier) {
+        if (a2uiPayload != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = showA2uiPreview,
+                    onClick = { showA2uiPreview = true },
+                    label = { Text("🎨 A2UI Card") },
+                )
+                FilterChip(
+                    selected = !showA2uiPreview,
+                    onClick = { showA2uiPreview = false },
+                    label = { Text("📄 Properties") },
+                )
+            }
+            if (showA2uiPreview) {
+                A2UiSurface(
+                    payloadJson = a2uiPayload,
+                    fallbackText = fallbackText,
+                    onAction = { action ->
+                        val target = action.parameters["contactDisplayName"] ?: action.prompt ?: action.name
+                        Toast.makeText(
+                            context,
+                            "Selected: $target",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                )
+                return@Column
+            }
+        }
         if (flatItems.isEmpty()) {
             SelectionContainer {
                 Text(
@@ -674,4 +713,31 @@ private fun parseJsonArray(
             }
         }
     }
+}
+
+private fun extractA2uiFromJson(jsonString: String): Pair<String?, String?> {
+    return runCatching {
+        val trimmed = jsonString.trim()
+        if (trimmed.startsWith("{")) {
+            val obj = JSONObject(trimmed)
+            val a2ui = obj.optString("a2uiPayload").takeIf { it.isNotEmpty() }
+            val fallback = obj.optString("fallbackText").takeIf { it.isNotEmpty() }
+            if (a2ui != null) return@runCatching a2ui to fallback
+            if (obj.has("createSurface") || obj.has("updateComponents")) {
+                return@runCatching trimmed to null
+            }
+        } else if (trimmed.startsWith("[")) {
+            val arr = JSONArray(trimmed)
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val a2ui = item.optString("a2uiPayload").takeIf { it.isNotEmpty() }
+                val fallback = item.optString("fallbackText").takeIf { it.isNotEmpty() }
+                if (a2ui != null) return@runCatching a2ui to fallback
+                if (item.has("createSurface") || item.has("updateComponents")) {
+                    return@runCatching trimmed to null
+                }
+            }
+        }
+        null to null
+    }.getOrDefault(null to null)
 }

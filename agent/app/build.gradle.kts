@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -29,6 +31,17 @@ android {
         version = release(37)
     }
 
+    val localProps = Properties().apply {
+        val localFile = rootProject.file("local.properties")
+        if (localFile.exists()) {
+            localFile.inputStream().use { load(it) }
+        }
+    }
+    val resolvedApiKey = (project.findProperty("GEMINI_API_KEY") as? String)
+        ?: localProps.getProperty("gemini.api.key")
+        ?: localProps.getProperty("GEMINI_API_KEY")
+        ?: ""
+
     defaultConfig {
         applicationId = "com.example.appfunctions.agent"
         minSdk = 36
@@ -39,7 +52,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("Boolean", "IS_RETAIL", "false")
-        buildConfigField("String", "GEMINI_API_KEY", "\"\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$resolvedApiKey\"")
     }
 
     buildTypes {
@@ -65,13 +78,12 @@ android {
                 gradle.startParameter.taskNames.any {
                     it.contains("Retail", ignoreCase = true)
                 }
-            val apiKey = project.findProperty("GEMINI_API_KEY") as? String ?: ""
-            if (containsRetail && apiKey.isEmpty()) {
+            if (containsRetail && resolvedApiKey.isEmpty()) {
                 throw GradleException(
                     "GEMINI_API_KEY project property is required for retail builds. Pass it using -PGEMINI_API_KEY=your_key",
                 )
             }
-            buildConfigField("String", "GEMINI_API_KEY", "\"$apiKey\"")
+            buildConfigField("String", "GEMINI_API_KEY", "\"$resolvedApiKey\"")
         }
     }
     buildFeatures {

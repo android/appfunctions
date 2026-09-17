@@ -32,6 +32,7 @@ sealed class AgentUiState {
         val threads: List<ThreadEntity> = emptyList(),
         val activePendingActionIds: Set<String> = emptySet(),
         val installedApps: List<AppInfo> = emptyList(),
+        val a2uiEnabled: Boolean = false,
     ) : AgentUiState()
 }
 

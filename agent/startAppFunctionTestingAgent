@@ -72,8 +72,14 @@ fi
 echo "🔑 Extracting package fingerprint from device..."
 FINGERPRINT=$($ADB shell dumpsys package $PACKAGE_NAME | grep PackageSignatures | awk -F 'signatures:\\[' '{print $2}' | awk -F '\\]' '{print $1}' | tr '[:upper:]' '[:lower:]')
 
-if [[ -z "$FINGERPRINT" ]]; then
-    echo "❌ Could not extract fingerprint from device for package $PACKAGE_NAME."
+if [[ ${#FINGERPRINT} -ne 64 ]]; then
+  if [[ -f "$HOME/.android/debug.keystore" ]]; then
+    FINGERPRINT=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | grep "SHA256:" | awk '{print $2}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+  fi
+fi
+
+if [[ -z "$FINGERPRINT" || ${#FINGERPRINT} -ne 64 ]]; then
+    echo "❌ Could not extract valid 64-char SHA-256 fingerprint for package $PACKAGE_NAME."
     exit 1
 fi
 echo "✅ Using fingerprint: $FINGERPRINT"

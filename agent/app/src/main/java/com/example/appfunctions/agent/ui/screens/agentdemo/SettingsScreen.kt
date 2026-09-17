@@ -18,6 +18,7 @@ package com.example.appfunctions.agent.ui.screens.agentdemo
 import android.content.Intent
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -48,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -93,6 +95,8 @@ fun SettingsScreen(
         geminiApiKeyState = viewModel.geminiApiKeyState,
         serviceTier = uiState.serviceTier,
         onServiceTierSelected = viewModel::setServiceTier,
+        a2uiEnabled = uiState.a2uiEnabled,
+        onA2uiEnabledChanged = viewModel::setA2uiEnabled,
         onOpenLicenses = onOpenLicensesClick,
         onNavigateToConnectedApps = onNavigateToConnectedApps,
     )
@@ -105,6 +109,8 @@ fun SettingsScreenContent(
     geminiApiKeyState: TextFieldState,
     serviceTier: ServiceTier,
     onServiceTierSelected: (ServiceTier) -> Unit,
+    a2uiEnabled: Boolean,
+    onA2uiEnabledChanged: (Boolean) -> Unit,
     onOpenLicenses: () -> Unit,
     onNavigateToConnectedApps: () -> Unit,
 ) {
@@ -205,6 +211,32 @@ fun SettingsScreenContent(
                 )
             }
 
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                        Text(
+                            text = "Enable A2UI Rendering",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text =
+                                "Render interactive A2UI components from AppFunctions. When disabled, textual fallback is used.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Switch(
+                        checked = a2uiEnabled,
+                        onCheckedChange = onA2uiEnabledChanged,
+                    )
+                }
+            }
+
             ListItem(
                 headlineContent = {
                     Text(
@@ -270,6 +302,8 @@ fun SettingsScreenPreview() {
         geminiApiKeyState = rememberTextFieldState("AIzaSy..."),
         serviceTier = ServiceTier.STANDARD,
         onServiceTierSelected = {},
+        a2uiEnabled = false,
+        onA2uiEnabledChanged = {},
         onOpenLicenses = {},
         onNavigateToConnectedApps = {},
     )

@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -204,6 +205,8 @@ class AgentOrchestrator
             var continueLoop = true
             var currentInput = initialInput
             val capturedAttachments = mutableListOf<MessageAttachment>()
+            var capturedA2uiPayload: String? = null
+            var capturedFallbackText: String? = null
 
             while (continueLoop) {
                 val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
@@ -221,7 +224,18 @@ class AgentOrchestrator
 
                 when (
                     val handleResult =
-                        handleLlmResponse(response, message, tools, capturedAttachments)
+                        handleLlmResponse(
+                            response = response,
+                            message = message,
+                            tools = tools,
+                            capturedAttachments = capturedAttachments,
+                            capturedA2uiPayload = capturedA2uiPayload,
+                            capturedFallbackText = capturedFallbackText,
+                            onA2uiCaptured = { a2ui, fallback ->
+                                capturedA2uiPayload = a2ui
+                                if (fallback != null) capturedFallbackText = fallback
+                            },
+                        )
                 ) {
                     is HandleResult.Continue -> {
                         currentToolOutputs = handleResult.toolOutputs
@@ -275,6 +289,9 @@ class AgentOrchestrator
             message: MessageEntity,
             tools: List<AppFunctionMetadata>,
             capturedAttachments: MutableList<MessageAttachment>,
+            capturedA2uiPayload: String? = null,
+            capturedFallbackText: String? = null,
+            onA2uiCaptured: (String, String?) -> Unit = { _, _ -> },
         ): HandleResult {
             return when (response) {
                 is LlmResponse.Success -> {
@@ -308,6 +325,10 @@ class AgentOrchestrator
                                                 MessageAttachment(uri = uri, mimeType = mimeType),
                                             )
                                         }
+                                    }
+                                    val (a2ui, fallback) = extractA2uiPayload(output.result)
+                                    if (a2ui != null) {
+                                        onA2uiCaptured(a2ui, fallback)
                                     }
                                 }
                                 if (textContent.isNotEmpty()) {
@@ -344,13 +365,15 @@ class AgentOrchestrator
                             }
                         }
                     } else {
-                        if (textContent.isNotEmpty() || capturedAttachments.isNotEmpty()) {
+                        val resolvedText = textContent.ifEmpty { capturedFallbackText.orEmpty() }
+                        if (resolvedText.isNotEmpty() || capturedAttachments.isNotEmpty() || capturedA2uiPayload != null) {
                             sendMessageUseCase(
                                 threadId = message.threadId,
                                 role = MessageRole.ASSISTANT,
-                                textContent = textContent,
+                                textContent = resolvedText,
                                 processingStatus = MessageProcessingStatus.PROCESSED,
                                 attachments = capturedAttachments,
+                                a2uiPayload = capturedA2uiPayload,
                             )
                         }
                         HandleResult.Stop
@@ -730,6 +753,33 @@ class AgentOrchestrator
                     else -> throw IllegalArgumentException("Unknown internal tool: ${toolCall.functionId}")
                 }
             }
+        }
+
+        private fun extractA2uiPayload(resultStr: String): Pair<String?, String?> {
+            return runCatching {
+                val trimmed = resultStr.trim()
+                if (trimmed.startsWith("{")) {
+                    val json = JSONObject(trimmed)
+                    val a2ui = json.optString("a2uiPayload").takeIf { it.isNotBlank() }
+                    val fallback = json.optString("fallbackText").takeIf { it.isNotBlank() }
+                    if (a2ui != null) return@runCatching a2ui to fallback
+                    if (json.has("createSurface") || json.has("updateComponents")) {
+                        return@runCatching trimmed to null
+                    }
+                } else if (trimmed.startsWith("[")) {
+                    val array = JSONArray(trimmed)
+                    for (i in 0 until array.length()) {
+                        val item = array.optJSONObject(i) ?: continue
+                        val a2ui = item.optString("a2uiPayload").takeIf { it.isNotBlank() }
+                        val fallback = item.optString("fallbackText").takeIf { it.isNotBlank() }
+                        if (a2ui != null) return@runCatching a2ui to fallback
+                        if (item.has("createSurface") || item.has("updateComponents")) {
+                            return@runCatching trimmed to null
+                        }
+                    }
+                }
+                null to null
+            }.getOrDefault(null to null)
         }
 
         companion object {

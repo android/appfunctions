@@ -32,6 +32,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -48,4 +54,10 @@ dependencies {
     // App functions
     implementation(libs.androidx.appfunctions)
     ksp(libs.androidx.appfunctions.compiler)
+
+    // Testing
+    testImplementation(libs.junit)
+    testImplementation(libs.androidx.junit)
+    testImplementation(libs.truth)
+    testImplementation("org.json:json:20240303")
 }

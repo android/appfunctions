@@ -46,8 +46,13 @@ class SettingsViewModel
             combine(
                 settingsRepository.selectedProvider,
                 settingsRepository.serviceTier,
-            ) { provider, serviceTier ->
-                SettingsUiState(selectedProvider = provider, serviceTier = serviceTier)
+                settingsRepository.a2uiEnabled,
+            ) { provider, serviceTier, a2uiEnabled ->
+                SettingsUiState(
+                    selectedProvider = provider,
+                    serviceTier = serviceTier,
+                    a2uiEnabled = a2uiEnabled,
+                )
             }
                 .stateIn(
                     scope = viewModelScope,
@@ -78,5 +83,9 @@ class SettingsViewModel
 
         fun setServiceTier(tier: ServiceTier) {
             viewModelScope.launch { settingsRepository.setServiceTier(tier) }
+        }
+
+        fun setA2uiEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setA2uiEnabled(enabled) }
         }
     }

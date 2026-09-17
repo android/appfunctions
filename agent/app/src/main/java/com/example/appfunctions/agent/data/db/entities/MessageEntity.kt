@@ -50,6 +50,7 @@ data class MessageEntity(
     val pendingIntentId: String? = null,
     val targetPackageName: String? = null,
     val attachments: List<MessageAttachment> = emptyList(),
+    val a2uiPayload: String? = null,
 )
 
 @Serializable

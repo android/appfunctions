@@ -22,4 +22,5 @@ import com.example.appfunctions.agent.data.ServiceTier
 data class SettingsUiState(
     val selectedProvider: LlmProviderName = LlmProviderName.GEMINI,
     val serviceTier: ServiceTier = ServiceTier.STANDARD,
+    val a2uiEnabled: Boolean = false,
 )

@@ -45,6 +45,7 @@ class SendMessageUseCase
             pendingIntentId: String? = null,
             targetPackageName: String? = null,
             attachments: List<MessageAttachment> = emptyList(),
+            a2uiPayload: String? = null,
         ) {
             val message =
                 MessageEntity(
@@ -57,6 +58,7 @@ class SendMessageUseCase
                     pendingIntentId = pendingIntentId,
                     targetPackageName = targetPackageName,
                     attachments = attachments,
+                    a2uiPayload = a2uiPayload,
                 )
             chatRepository.sendMessage(message)
         }

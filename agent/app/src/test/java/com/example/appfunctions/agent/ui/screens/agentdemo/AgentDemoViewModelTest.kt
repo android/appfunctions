@@ -95,6 +95,7 @@ class AgentDemoViewModelTest {
 
         every { manageThreadsUseCase.getThreads() } returns threadsFlow
         every { settingsRepository.selectedProvider } returns selectedProviderFlow
+        every { settingsRepository.a2uiEnabled } returns flowOf(false)
         every { agentOrchestrator.status } returns agentStatusFlow
         every { getChatHistoryUseCase(any()) } returns messagesFlow
         every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
