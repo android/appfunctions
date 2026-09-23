@@ -15,17 +15,24 @@
  */
 package com.example.chatapp.wear.uicomponents
 
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.ListHeaderDefaults
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import com.example.chatapp.RecipientsViewModel
+import com.example.chatapp.wear.R
 
 @Composable
 fun WearRecipientsScreen(
@@ -33,41 +40,67 @@ fun WearRecipientsScreen(
     onRecipientClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
 ) {
+    val transformationSpec = rememberTransformationSpec()
+    val scrollState = rememberTransformingLazyColumnState()
     val recipients = viewModel.recipients
     val groups = viewModel.groups
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        item {
-            ListHeader {
-                Text(text = "Chats")
+    ScreenScaffold(
+        scrollState = scrollState,
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = scrollState,
+            contentPadding = contentPadding,
+        ) {
+            item {
+                ListHeader(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(
+                                ListHeaderDefaults.minimumTopListContentPadding,
+                            ),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) { Text(text = stringResource(R.string.chats)) }
             }
-        }
 
-        items(groups) { group ->
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onRecipientClick(group.id) },
-                label = { Text(text = group.name) },
-                secondaryLabel = { Text(text = "Group") },
-            )
-        }
+            items(groups) { group ->
+                Button(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    onClick = { onRecipientClick(group.id) },
+                    label = { Text(text = group.name) },
+                    secondaryLabel = { Text(text = stringResource(R.string.group)) },
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
 
-        items(recipients) { recipient ->
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onRecipientClick(recipient.id) },
-                label = { Text(text = recipient.name) },
-            )
-        }
+            items(recipients) { recipient ->
+                Button(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    onClick = { onRecipientClick(recipient.id) },
+                    label = { Text(text = recipient.name) },
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
 
-        item {
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onSettingsClick,
-                label = { Text(text = "Settings") },
-            )
+            item {
+                Button(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    onClick = onSettingsClick,
+                    label = { Text(text = stringResource(R.string.settings)) },
+                )
+            }
         }
     }
 }

@@ -15,22 +15,29 @@
  */
 package com.example.chatapp.wear.uicomponents
 
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TitleCard
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import com.example.chatapp.ChatViewModel
 import com.example.chatapp.util.linkifyString
+import com.example.chatapp.wear.R
 
 @Composable
 fun WearChatScreen(
@@ -44,37 +51,54 @@ fun WearChatScreen(
         ),
     onCallClick: () -> Unit,
 ) {
+    val transformationSpec = rememberTransformationSpec()
+    val scrollState = rememberTransformingLazyColumnState()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val recipient = viewModel.recipient
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        item {
-            Button(
-                onClick = onCallClick,
-            ) {
-                Text(text = "📞")
+    ScreenScaffold(
+        scrollState = scrollState,
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = scrollState,
+            contentPadding = contentPadding,
+        ) {
+            item {
+                Button(
+                    onClick = onCallClick,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    Text(text = stringResource(R.string.call))
+                }
             }
-        }
-
-        item {
-            ListHeader {
-                Text(text = recipient.name)
+            item {
+                ListHeader(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) { Text(text = recipient.name) }
             }
-        }
-
-        items(uiState.messages.reversed()) { message ->
-            TitleCard(
-                onClick = { },
-                title = { Text(text = if (message.isInbound) message.senderName ?: "Sender" else "Me") },
-            ) {
-                val linkColor = MaterialTheme.colorScheme.primary
-                val annotatedText =
-                    remember(message.content, linkColor) {
-                        linkifyString(text = message.content, linkColor = linkColor)
-                    }
-                Text(text = annotatedText)
+            items(uiState.messages.reversed()) { message ->
+                TitleCard(
+                    onClick = { },
+                    title = {
+                        Text(
+                            text = if (message.isInbound) message.senderName ?: "Sender" else "Me",
+                        )
+                    },
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    val linkColor = MaterialTheme.colorScheme.primary
+                    val annotatedText =
+                        remember(message.content, linkColor) {
+                            linkifyString(text = message.content, linkColor = linkColor)
+                        }
+                    Text(text = annotatedText)
+                }
             }
         }
     }
