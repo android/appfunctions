@@ -76,13 +76,28 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable(
-                        route = "chat/{recipientId}",
-                        arguments = listOf(navArgument("recipientId") { type = NavType.StringType }),
-                        deepLinks = listOf(navDeepLink { uriPattern = "app://com.example.chatapp/chat/{recipientId}" }),
+                        route = "chat/{recipientId}?draft={draft}",
+                        arguments =
+                            listOf(
+                                navArgument("recipientId") { type = NavType.StringType },
+                                navArgument("draft") {
+                                    type = NavType.StringType
+                                    nullable = true
+                                    defaultValue = null
+                                },
+                            ),
+                        deepLinks =
+                            listOf(
+                                navDeepLink {
+                                    uriPattern = "app://com.example.chatapp/chat/{recipientId}?draft={draft}"
+                                },
+                            ),
                     ) { backStackEntry ->
                         val recipientId = backStackEntry.arguments?.getString("recipientId") ?: "bot"
+                        val draft = backStackEntry.arguments?.getString("draft")
                         ChatScreen(
                             recipientId = recipientId,
+                            initialDraft = draft,
                             onCallClick = { navController.navigate("call/$recipientId") },
                             onBackClick = { navController.popBackStack() },
                         )
