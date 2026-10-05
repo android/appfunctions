@@ -164,7 +164,7 @@ class AppFunctionInstrumentationTest {
                     ?.map { it.deserialize(ContactSearchResult::class.java) },
             )
                 .containsExactly(
-                    AppFunctions.ContactSearchResult(
+                    ContactSearchResult(
                         contactDisplayName = "Alice Smith",
                         contactType = "INDIVIDUAL",
                         endpointValue = "1",
