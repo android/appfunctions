@@ -78,6 +78,7 @@ import com.example.chatapp.util.linkifyString
 @Composable
 fun ChatScreen(
     recipientId: String,
+    initialDraft: String? = null,
     viewModel: ChatViewModel =
         hiltViewModel(
             key = recipientId,
@@ -91,7 +92,7 @@ fun ChatScreen(
     val topAppBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(topAppBarState)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var message by rememberSaveable { mutableStateOf("") }
+    var message by rememberSaveable { mutableStateOf(initialDraft.orEmpty()) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         uiState.wallpaperPath?.let { path ->
