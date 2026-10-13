@@ -17,6 +17,7 @@ package com.example.appfunctions.agent.data
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -39,6 +40,7 @@ class DataStoreSettingsRepository
             val SERVICE_TIER = stringPreferencesKey("service_tier")
             val PINNED_APPS = stringSetPreferencesKey("pinned_apps")
             val DISCONNECTED_APPS = stringSetPreferencesKey("disconnected_apps")
+            val APP_FUNCTION_DEBUGGING = booleanPreferencesKey("app_function_debugging")
         }
 
         override val geminiApiKey: Flow<String?> =
@@ -71,6 +73,11 @@ class DataStoreSettingsRepository
         override val disconnectedApps: Flow<Set<String>> =
             dataStore.data.map { preferences ->
                 preferences[PreferencesKeys.DISCONNECTED_APPS] ?: emptySet()
+            }
+
+        override val appFunctionDebuggingEnabled: Flow<Boolean> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.APP_FUNCTION_DEBUGGING] ?: true
             }
 
         override suspend fun setGeminiApiKey(apiKey: String) {
@@ -116,6 +123,12 @@ class DataStoreSettingsRepository
                         currentDisconnected + packageName
                     }
                 preferences[PreferencesKeys.DISCONNECTED_APPS] = newDisconnected
+            }
+        }
+
+        override suspend fun setAppFunctionDebuggingEnabled(enabled: Boolean) {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.APP_FUNCTION_DEBUGGING] = enabled
             }
         }
     }

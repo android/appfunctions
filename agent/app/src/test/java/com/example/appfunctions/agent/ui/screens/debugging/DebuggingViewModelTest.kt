@@ -131,7 +131,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -187,7 +186,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -238,7 +236,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -274,7 +271,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -310,7 +306,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -354,7 +349,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -396,7 +390,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 
@@ -473,7 +466,6 @@ class DebuggingViewModelTest {
                     mockTroubleshootAppUseCase,
                     mockLaunchPendingIntentUseCase,
                     mockSettingsRepository,
-                    context,
                 )
             advanceUntilIdle()
 

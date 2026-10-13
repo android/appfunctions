@@ -15,40 +15,16 @@
  */
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.rememberAsyncImagePainter
-import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.domain.appfunction.ConnectedAppInfo
+import com.example.appfunctions.agent.ui.contracts.ConnectedAppsScreenLayout
+import com.example.appfunctions.agent.ui.layout.rememberFormFactor
+import com.example.appfunctions.agent.ui.layout.resolveConnectedAppsLayout
 
 /** Stateful composable for the Connected Apps screen. */
 @Composable
@@ -73,74 +49,14 @@ fun ConnectedAppsScreenContent(
     onBack: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
 ) {
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = Color.Unspecified,
-        topBar = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    modifier = Modifier.clickable { onBack() },
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = stringResource(id = R.string.connected_apps_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-            }
-        },
-    ) { paddingValues ->
-        Column(
-            modifier =
-                Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 24.dp),
-        ) {
-            LazyColumn {
-                items(
-                    items = uiState.connectedApps,
-                    key = { app -> app.packageName },
-                ) { app ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    ) {
-                        if (app.icon != null) {
-                            Image(
-                                painter = rememberAsyncImagePainter(app.icon),
-                                contentDescription = null,
-                                modifier = Modifier.size(40.dp),
-                            )
-                        } else {
-                            Box(modifier = Modifier.size(40.dp).background(Color.Gray))
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = app.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            if (!app.description.isNullOrEmpty()) {
-                                Text(
-                                    text = app.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        Switch(
-                            checked = app.isConnected,
-                            onCheckedChange = { connected ->
-                                onToggleApp(app.packageName, connected)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
+    val layout: ConnectedAppsScreenLayout = rememberFormFactor().resolveConnectedAppsLayout()
+
+    layout.Content(
+        uiState = uiState,
+        onBack = onBack,
+        onToggleApp = onToggleApp,
+        modifier = Modifier,
+    )
 }
 
 @Preview(showBackground = true)
