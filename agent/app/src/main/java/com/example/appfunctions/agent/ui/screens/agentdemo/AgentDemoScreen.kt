@@ -303,6 +303,7 @@ fun AgentDemoLoadedScreen(
                             .weight(1f)
                             .padding(horizontal = 8.dp),
                     currentThread = uiState.currentThread,
+                    liveSessionState = uiState.liveSessionState,
                     onModelSelected = { onEvent(AgentUiEvent.OnModelSelected(it)) },
                     onMenuClick = {
                         if (isWideScreen) {
@@ -620,14 +621,29 @@ fun AgentDemoLoadedScreen(
 fun ModelDropdown(
     modifier: Modifier = Modifier,
     currentThread: ThreadEntity?,
+    liveSessionState: LiveSessionState = LiveSessionState.Idle,
     onModelSelected: (LlmModel) -> Unit,
     onMenuClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val isLiveActive =
+        liveSessionState is LiveSessionState.Connecting ||
+            liveSessionState is LiveSessionState.Listening
+
+    LaunchedEffect(isLiveActive) {
+        if (isLiveActive) {
+            expanded = false
+        }
+    }
+
     ExposedDropdownMenuBox(
         modifier = modifier,
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
+        expanded = expanded && !isLiveActive,
+        onExpandedChange = {
+            if (!isLiveActive) {
+                expanded = !expanded
+            }
+        },
     ) {
         Surface(
             modifier = Modifier.padding(bottom = 8.dp),
@@ -636,13 +652,17 @@ fun ModelDropdown(
             color = MaterialTheme.colorScheme.surfaceBright,
         ) {
             val text =
-                currentThread?.llmModel?.modelName
-                    ?: stringResource(R.string.agent_demo_select_model_to_create_thread)
-            val textColor =
-                if (currentThread != null) {
-                    MaterialTheme.colorScheme.onSurface
+                if (isLiveActive) {
+                    "gemini-3.8-live"
                 } else {
-                    MaterialTheme.colorScheme.error
+                    currentThread?.llmModel?.modelName
+                        ?: stringResource(R.string.agent_demo_select_model_to_create_thread)
+                }
+            val textColor =
+                when {
+                    isLiveActive -> MaterialTheme.colorScheme.primary
+                    currentThread != null -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.error
                 }
 
             Row(
@@ -663,7 +683,7 @@ fun ModelDropdown(
                             .fillMaxHeight()
                             .menuAnchor(
                                 ExposedDropdownMenuAnchorType.PrimaryEditable,
-                                enabled = true,
+                                enabled = !isLiveActive,
                             ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -681,7 +701,9 @@ fun ModelDropdown(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null)
+                    if (!isLiveActive) {
+                        Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
                 }
             }
         }

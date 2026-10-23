@@ -655,6 +655,7 @@ class AgentOrchestrator
                             )
                         }
                     if (appFunctionDataResult.isFailure) {
+                        val errMsg = appFunctionDataResult.exceptionOrNull()?.message
                         outputs.add(
                             ToolOutput(
                                 functionId = toolCall.functionId,
@@ -663,7 +664,7 @@ class AgentOrchestrator
                                     JSONObject().apply {
                                         put(
                                             "error",
-                                            "Failed to convert arguments for ${toolCall.functionId}: ${appFunctionDataResult.exceptionOrNull()?.message}",
+                                            "Failed to convert arguments for ${toolCall.functionId}: $errMsg",
                                         )
                                     }.toString(),
                             ),
