@@ -15,7 +15,10 @@
  */
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
+import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
@@ -49,6 +52,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -72,6 +77,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,6 +122,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -127,6 +134,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LiveSessionState
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.ui.screens.debugging.LazyExposedDropdownMenu
 import com.mikepenz.markdown.m3.Markdown
@@ -136,6 +144,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun AgentDemoScreen(viewModel: AgentDemoViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.onEvent(AgentUiEvent.OnStopLiveSession)
+        }
+    }
 
     AgentDemoContent(uiState = uiState, onEvent = viewModel::onEvent)
 }
@@ -230,6 +244,44 @@ fun AgentDemoLoadedScreen(
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
     var selectedAppPackageName by remember { mutableStateOf<String?>(null) }
 
+    val context = LocalContext.current
+    val audioPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { isGranted ->
+            if (isGranted) {
+                onEvent(AgentUiEvent.OnToggleLiveSession(selectedAppPackageName))
+            }
+        }
+
+    val toggleLiveSession = {
+        val isActive =
+            uiState.liveSessionState is LiveSessionState.Connecting ||
+                uiState.liveSessionState is LiveSessionState.Listening
+        if (isActive) {
+            onEvent(AgentUiEvent.OnStopLiveSession)
+        } else {
+            val hasRecordAudioPermission =
+                try {
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO,
+                    ) == PackageManager.PERMISSION_GRANTED
+                } catch (_: Exception) {
+                    true
+                }
+            if (hasRecordAudioPermission) {
+                onEvent(AgentUiEvent.OnToggleLiveSession(selectedAppPackageName))
+            } else {
+                try {
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                } catch (_: IllegalStateException) {
+                    onEvent(AgentUiEvent.OnToggleLiveSession(selectedAppPackageName))
+                }
+            }
+        }
+    }
+
     val chipBgColor = MaterialTheme.colorScheme.primaryContainer
     val chipTextColor = MaterialTheme.colorScheme.onPrimaryContainer
     val visualTransformation =
@@ -320,6 +372,18 @@ fun AgentDemoLoadedScreen(
                             StatusIndicator(
                                 status = uiState.status,
                                 packageManager = packageManager,
+                            )
+                        }
+                    }
+
+                    if (
+                        uiState.liveSessionState is LiveSessionState.Connecting ||
+                        uiState.liveSessionState is LiveSessionState.Listening
+                    ) {
+                        item {
+                            LiveSessionIndicator(
+                                liveSessionState = uiState.liveSessionState,
+                                onStopClick = { onEvent(AgentUiEvent.OnStopLiveSession) },
                             )
                         }
                     }
@@ -440,17 +504,49 @@ fun AgentDemoLoadedScreen(
                                 focusedBorderColor = Color.Transparent,
                             ),
                         trailingIcon = {
-                            IconButton(
-                                onClick = sendMessage,
-                                enabled =
-                                    messageText.text.isNotBlank() &&
-                                        uiState.status == AgentStatus.Idle,
+                            val isLiveActive =
+                                uiState.liveSessionState is LiveSessionState.Connecting ||
+                                    uiState.liveSessionState is LiveSessionState.Listening
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 4.dp),
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription =
-                                        stringResource(R.string.agent_demo_send),
-                                )
+                                IconButton(
+                                    onClick = toggleLiveSession,
+                                ) {
+                                    Icon(
+                                        imageVector =
+                                            if (isLiveActive) {
+                                                Icons.Default.Stop
+                                            } else {
+                                                Icons.Default.Mic
+                                            },
+                                        contentDescription =
+                                            if (isLiveActive) {
+                                                stringResource(R.string.agent_demo_live_stop)
+                                            } else {
+                                                stringResource(R.string.agent_demo_live_start)
+                                            },
+                                        tint =
+                                            if (isLiveActive) {
+                                                MaterialTheme.colorScheme.error
+                                            } else {
+                                                MaterialTheme.colorScheme.primary
+                                            },
+                                    )
+                                }
+                                IconButton(
+                                    onClick = sendMessage,
+                                    enabled =
+                                        messageText.text.isNotBlank() &&
+                                            uiState.status == AgentStatus.Idle,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription =
+                                            stringResource(R.string.agent_demo_send),
+                                    )
+                                }
                             }
                         },
                     )
@@ -903,6 +999,59 @@ fun StatusIndicator(
 
         AgentStatus.Idle -> {
             // Nothing to show
+        }
+    }
+}
+
+@Composable
+fun LiveSessionIndicator(
+    liveSessionState: LiveSessionState,
+    onStopClick: () -> Unit,
+) {
+    val label =
+        when (liveSessionState) {
+            LiveSessionState.Connecting -> stringResource(R.string.agent_demo_live_connecting)
+            LiveSessionState.Listening -> stringResource(R.string.agent_demo_live_listening)
+            else -> return
+        }
+
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            IconButton(onClick = onStopClick) {
+                Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = stringResource(R.string.agent_demo_live_stop),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }

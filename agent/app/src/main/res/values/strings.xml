@@ -110,6 +110,10 @@
     <string name="agent_demo_confirm_action">Yes, go ahead</string>
     <string name="agent_demo_action_expired">Done</string>
     <string name="agent_demo_action_confirmation_needed">I can perform this action for you. Should I proceed?</string>
+    <string name="agent_demo_live_start">Start Gemini Live</string>
+    <string name="agent_demo_live_stop">Stop Gemini Live</string>
+    <string name="agent_demo_live_connecting">Connecting to Gemini Live (gemini-3.8-live)…</string>
+    <string name="agent_demo_live_listening">Gemini Live (gemini-3.8-live) is listening…</string>
 
     <string name="debugging_copied_value">Copied value of %1$s</string>
     <string name="debugging_copy_value">Copy value</string>

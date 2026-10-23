@@ -25,6 +25,8 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.GeminiLiveSessionManager
+import com.example.appfunctions.agent.domain.LiveSessionState
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
@@ -37,6 +39,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +68,7 @@ class AgentDemoViewModelTest {
     private lateinit var consumePendingIntentUseCase: ConsumePendingIntentUseCase
     private lateinit var getInstalledAppsUseCase: GetInstalledAppsUseCase
     private lateinit var getAppFunctionsUseCase: GetAppFunctionsUseCase
+    private lateinit var geminiLiveSessionManager: GeminiLiveSessionManager
 
     private lateinit var viewModel: AgentDemoViewModel
 
@@ -73,6 +77,7 @@ class AgentDemoViewModelTest {
     private val agentStatusFlow = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
     private val messagesFlow = MutableStateFlow<List<MessageEntity>>(emptyList())
     private val activePendingActionIdsFlow = MutableStateFlow<Set<String>>(emptySet())
+    private val liveSessionStateFlow = MutableStateFlow<LiveSessionState>(LiveSessionState.Idle)
 
     @Before
     fun setUp() {
@@ -89,6 +94,7 @@ class AgentDemoViewModelTest {
         consumePendingIntentUseCase = mockk(relaxed = true)
         getInstalledAppsUseCase = mockk()
         getAppFunctionsUseCase = mockk()
+        geminiLiveSessionManager = mockk(relaxed = true)
 
         every { getInstalledAppsUseCase() } returns emptyList()
         every { getAppFunctionsUseCase() } returns flowOf(emptyMap())
@@ -98,7 +104,7 @@ class AgentDemoViewModelTest {
         every { agentOrchestrator.status } returns agentStatusFlow
         every { getChatHistoryUseCase(any()) } returns messagesFlow
         every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
-        every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
+        every { geminiLiveSessionManager.state } returns liveSessionStateFlow
 
         coEvery { agentOrchestrator.observeAndProcessMessages(any()) } returns Unit
     }
@@ -136,6 +142,7 @@ class AgentDemoViewModelTest {
                     consumePendingIntentUseCase,
                     getInstalledAppsUseCase,
                     getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
                 )
 
             viewModel.onEvent(AgentUiEvent.OnModelSelected(LlmModel.GEMINI_3_1_PRO_PREVIEW))
@@ -164,6 +171,7 @@ class AgentDemoViewModelTest {
                     consumePendingIntentUseCase,
                     getInstalledAppsUseCase,
                     getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
                 )
 
             coVerify { manageThreadsUseCase.createThread(LlmModel.DEFAULT) }
@@ -195,6 +203,7 @@ class AgentDemoViewModelTest {
                     consumePendingIntentUseCase,
                     getInstalledAppsUseCase,
                     getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
                 )
 
             coVerify(exactly = 0) { manageThreadsUseCase.createThread(any()) }
@@ -230,6 +239,7 @@ class AgentDemoViewModelTest {
                     consumePendingIntentUseCase,
                     getInstalledAppsUseCase,
                     getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
                 )
 
             coEvery { sendMessageUseCase(any(), any(), any(), any()) } returns Unit
@@ -272,6 +282,7 @@ class AgentDemoViewModelTest {
                     consumePendingIntentUseCase,
                     getInstalledAppsUseCase,
                     getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
                 )
 
             val message =
@@ -321,8 +332,44 @@ class AgentDemoViewModelTest {
                     consumePendingIntentUseCase,
                     getInstalledAppsUseCase,
                     getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
                 )
 
             assertEquals(newThread, (viewModel.uiState.value as AgentUiState.Loaded).currentThread)
+        }
+
+    @Test
+    fun `onEvent OnToggleLiveSession delegates to GeminiLiveSessionManager`() =
+        runTest {
+            val existingThread =
+                ThreadEntity(
+                    "thread-1",
+                    System.currentTimeMillis(),
+                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
+                    null,
+                )
+            threadsFlow.value = listOf(existingThread)
+
+            viewModel =
+                AgentDemoViewModel(
+                    savedStateHandle,
+                    getChatHistoryUseCase,
+                    manageThreadsUseCase,
+                    sendMessageUseCase,
+                    agentOrchestrator,
+                    settingsRepository,
+                    observeActivePendingIntentsUseCase,
+                    launchPendingIntentUseCase,
+                    consumePendingIntentUseCase,
+                    getInstalledAppsUseCase,
+                    getAppFunctionsUseCase,
+                    geminiLiveSessionManager,
+                )
+
+            viewModel.onEvent(AgentUiEvent.OnToggleLiveSession("com.example.target"))
+
+            verify {
+                geminiLiveSessionManager.toggleSession("thread-1", "com.example.target")
+            }
         }
 }

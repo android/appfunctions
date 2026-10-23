@@ -520,4 +520,68 @@ class GeminiToolConverterTest {
 
         assertEquals(expectedJson, schema)
     }
+
+    @Test
+    fun convertForLiveApi_normalizesEnumsAndStripsFileReferenceFormat() {
+        val enumParam =
+            AppFunctionParameterMetadata(
+                name = "mode",
+                isRequired = true,
+                dataType =
+                    AppFunctionStringTypeMetadata(isNullable = false, enumValues = setOf("A", "B")),
+                description = "Mode parameter",
+            )
+        val uriParam =
+            AppFunctionParameterMetadata(
+                name = "wallpaperUri",
+                isRequired = false,
+                dataType = AppFunctionStringTypeMetadata(isNullable = true),
+                description = "Wallpaper URI",
+            )
+        val tool =
+            AppFunctionMetadata(
+                id = "com.example.my_function",
+                packageName = "com.example",
+                isEnabled = true,
+                schema = null,
+                parameters = listOf(enumParam, uriParam),
+                response =
+                    AppFunctionResponseMetadata(
+                        valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                        description = "",
+                    ),
+                components = AppFunctionComponentsMetadata(emptyMap()),
+                description = "Test function",
+                deprecation = null,
+            )
+
+        val liveSchema = converter.convertForLiveApi(tool)
+
+        val expectedJson =
+            Json.parseToJsonElement(
+                """
+            {
+                "name": "com_example_my_function",
+                "description": "Test function",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {
+                            "type": "string",
+                            "enum": ["A", "B"],
+                            "description": "Mode parameter"
+                        },
+                        "wallpaperUri": {
+                            "type": "string",
+                            "description": "Wallpaper URI"
+                        }
+                    },
+                    "required": ["mode"]
+                }
+            }
+        """,
+            )
+
+        assertEquals(expectedJson, liveSchema)
+    }
 }

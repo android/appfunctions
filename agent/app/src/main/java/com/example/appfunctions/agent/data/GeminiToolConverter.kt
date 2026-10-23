@@ -45,6 +45,40 @@ class GeminiToolConverter
             return convertToolToGeminiSchema(tool)
         }
 
+        /**
+         * Converts an [AppFunctionMetadata] into a Gemini Live (`BidiGenerateContent`)
+         * `FunctionDeclaration` JSON object, normalizing OpenAPI schema fields.
+         */
+        fun convertForLiveApi(tool: AppFunctionMetadata): JsonObject {
+            val baseSchema = convertToolToGeminiSchema(tool)
+            return normalizeForLiveApi(baseSchema)
+        }
+
+        private fun normalizeForLiveApi(obj: JsonObject): JsonObject {
+            val typeValue = (obj[KEY_TYPE] as? JsonPrimitive)?.content
+            return buildJsonObject {
+                for ((key, value) in obj) {
+                    when {
+                        key == KEY_FORMAT &&
+                            (value as? JsonPrimitive)?.content == VALUE_FILE_REFERENCE -> {
+                            // Omit Interactions-API-specific file_reference format in BidiGenerateContent
+                        }
+                        key == KEY_ENUMS -> {
+                            if (typeValue == VALUE_STRING) {
+                                put(KEY_ENUM_LIVE, value)
+                            }
+                        }
+                        value is JsonObject -> {
+                            put(key, normalizeForLiveApi(value))
+                        }
+                        else -> {
+                            put(key, value)
+                        }
+                    }
+                }
+            }
+        }
+
         override fun getToolName(tool: AppFunctionMetadata): String {
             return getGeminiFunctionName(tool)
         }
@@ -295,6 +329,7 @@ class GeminiToolConverter
             private const val VALUE_ARRAY = "array"
             private const val KEY_ITEMS = "items"
             private const val KEY_ENUMS = "enums"
+            private const val KEY_ENUM_LIVE = "enum"
             private val INVALID_NAME_CHARS = Regex("[^a-zA-Z0-9_]")
             private const val MAX_NAME_LENGTH = 64
         }
