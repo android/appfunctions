@@ -16,10 +16,19 @@
 package com.example.appfunctions.agent.domain
 
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.ServiceTier
 
 /** Interface for LLM providers to generate responses. */
 interface LlmProvider {
+    /**
+     * Retrieves the list of available models from this LLM provider.
+     *
+     * @param apiKey The API key for the LLM provider, or null/blank if not configured.
+     * @return The list of available [LlmModel]s supported by this provider.
+     */
+    suspend fun getAvailableModels(apiKey: String?): List<LlmModel> = emptyList()
+
     /**
      * Generates a response from the LLM.
      *

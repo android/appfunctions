@@ -15,24 +15,34 @@
  */
 package com.example.appfunctions.agent.data
 
+import androidx.room.TypeConverter
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
 /** Enum representing the supported LLM providers. */
-enum class LlmProviderName {
-    GEMINI,
+@Serializable
+enum class LlmProviderName(val displayName: String) {
+    GEMINI("Gemini"),
 }
 
-/** Enum representing the supported LLM models. */
-enum class LlmModel private constructor(val providerName: LlmProviderName, val modelName: String) {
-    // Stable (GA) models: consistent latency and production rate limits. Prefer these.
-    GEMINI_3_5_FLASH(LlmProviderName.GEMINI, "gemini-3.5-flash"),
-    GEMINI_3_1_FLASH_LITE(LlmProviderName.GEMINI, "gemini-3.1-flash-lite"),
+/** Represents an LLM model offered by a specific [LlmProviderName]. */
+@Serializable
+data class LlmModel(
+    val providerName: LlmProviderName,
+    val modelName: String,
+)
 
-    // Preview models: newer capabilities but restrictive rate limits and no latency SLA.
-    GEMINI_3_1_PRO_PREVIEW(LlmProviderName.GEMINI, "gemini-3.1-pro-preview"),
-    GEMINI_3_FLASH_PREVIEW(LlmProviderName.GEMINI, "gemini-3-flash-preview"),
-    GEMINI_3_1_FLASH_LITE_PREVIEW(LlmProviderName.GEMINI, "gemini-3.1-flash-lite-preview"),
-    ;
+class LlmModelConverter {
+    private val dbJson =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
-    companion object {
-        val DEFAULT = GEMINI_3_1_FLASH_LITE
-    }
+    @TypeConverter
+    fun fromLlmModel(model: LlmModel): String = dbJson.encodeToString(model)
+
+    @TypeConverter
+    fun toLlmModel(jsonString: String): LlmModel = dbJson.decodeFromString(jsonString)
 }

@@ -383,4 +383,20 @@ abstract class LlmProviderIntegrationTestBase {
             assertNotNull(textPart)
             assertTrue(textPart!!.text.contains("sunny"))
         }
+
+    @Test
+    fun getAvailableModels_realTest() =
+        runBlocking {
+            val models = provider.getAvailableModels(apiKey)
+            println("Available Models: $models")
+            assertTrue(models.isNotEmpty())
+            assertTrue(models.any { it.modelName == modelName })
+        }
+
+    @Test
+    fun getAvailableModels_invalidApiKeyTest() =
+        runBlocking {
+            val models = provider.getAvailableModels("INVALID_KEY")
+            assertTrue(models.isEmpty())
+        }
 }

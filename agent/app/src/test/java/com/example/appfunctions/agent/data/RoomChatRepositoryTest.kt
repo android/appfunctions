@@ -96,7 +96,7 @@ class RoomChatRepositoryTest {
     fun updateThreadModel() =
         runBlocking {
             val threadId = "thread_1"
-            val model = LlmModel.GEMINI_3_FLASH_PREVIEW
+            val model = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash")
             coEvery { chatDao.updateThreadModel(threadId, model) } returns Unit
 
             repository.updateThreadModel(threadId, model)

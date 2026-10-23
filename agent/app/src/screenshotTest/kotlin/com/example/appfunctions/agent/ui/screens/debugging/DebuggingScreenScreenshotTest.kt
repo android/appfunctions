@@ -75,6 +75,7 @@ fun DebuggingScreenInitialScreenshotPreview() {
 @Composable
 fun DebuggingScreenAppSelectedScreenshotPreview() {
     val app = AppInfo("com.example.test", "Test App", null)
+    val function = createFakeFunction()
     val dummyState =
         DebuggingUiState(
             filteredApps =
@@ -83,7 +84,10 @@ fun DebuggingScreenAppSelectedScreenshotPreview() {
                 ),
             selectedApp = app,
             searchAppResultState =
-                SearchAppResultState.FunctionsFoundState(functions = listOf(createFakeFunction())),
+                SearchAppResultState.FunctionsFoundState(
+                    functions = listOf(function),
+                    enabledState = mapOf(function.name to true),
+                ),
         )
     AppFunctionsAgentTheme {
         Box(Modifier.background(MaterialTheme.colorScheme.background)) {
@@ -119,6 +123,7 @@ fun DebuggingScreenFunctionExpandedScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
+                    enabledState = mapOf(function.name to true),
                     expandedFunctions = setOf(function.id),
                 ),
         )
@@ -156,6 +161,7 @@ fun DebuggingScreenFunctionExpandedWithInputsScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
+                    enabledState = mapOf(function.name to true),
                     expandedFunctions = setOf(function.id),
                     functionInputs =
                         mapOf(
@@ -243,6 +249,7 @@ fun DebuggingScreenFunctionWithEnumScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
+                    enabledState = mapOf(function.name to true),
                     expandedFunctions = setOf(function.id),
                 ),
         )

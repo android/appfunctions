@@ -26,12 +26,13 @@ sealed class AgentUiState {
     object Loading : AgentUiState()
 
     data class Loaded(
-        val currentThread: ThreadEntity,
+        val currentThread: ThreadEntity? = null,
         val messages: List<MessageEntity> = emptyList(),
         val status: AgentStatus = AgentStatus.Idle,
         val threads: List<ThreadEntity> = emptyList(),
         val activePendingActionIds: Set<String> = emptySet(),
         val installedApps: List<AppInfo> = emptyList(),
+        val availableModels: List<LlmModel> = emptyList(),
     ) : AgentUiState()
 }
 

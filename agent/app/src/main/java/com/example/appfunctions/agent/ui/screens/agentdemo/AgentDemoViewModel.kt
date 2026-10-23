@@ -27,6 +27,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LlmProviderFactory
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
@@ -60,6 +61,7 @@ class AgentDemoViewModel
         private val sendMessageUseCase: SendMessageUseCase,
         private val agentOrchestrator: AgentOrchestrator,
         private val settingsRepository: SettingsRepository,
+        private val llmProviderFactory: LlmProviderFactory,
         private val observeActivePendingIntentsUseCase: ObserveActivePendingIntentsUseCase,
         private val launchPendingIntentUseCase: LaunchPendingIntentUseCase,
         private val consumePendingIntentUseCase: ConsumePendingIntentUseCase,
@@ -70,10 +72,28 @@ class AgentDemoViewModel
         val uiState: StateFlow<AgentUiState> = _uiState.asStateFlow()
 
         private val installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
+        private val availableModels = MutableStateFlow<List<LlmModel>>(emptyList())
 
         private var observationJob: Job? = null
 
         init {
+            viewModelScope.launch {
+                settingsRepository.geminiApiKey.collectLatest { geminiApiKey ->
+                    val models =
+                        LlmProviderName.entries.flatMap { providerName ->
+                            val apiKey =
+                                when (providerName) {
+                                    LlmProviderName.GEMINI -> geminiApiKey
+                                }
+                            llmProviderFactory.getProvider(providerName).getAvailableModels(apiKey)
+                        }
+                    availableModels.value = models
+                    if (models.isNotEmpty() && manageThreadsUseCase.getThreads().first().isEmpty()) {
+                        createAndSelectThread(models.first())
+                    }
+                }
+            }
+
             viewModelScope.launch {
                 getAppFunctionsUseCase(
                     GetAppFunctionsParams(includeInternalTools = false),
@@ -99,74 +119,74 @@ class AgentDemoViewModel
             }
 
             viewModelScope.launch {
-                val threads = manageThreadsUseCase.getThreads().first()
-                if (threads.isEmpty()) {
-                    createAndSelectThread(LlmModel.DEFAULT)
-                }
-            }
-
-            viewModelScope.launch {
                 combine(
-                    manageThreadsUseCase.getThreads(),
-                    settingsRepository.selectedProvider,
-                    agentOrchestrator.status,
+                    combine(
+                        manageThreadsUseCase.getThreads(),
+                        settingsRepository.selectedProvider,
+                        agentOrchestrator.status,
+                    ) { threads, provider, status ->
+                        Triple(threads, provider, status)
+                    },
                     savedStateHandle.getStateFlow<String?>(MainActivity.ARG_THREAD_ID, null),
                     installedApps,
+                    availableModels,
                 ) {
-                        threads,
-                        provider,
-                        status,
+                        (threads, provider, status),
                         targetThreadId,
                         apps,
+                        models,
                     ->
-                    ThreadConfig(threads, provider, status, targetThreadId, apps)
+                    ThreadConfig(threads, provider, status, targetThreadId, apps, models)
                 }
-                    .collectLatest { (threads, provider, status, targetThreadId, apps) ->
+                    .collectLatest { (threads, _, status, targetThreadId, apps, models) ->
                         val currentThread =
                             threads.find { it.threadId == targetThreadId } ?: threads.firstOrNull()
 
                         val previousThreadId =
                             (_uiState.value as? AgentUiState.Loaded)?.currentThread?.threadId
 
+                        val currentLoadedState = _uiState.value as? AgentUiState.Loaded
+                        _uiState.value =
+                            AgentUiState.Loaded(
+                                currentThread = currentThread,
+                                messages =
+                                    if (currentThread != null) {
+                                        currentLoadedState?.messages ?: emptyList()
+                                    } else {
+                                        emptyList()
+                                    },
+                                status = status,
+                                threads = threads,
+                                activePendingActionIds =
+                                    currentLoadedState?.activePendingActionIds ?: emptySet(),
+                                installedApps = apps,
+                                availableModels = models,
+                            )
+
                         if (currentThread == null) {
                             observationJob?.cancel()
                             observationJob = null
-                            _uiState.value = AgentUiState.Loading
-                        } else {
-                            val currentLoadedState = _uiState.value as? AgentUiState.Loaded
-                            _uiState.value =
-                                AgentUiState.Loaded(
-                                    currentThread = currentThread,
-                                    messages = currentLoadedState?.messages ?: emptyList(),
-                                    status = status,
-                                    threads = threads,
-                                    activePendingActionIds =
-                                        currentLoadedState?.activePendingActionIds ?: emptySet(),
-                                    installedApps = apps,
-                                )
-
+                        } else if (observationJob == null || previousThreadId != currentThread.threadId) {
                             // Start observing messages for the current thread if not already doing so
-                            if (observationJob == null || previousThreadId != currentThread.threadId) {
-                                observationJob?.cancel()
-                                observationJob =
-                                    viewModelScope.launch {
-                                        launch {
-                                            getChatHistoryUseCase(currentThread.threadId).collect {
-                                                    messages ->
-                                                val currentState = _uiState.value
-                                                if (currentState is AgentUiState.Loaded) {
-                                                    _uiState.value =
-                                                        currentState.copy(messages = messages)
-                                                }
+                            observationJob?.cancel()
+                            observationJob =
+                                viewModelScope.launch {
+                                    launch {
+                                        getChatHistoryUseCase(currentThread.threadId).collect {
+                                                messages ->
+                                            val currentState = _uiState.value
+                                            if (currentState is AgentUiState.Loaded) {
+                                                _uiState.value =
+                                                    currentState.copy(messages = messages)
                                             }
                                         }
-                                        launch {
-                                            agentOrchestrator.observeAndProcessMessages(
-                                                currentThread.threadId,
-                                            )
-                                        }
                                     }
-                            }
+                                    launch {
+                                        agentOrchestrator.observeAndProcessMessages(
+                                            currentThread.threadId,
+                                        )
+                                    }
+                                }
                         }
                     }
             }
@@ -176,10 +196,11 @@ class AgentDemoViewModel
             val currentState = _uiState.value
             when (event) {
                 is AgentUiEvent.OnSendMessage -> {
-                    if (currentState is AgentUiState.Loaded) {
+                    val currentThread = (currentState as? AgentUiState.Loaded)?.currentThread
+                    if (currentThread != null) {
                         viewModelScope.launch {
                             sendMessageUseCase(
-                                threadId = currentState.currentThread.threadId,
+                                threadId = currentThread.threadId,
                                 role = MessageRole.USER,
                                 textContent = event.text,
                                 processingStatus = MessageProcessingStatus.PENDING_AGENT_RESPONSE,
@@ -191,10 +212,15 @@ class AgentDemoViewModel
                 is AgentUiEvent.OnModelSelected -> {
                     if (currentState is AgentUiState.Loaded) {
                         viewModelScope.launch {
-                            manageThreadsUseCase.updateThreadModel(
-                                currentState.currentThread.threadId,
-                                event.model,
-                            )
+                            val currentThread = currentState.currentThread
+                            if (currentThread != null) {
+                                manageThreadsUseCase.updateThreadModel(
+                                    currentThread.threadId,
+                                    event.model,
+                                )
+                            } else {
+                                createAndSelectThread(event.model)
+                            }
                         }
                     }
                 }
@@ -225,4 +251,5 @@ private data class ThreadConfig(
     val status: AgentStatus,
     val targetThreadId: String?,
     val installedApps: List<AppInfo>,
+    val availableModels: List<LlmModel>,
 )
