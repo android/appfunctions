@@ -54,4 +54,10 @@ interface SettingsRepository {
         packageName: String,
         connected: Boolean,
     )
+
+    /** Flow of AppFunction debugging setting. */
+    val appFunctionDebuggingEnabled: Flow<Boolean>
+
+    /** Sets whether AppFunction debugging is enabled. */
+    suspend fun setAppFunctionDebuggingEnabled(enabled: Boolean)
 }

@@ -109,16 +109,19 @@ class AgentDemoViewModel
                     agentOrchestrator.status,
                     savedStateHandle.getStateFlow<String?>(MainActivity.ARG_THREAD_ID, null),
                     installedApps,
-                ) {
-                        threads,
-                        provider,
-                        status,
-                        targetThreadId,
-                        apps,
-                    ->
-                    ThreadConfig(threads, provider, status, targetThreadId, apps)
+                    settingsRepository.appFunctionDebuggingEnabled,
+                ) { flows ->
+                    @Suppress("UNCHECKED_CAST")
+                    ThreadConfig(
+                        threads = flows[0] as List<ThreadEntity>,
+                        provider = flows[1] as LlmProviderName,
+                        status = flows[2] as AgentStatus,
+                        targetThreadId = flows[3] as String?,
+                        installedApps = flows[4] as List<AppInfo>,
+                        isAppFunctionDebuggingEnabled = flows[5] as Boolean,
+                    )
                 }
-                    .collectLatest { (threads, provider, status, targetThreadId, apps) ->
+                    .collectLatest { (threads, provider, status, targetThreadId, apps, isDebugEnabled) ->
                         val currentThread =
                             threads.find { it.threadId == targetThreadId } ?: threads.firstOrNull()
 
@@ -140,6 +143,7 @@ class AgentDemoViewModel
                                     activePendingActionIds =
                                         currentLoadedState?.activePendingActionIds ?: emptySet(),
                                     installedApps = apps,
+                                    isAppFunctionDebuggingEnabled = isDebugEnabled,
                                 )
 
                             // Start observing messages for the current thread if not already doing so
@@ -207,6 +211,11 @@ class AgentDemoViewModel
                         launchPendingIntentUseCase(pendingIntent)
                     }
                 }
+                is AgentUiEvent.OnToggleAppFunctionDebugging -> {
+                    viewModelScope.launch {
+                        settingsRepository.setAppFunctionDebuggingEnabled(event.enabled)
+                    }
+                }
             }
         }
 
@@ -222,4 +231,5 @@ private data class ThreadConfig(
     val status: AgentStatus,
     val targetThreadId: String?,
     val installedApps: List<AppInfo>,
+    val isAppFunctionDebuggingEnabled: Boolean,
 )

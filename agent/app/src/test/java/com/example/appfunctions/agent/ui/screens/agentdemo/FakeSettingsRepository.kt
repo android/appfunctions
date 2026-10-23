@@ -70,4 +70,11 @@ class FakeSettingsRepository : SettingsRepository {
             _disconnectedApps.value += packageName
         }
     }
+
+    private val _appFunctionDebuggingEnabled = MutableStateFlow(true)
+    override val appFunctionDebuggingEnabled: Flow<Boolean> = _appFunctionDebuggingEnabled
+
+    override suspend fun setAppFunctionDebuggingEnabled(enabled: Boolean) {
+        _appFunctionDebuggingEnabled.value = enabled
+    }
 }
