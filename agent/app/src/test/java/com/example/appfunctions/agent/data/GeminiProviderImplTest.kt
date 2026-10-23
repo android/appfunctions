@@ -501,4 +501,92 @@ class GeminiProviderImplTest {
             val textPart = success.parts.first() as LlmResponsePart.Text
             assertEquals("Served on standard", textPart.text)
         }
+
+    @Test
+    fun getAvailableModels_returnsFilteredGeminiModels() =
+        runBlocking {
+            val responseJson =
+                buildJsonObject {
+                    put(
+                        "models",
+                        kotlinx.serialization.json.buildJsonArray {
+                            add(
+                                buildJsonObject {
+                                    put("name", "models/gemini-2.5-pro")
+                                    put(
+                                        "supportedGenerationMethods",
+                                        kotlinx.serialization.json.buildJsonArray {
+                                            add(
+                                                kotlinx.serialization.json.JsonPrimitive(
+                                                    "generateContent",
+                                                ),
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                            add(
+                                buildJsonObject {
+                                    put("name", "models/gemini-embedding-001")
+                                    put(
+                                        "supportedGenerationMethods",
+                                        kotlinx.serialization.json.buildJsonArray {
+                                            add(
+                                                kotlinx.serialization.json.JsonPrimitive(
+                                                    "embedContent",
+                                                ),
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                            add(
+                                buildJsonObject {
+                                    put("name", "models/imagen-3.0-generate-002")
+                                    put(
+                                        "supportedGenerationMethods",
+                                        kotlinx.serialization.json.buildJsonArray {
+                                            add(
+                                                kotlinx.serialization.json.JsonPrimitive(
+                                                    "predict",
+                                                ),
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
+                    .toString()
+
+            val httpClient = createMockHttpClient(HttpStatusCode.OK, responseJson)
+            val provider = GeminiProviderImpl(httpClient, toolConverter)
+
+            val models = provider.getAvailableModels("test_key")
+
+            assertEquals(listOf(LlmModel(LlmProviderName.GEMINI, "gemini-2.5-pro")), models)
+        }
+
+    @Test
+    fun getAvailableModels_blankApiKey_returnsEmptyList() =
+        runBlocking {
+            val httpClient = createMockHttpClient(HttpStatusCode.OK, "{}")
+            val provider = GeminiProviderImpl(httpClient, toolConverter)
+
+            val models = provider.getAvailableModels("")
+
+            assertEquals(emptyList<LlmModel>(), models)
+        }
+
+    @Test
+    fun getAvailableModels_apiError_returnsEmptyList() =
+        runBlocking {
+            val httpClient = createMockHttpClient(HttpStatusCode.InternalServerError, "Error")
+            val provider = GeminiProviderImpl(httpClient, toolConverter)
+
+            val models = provider.getAvailableModels("test_key")
+
+            assertEquals(emptyList<LlmModel>(), models)
+        }
 }

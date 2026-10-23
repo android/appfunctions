@@ -365,7 +365,7 @@ class AgentOrchestratorTest {
 
     private fun createThread(
         threadId: String,
-        llmModel: LlmModel = LlmModel.GEMINI_3_FLASH_PREVIEW,
+        llmModel: LlmModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash"),
         latestInteractionId: String? = null,
     ) = ThreadEntity(
         threadId = threadId,

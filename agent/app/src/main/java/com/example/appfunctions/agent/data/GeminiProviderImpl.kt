@@ -22,6 +22,7 @@ import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -51,6 +52,64 @@ class GeminiProviderImpl
         private val httpClient: HttpClient,
         private val toolConverter: GeminiToolConverter,
     ) : LlmProvider {
+        override suspend fun getAvailableModels(apiKey: String?): List<LlmModel> {
+            if (apiKey.isNullOrBlank()) {
+                return emptyList()
+            }
+
+            val response: HttpResponse =
+                try {
+                    httpClient.get(GEMINI_MODELS_URL) {
+                        header(HEADER_API_KEY, apiKey)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to fetch Gemini models: ${e.message}")
+                    return emptyList()
+                }
+
+            val responseBodyText = response.bodyAsText()
+            if (response.status.value !in 200..299) {
+                Log.w(
+                    TAG,
+                    "Gemini models API error: ${response.status} - $responseBodyText",
+                )
+                return emptyList()
+            }
+
+            return try {
+                val jsonResponse = Json.parseToJsonElement(responseBodyText).jsonObject
+                val modelsArray = jsonResponse[KEY_MODELS]?.jsonArray ?: return emptyList()
+
+                modelsArray
+                    .mapNotNull { element ->
+                        val modelObj = element.jsonObject
+                        val rawName =
+                            modelObj[KEY_NAME]?.jsonPrimitive?.contentOrNull
+                                ?: return@mapNotNull null
+                        val modelId = rawName.removePrefix(MODEL_NAME_PREFIX)
+                        val supportedMethods =
+                            modelObj[KEY_SUPPORTED_GENERATION_METHODS]
+                                ?.jsonArray
+                                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+
+                        // Require "generateContent" to filter out non-generative models (e.g. embeddings).
+                        val supportsGenerateContent =
+                            supportedMethods == null ||
+                                VALUE_GENERATE_CONTENT in supportedMethods
+
+                        if (modelId.startsWith(GEMINI_MODEL_PREFIX) && supportsGenerateContent) {
+                            LlmModel(LlmProviderName.GEMINI, modelId)
+                        } else {
+                            null
+                        }
+                    }
+                    .distinct()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse Gemini models response", e)
+                emptyList()
+            }
+        }
+
         override suspend fun generateResponse(
             previousInteractionId: String?,
             input: LlmInput,
@@ -264,7 +323,15 @@ class GeminiProviderImpl
         companion object {
             private const val GEMINI_INTERACTIONS_URL =
                 "https://generativelanguage.googleapis.com/v1beta/interactions"
+            private const val GEMINI_MODELS_URL =
+                "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100"
             private const val TAG = "GeminiProvider"
+
+            private const val KEY_MODELS = "models"
+            private const val KEY_SUPPORTED_GENERATION_METHODS = "supportedGenerationMethods"
+            private const val VALUE_GENERATE_CONTENT = "generateContent"
+            private const val MODEL_NAME_PREFIX = "models/"
+            private const val GEMINI_MODEL_PREFIX = "gemini-"
 
             private const val KEY_MODEL = "model"
             private const val KEY_SERVICE_TIER = "service_tier"

@@ -19,6 +19,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.LlmModel
+import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.RoomChatRepository
 import com.example.appfunctions.agent.data.db.AppDatabase
 import com.example.appfunctions.agent.data.db.dao.ChatDao
@@ -37,6 +38,8 @@ class ManageThreadsUseCaseTest {
     private lateinit var chatDao: ChatDao
     private lateinit var chatRepository: ChatRepository
     private lateinit var useCase: ManageThreadsUseCase
+    private val testModelPro = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-pro")
+    private val testModelFlash = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash")
 
     @Before
     fun setup() {
@@ -60,49 +63,43 @@ class ManageThreadsUseCaseTest {
     @Test
     fun getThreads_returnsThreadsFromRepository() =
         runBlocking {
-            val llmModel = LlmModel.GEMINI_3_1_PRO_PREVIEW
-            val threadId = useCase.createThread(llmModel)
+            val threadId = useCase.createThread(testModelPro)
 
             val result = useCase.getThreads().first()
 
             assertEquals(1, result.size)
             assertEquals(threadId, result[0].threadId)
-            assertEquals(llmModel, result[0].llmModel)
+            assertEquals(testModelPro, result[0].llmModel)
         }
 
     @Test
     fun createThread_createsThreadInRepositoryAndReturnsId() =
         runBlocking {
-            val llmModel = LlmModel.GEMINI_3_1_PRO_PREVIEW
-
-            val threadId = useCase.createThread(llmModel)
+            val threadId = useCase.createThread(testModelPro)
 
             val threads = useCase.getThreads().first()
             assertEquals(1, threads.size)
             assertEquals(threadId, threads[0].threadId)
-            assertEquals(llmModel, threads[0].llmModel)
+            assertEquals(testModelPro, threads[0].llmModel)
         }
 
     @Test
     fun updateThreadModel_updatesThreadInRepository() =
         runBlocking {
-            val llmModel = LlmModel.GEMINI_3_1_PRO_PREVIEW
-            val threadId = useCase.createThread(llmModel)
-            val newModel = LlmModel.GEMINI_3_FLASH_PREVIEW
+            val threadId = useCase.createThread(testModelPro)
 
-            useCase.updateThreadModel(threadId, newModel)
+            useCase.updateThreadModel(threadId, testModelFlash)
 
             val threads = useCase.getThreads().first()
             assertEquals(1, threads.size)
             assertEquals(threadId, threads[0].threadId)
-            assertEquals(newModel, threads[0].llmModel)
+            assertEquals(testModelFlash, threads[0].llmModel)
         }
 
     @Test
     fun deleteThread_removesThreadFromRepository() =
         runBlocking {
-            val llmModel = LlmModel.GEMINI_3_1_PRO_PREVIEW
-            val threadId = useCase.createThread(llmModel)
+            val threadId = useCase.createThread(testModelPro)
 
             useCase.deleteThread(threadId)
 
