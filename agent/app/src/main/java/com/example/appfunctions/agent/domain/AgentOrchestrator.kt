@@ -94,6 +94,15 @@ class AgentOrchestrator
         /** The current status of the agent. */
         val status: StateFlow<AgentStatus> = _status.asStateFlow()
 
+        /** Returns all currently enabled AppFunction and internal tools. */
+        suspend fun getEnabledTools(targetPackageName: String? = null): List<AppFunctionMetadata> {
+            val disconnectedApps = settingsRepository.disconnectedApps.first()
+            val allTools =
+                getAppFunctionsUseCase().first().values.flatten() +
+                    agentInternalTools.getInternalToolsMetadata().map { it.first }
+            return filterTools(allTools, disconnectedApps, targetPackageName)
+        }
+
         /**
          * Observes messages for a specific thread and processes any pending agent responses. This
          * method suspends and collects messages until cancelled.
@@ -522,6 +531,236 @@ class AgentOrchestrator
                 }
             }
             return ExecuteToolCallsResult.Success(results)
+        }
+
+        /**
+         * Executes tool calls initiated by a Gemini Live voice session for [threadId], updating
+         * [status], saving any generated attachments or [PendingIntent] confirmation actions to the
+         * chat thread, and returning a [ToolOutput] for every call.
+         */
+        suspend fun executeLiveToolCalls(
+            threadId: String,
+            toolCalls: List<LlmResponsePart.ToolCall>,
+            tools: List<AppFunctionMetadata>,
+        ): List<ToolOutput> {
+            val outputs = mutableListOf<ToolOutput>()
+            val capturedAttachments = mutableListOf<MessageAttachment>()
+            try {
+                for (toolCall in toolCalls) {
+                    _status.value =
+                        AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
+
+                    if (toolCall.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
+                        val executionResult = executeInternalTool(toolCall)
+                        executionResult
+                            .onSuccess { jsonString ->
+                                runCatching {
+                                    val json = JSONObject(jsonString)
+                                    val uri = json.optString("imageUri")
+                                    if (uri.isNotBlank()) {
+                                        val mimeType =
+                                            json.optString("mimeType").takeIf { it.isNotBlank() }
+                                                ?: "image/png"
+                                        capturedAttachments.add(
+                                            MessageAttachment(uri = uri, mimeType = mimeType),
+                                        )
+                                    }
+                                }
+                                outputs.add(
+                                    ToolOutput(
+                                        functionId = toolCall.functionId,
+                                        callId = toolCall.callId,
+                                        result = jsonString,
+                                    ),
+                                )
+                            }
+                            .onFailure { exception ->
+                                outputs.add(
+                                    ToolOutput(
+                                        functionId = toolCall.functionId,
+                                        callId = toolCall.callId,
+                                        result =
+                                            JSONObject().apply {
+                                                put(
+                                                    "error",
+                                                    "Internal tool execution failed: ${exception.message}",
+                                                )
+                                            }.toString(),
+                                    ),
+                                )
+                            }
+                        continue
+                    }
+
+                    val matchingTool =
+                        tools.find {
+                            it.packageName == toolCall.packageName && it.id == toolCall.functionId
+                        }
+
+                    if (matchingTool == null) {
+                        outputs.add(
+                            ToolOutput(
+                                functionId = toolCall.functionId,
+                                callId = toolCall.callId,
+                                result =
+                                    JSONObject().apply {
+                                        put("error", "Tool not found: ${toolCall.functionId}")
+                                    }.toString(),
+                            ),
+                        )
+                        continue
+                    }
+
+                    @Suppress("UNCHECKED_CAST")
+                    val rawConvertedInputs =
+                        toolCall.arguments.filterValues { it != null } as Map<String, Any>
+                    val convertedInputs =
+                        try {
+                            withContext(Dispatchers.IO) {
+                                resolveRemoteFileReferencesRecursively(
+                                    context = context,
+                                    parametersMetadata = matchingTool.parameters,
+                                    inputs = rawConvertedInputs,
+                                )
+                            }
+                        } catch (e: Exception) {
+                            outputs.add(
+                                ToolOutput(
+                                    functionId = toolCall.functionId,
+                                    callId = toolCall.callId,
+                                    result =
+                                        JSONObject().apply {
+                                            put(
+                                                "error",
+                                                "Failed to download remote file reference: ${e.message}",
+                                            )
+                                        }.toString(),
+                                ),
+                            )
+                            continue
+                        }
+
+                    grantContentUriPermissionsRecursively(
+                        context,
+                        toolCall.packageName,
+                        convertedInputs,
+                    )
+
+                    val appFunctionDataResult =
+                        withContext(Dispatchers.Default) {
+                            convertInputToAppFunctionDataUseCase(
+                                parameters = matchingTool.parameters,
+                                components = matchingTool.components,
+                                inputs = convertedInputs,
+                            )
+                        }
+                    if (appFunctionDataResult.isFailure) {
+                        val errMsg = appFunctionDataResult.exceptionOrNull()?.message
+                        outputs.add(
+                            ToolOutput(
+                                functionId = toolCall.functionId,
+                                callId = toolCall.callId,
+                                result =
+                                    JSONObject().apply {
+                                        put(
+                                            "error",
+                                            "Failed to convert arguments for ${toolCall.functionId}: $errMsg",
+                                        )
+                                    }.toString(),
+                            ),
+                        )
+                        continue
+                    }
+
+                    val executionResult =
+                        executeAppFunctionUseCase(
+                            function = matchingTool,
+                            parameters = appFunctionDataResult.getOrThrow(),
+                            threadId = threadId,
+                        )
+
+                    when (executionResult) {
+                        is ExecuteAppFunctionResult.Data -> {
+                            outputs.add(
+                                ToolOutput(
+                                    functionId = toolCall.functionId,
+                                    callId = toolCall.callId,
+                                    result = executionResult.formattedJson,
+                                ),
+                            )
+                        }
+
+                        is ExecuteAppFunctionResult.PendingIntentAction -> {
+                            val pendingIntentId = UUID.randomUUID().toString()
+                            savePendingIntentUseCase(pendingIntentId, executionResult.pendingIntent)
+                            sendMessageUseCase(
+                                threadId = threadId,
+                                role = MessageRole.ASSISTANT,
+                                textContent = "",
+                                processingStatus = MessageProcessingStatus.PROCESSED,
+                                pendingIntentId = pendingIntentId,
+                            )
+                            outputs.add(
+                                ToolOutput(
+                                    functionId = toolCall.functionId,
+                                    callId = toolCall.callId,
+                                    result =
+                                        JSONObject().apply {
+                                            put("status", "confirmation_required")
+                                            put(
+                                                "message",
+                                                "A confirmation button has been displayed in the chat. Ask the user to tap it to confirm.",
+                                            )
+                                        }.toString(),
+                                ),
+                            )
+                        }
+
+                        is ExecuteAppFunctionResult.Error -> {
+                            val exception = executionResult.exception
+                            if (exception is CancellationException) {
+                                throw exception
+                            }
+                            val appFunctionException =
+                                AppFunctionExceptionFormatter.getAppFunctionException(exception)
+                            val errorJson =
+                                if (appFunctionException != null) {
+                                    AppFunctionExceptionFormatter.format(
+                                        appFunctionException,
+                                        toolCall.functionId,
+                                    )
+                                } else {
+                                    JSONObject().apply {
+                                        put(
+                                            "error",
+                                            "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
+                                        )
+                                    }.toString()
+                                }
+                            outputs.add(
+                                ToolOutput(
+                                    functionId = toolCall.functionId,
+                                    callId = toolCall.callId,
+                                    result = errorJson,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                if (capturedAttachments.isNotEmpty()) {
+                    sendMessageUseCase(
+                        threadId = threadId,
+                        role = MessageRole.ASSISTANT,
+                        textContent = "",
+                        processingStatus = MessageProcessingStatus.PROCESSED,
+                        attachments = capturedAttachments,
+                    )
+                }
+            } finally {
+                _status.value = AgentStatus.Idle
+            }
+            return outputs
         }
 
         private suspend fun completeMessageWithError(

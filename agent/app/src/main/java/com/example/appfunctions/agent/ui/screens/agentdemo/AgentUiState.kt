@@ -19,6 +19,7 @@ import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LiveSessionState
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 
 /** Represents the UI state for the Agent Demo screen. */
@@ -32,6 +33,7 @@ sealed class AgentUiState {
         val threads: List<ThreadEntity> = emptyList(),
         val activePendingActionIds: Set<String> = emptySet(),
         val installedApps: List<AppInfo> = emptyList(),
+        val liveSessionState: LiveSessionState = LiveSessionState.Idle,
     ) : AgentUiState()
 }
 
@@ -49,4 +51,8 @@ sealed class AgentUiEvent {
     data class OnThreadSelected(val threadId: String) : AgentUiEvent()
 
     data class OnConfirmAction(val pendingIntentId: String) : AgentUiEvent()
+
+    data class OnToggleLiveSession(val targetPackageName: String? = null) : AgentUiEvent()
+
+    object OnStopLiveSession : AgentUiEvent()
 }
