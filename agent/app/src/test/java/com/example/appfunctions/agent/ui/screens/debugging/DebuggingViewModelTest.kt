@@ -21,9 +21,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.R

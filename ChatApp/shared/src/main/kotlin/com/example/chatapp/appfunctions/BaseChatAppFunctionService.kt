@@ -19,14 +19,15 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.RequiresApi
-import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionAppUnknownException
+import androidx.appfunctions.AppFunctionDeclaration
 import androidx.appfunctions.AppFunctionElementNotFoundException
 import androidx.appfunctions.AppFunctionInvalidArgumentException
 import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
 import androidx.appfunctions.AppFunctionStringValueConstraint
 import androidx.appfunctions.AppFunctionTextResource
+import androidx.appfunctions.ExperimentalAppFunctionsApi
 import com.example.chatapp.data.CallManager
 import com.example.chatapp.data.DisplayMessage
 import com.example.chatapp.data.MessageRepository
@@ -66,7 +67,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @return List of [ContactSearchResult] objects matching the query.
      * @throws AppFunctionInvalidArgumentException If query is empty or blank, an invalid contactType is provided, or if no matching contact or group is found. If thrown, suggest the user clarify the recipient or group name.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun searchContacts(
         query: String,
         @AppFunctionStringValueConstraint(enumValues = ["INDIVIDUAL", "GROUP", "ANY"])
@@ -119,7 +120,8 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @throws AppFunctionInvalidArgumentException If messageBody is empty or blank. If thrown, ask the user to provide the message content to send.
      * @throws AppFunctionElementNotFoundException If no contact or group matches endpointValue. If thrown, call "searchContacts" to find the correct ID.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @OptIn(ExperimentalAppFunctionsApi::class)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun fetchSendMessageDetails(
         endpointValue: String,
         messageBody: String,
@@ -200,7 +202,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @throws AppFunctionElementNotFoundException If no contact or group matches endpointValue. If thrown, call "searchContacts" to find the correct ID.
      * @throws AppFunctionAppUnknownException If sending fails due to a repository error. If thrown, suggest the user retry later.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun sendMessage(
         endpointValue: String,
         messageBody: String,
@@ -239,7 +241,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @return A [PendingIntent] that launches the call activity in the application UI.
      * @throws AppFunctionElementNotFoundException If no recipient exists for endpointValue. If thrown, call "searchContacts" to find the correct ID.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun makeCall(endpointValue: String): PendingIntent {
         val recipient =
             recipientsRepository.getRecipientById(endpointValue)
@@ -264,7 +266,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @param chatId The unique identifier for the recipient or chat group.
      * @param wallpaperUri The URI of the image file to set as the chat wallpaper.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun updateChatWallpaper(
         chatId: String,
         wallpaperUri: Uri,
@@ -293,7 +295,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @return List of [MessagesSearchResult] matching the query.
      * @throws AppFunctionInvalidArgumentException If the query is blank.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun searchMessages(
         query: String,
         endpointValue: String? = null,

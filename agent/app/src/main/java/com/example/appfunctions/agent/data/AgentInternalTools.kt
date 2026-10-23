@@ -24,11 +24,11 @@ import android.location.Geocoder
 import android.location.LocationManager
 import android.util.Base64
 import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionDoubleTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
@@ -390,7 +390,6 @@ class AgentInternalTools
                     packageMetadata =
                         AppFunctionPackageMetadata(
                             packageName = INTERNAL_TOOL_PACKAGE,
-                            appFunctions = listOf(),
                             components = AppFunctionComponentsMetadata(),
                         ),
                 )
@@ -418,7 +417,6 @@ class AgentInternalTools
                     packageMetadata =
                         AppFunctionPackageMetadata(
                             packageName = INTERNAL_TOOL_PACKAGE,
-                            appFunctions = listOf(),
                             components = AppFunctionComponentsMetadata(),
                         ),
                 )
@@ -452,7 +450,6 @@ class AgentInternalTools
                     packageMetadata =
                         AppFunctionPackageMetadata(
                             packageName = INTERNAL_TOOL_PACKAGE,
-                            appFunctions = listOf(),
                             components = AppFunctionComponentsMetadata(),
                         ),
                 )

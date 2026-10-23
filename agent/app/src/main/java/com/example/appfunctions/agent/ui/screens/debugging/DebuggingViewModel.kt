@@ -18,9 +18,9 @@ package com.example.appfunctions.agent.ui.screens.debugging
 import android.app.PendingIntent
 import android.content.res.Resources
 import android.util.Log
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

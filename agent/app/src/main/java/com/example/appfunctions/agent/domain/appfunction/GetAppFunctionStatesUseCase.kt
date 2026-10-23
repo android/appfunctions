@@ -16,8 +16,8 @@
 package com.example.appfunctions.agent.domain.appfunction
 
 import androidx.appfunctions.AppFunctionManager
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
-import androidx.appfunctions.metadata.AppFunctionName
 import javax.inject.Inject
 
 /** Use case to get [AppFunctionState] with given list of [AppFunctionName]. */

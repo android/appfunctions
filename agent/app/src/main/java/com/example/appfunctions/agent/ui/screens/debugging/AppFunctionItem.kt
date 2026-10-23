@@ -15,10 +15,10 @@
  */
 package com.example.appfunctions.agent.ui.screens.debugging
 
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionDataTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
@@ -328,7 +328,7 @@ fun AppFunctionItemPreview() {
             packageMetadata =
                 AppFunctionPackageMetadata(
                     packageName = "com.example.test",
-                    appFunctions = listOf(),
+                    components = AppFunctionComponentsMetadata(),
                 ),
         )
 
@@ -365,7 +365,7 @@ fun AppFunctionItem_NoParams_Preview() {
             packageMetadata =
                 AppFunctionPackageMetadata(
                     packageName = "com.example.test",
-                    appFunctions = listOf(),
+                    components = AppFunctionComponentsMetadata(),
                 ),
         )
 
