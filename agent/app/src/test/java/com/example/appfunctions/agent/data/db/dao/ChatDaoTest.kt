@@ -18,6 +18,7 @@ package com.example.appfunctions.agent.data.db.dao
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.data.LlmModel
+import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.db.AppDatabase
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
@@ -36,6 +37,7 @@ import org.robolectric.RobolectricTestRunner
 class ChatDaoTest {
     private lateinit var database: AppDatabase
     private lateinit var chatDao: ChatDao
+    private val testModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash")
 
     @Before
     fun setup() {
@@ -57,8 +59,7 @@ class ChatDaoTest {
     @Test
     fun insertAndGetMessages() =
         runBlocking {
-            val thread =
-                ThreadEntity("thread_1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW)
+            val thread = ThreadEntity("thread_1", System.currentTimeMillis(), testModel)
             chatDao.insertThread(thread)
 
             val message =
@@ -80,8 +81,7 @@ class ChatDaoTest {
     @Test
     fun updateMessageStatus() =
         runBlocking {
-            val thread =
-                ThreadEntity("thread_1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW)
+            val thread = ThreadEntity("thread_1", System.currentTimeMillis(), testModel)
             chatDao.insertThread(thread)
 
             val message =
@@ -104,8 +104,7 @@ class ChatDaoTest {
     @Test
     fun deleteThreadCascades() =
         runBlocking {
-            val thread =
-                ThreadEntity("thread_1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW)
+            val thread = ThreadEntity("thread_1", System.currentTimeMillis(), testModel)
             chatDao.insertThread(thread)
 
             val message =
@@ -123,5 +122,20 @@ class ChatDaoTest {
 
             val messages = chatDao.getMessagesForThread("thread_1").first()
             assertEquals(0, messages.size)
+        }
+
+    @Test
+    fun insertAndUpdateThreadWithDynamicLlmModel() =
+        runBlocking {
+            val dynamicModel = LlmModel(LlmProviderName.GEMINI, "gemini-4.0-ultra-experimental")
+            val thread = ThreadEntity("thread_1", System.currentTimeMillis(), dynamicModel)
+            chatDao.insertThread(thread)
+
+            val retrieved = chatDao.getThread("thread_1").first()
+            assertEquals(dynamicModel, retrieved?.llmModel)
+
+            val updatedModel = LlmModel(LlmProviderName.GEMINI, "gemini-4.1-flash")
+            chatDao.updateThreadModel("thread_1", updatedModel)
+            assertEquals(updatedModel, chatDao.getThread("thread_1").first()?.llmModel)
         }
 }

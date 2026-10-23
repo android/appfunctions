@@ -19,18 +19,37 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.example.appfunctions.agent.data.LlmModel
+import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
 
+private val previewFlashModel = LlmModel(LlmProviderName.GEMINI, "gemini-3-flash-preview")
+private val previewProModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.1-pro-preview")
+
 /** Screenshot test for [AgentDemoScreen]. */
 @PreviewTest
 @Preview(showBackground = true)
 @Composable
-fun AgentDemoScreenNoThreadPreview() {
+fun AgentDemoScreenLoadingPreview() {
     AgentDemoContent(uiState = AgentUiState.Loading, onEvent = {})
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun AgentDemoScreenNoThreadPreview() {
+    AgentDemoContent(
+        uiState =
+            AgentUiState.Loaded(
+                messages = emptyList(),
+                status = AgentStatus.Idle,
+                currentThread = null,
+            ),
+        onEvent = {},
+    )
 }
 
 @PreviewTest
@@ -38,7 +57,7 @@ fun AgentDemoScreenNoThreadPreview() {
 @Composable
 fun AgentDemoScreenScreenshotPreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val messages =
         listOf(
             MessageEntity(
@@ -74,7 +93,7 @@ fun AgentDemoScreenScreenshotPreview() {
 @Composable
 fun AgentDemoScreenThinkingPreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val messages =
         listOf(
             MessageEntity(
@@ -102,7 +121,7 @@ fun AgentDemoScreenThinkingPreview() {
 @Composable
 fun AgentDemoScreenInvokingToolPreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val messages =
         listOf(
             MessageEntity(
@@ -130,7 +149,7 @@ fun AgentDemoScreenInvokingToolPreview() {
 @Composable
 fun AgentDemoScreenConfirmActionPreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val messages =
         listOf(
             MessageEntity(
@@ -168,7 +187,7 @@ fun AgentDemoScreenConfirmActionPreview() {
 @Composable
 fun AgentDemoScreenActionExpiredPreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val messages =
         listOf(
             MessageEntity(
@@ -206,7 +225,7 @@ fun AgentDemoScreenActionExpiredPreview() {
 @Composable
 fun AgentDemoScreenErrorPreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val messages =
         listOf(
             MessageEntity(
@@ -242,9 +261,9 @@ fun AgentDemoScreenErrorPreview() {
 @Composable
 fun AgentDemoScreenSidePanelPreview() {
     val thread1 =
-        ThreadEntity("thread-1", System.currentTimeMillis(), LlmModel.GEMINI_3_FLASH_PREVIEW, null)
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
     val thread2 =
-        ThreadEntity("thread-2", System.currentTimeMillis(), LlmModel.GEMINI_3_1_PRO_PREVIEW, null)
+        ThreadEntity("thread-2", System.currentTimeMillis(), previewProModel, null)
     val threads = listOf(thread1, thread2)
 
     val messages =

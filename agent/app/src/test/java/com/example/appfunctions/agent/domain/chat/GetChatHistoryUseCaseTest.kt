@@ -19,6 +19,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.LlmModel
+import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.RoomChatRepository
 import com.example.appfunctions.agent.data.db.AppDatabase
 import com.example.appfunctions.agent.data.db.dao.ChatDao
@@ -66,7 +67,11 @@ class GetChatHistoryUseCaseTest {
         runBlocking {
             val threadId = "thread_1"
             val thread =
-                ThreadEntity(threadId, System.currentTimeMillis(), LlmModel.GEMINI_3_1_PRO_PREVIEW)
+                ThreadEntity(
+                    threadId,
+                    System.currentTimeMillis(),
+                    LlmModel(LlmProviderName.GEMINI, "gemini-2.5-pro"),
+                )
             chatRepository.createThread(thread)
 
             val message =
