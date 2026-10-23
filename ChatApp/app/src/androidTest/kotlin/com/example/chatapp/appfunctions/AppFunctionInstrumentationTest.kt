@@ -65,11 +65,9 @@ class AppFunctionInstrumentationTest {
         runBlocking<Unit> {
             val sendMessageFunctionMetadata =
                 appFunctionManager
-                    .observeAppFunctions(
+                    .searchAppFunctions(
                         AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
                     )
-                    .first()
-                    .flatMap { it.appFunctions }
                     .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
@@ -103,11 +101,9 @@ class AppFunctionInstrumentationTest {
         runBlocking<Unit> {
             val sendMessageFunctionMetadata =
                 appFunctionManager
-                    .observeAppFunctions(
+                    .searchAppFunctions(
                         AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
                     )
-                    .first()
-                    .flatMap { it.appFunctions }
                     .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE }
             val testRecipient = recipientsRepository.getAllRecipients().first()
             val request =
@@ -134,11 +130,9 @@ class AppFunctionInstrumentationTest {
         runBlocking<Unit> {
             val getRecipientsFunctionMetadata =
                 appFunctionManager
-                    .observeAppFunctions(
+                    .searchAppFunctions(
                         AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
                     )
-                    .first()
-                    .flatMap { it.appFunctions }
                     .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS }
 
             val request =

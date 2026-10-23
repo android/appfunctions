@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -66,30 +67,40 @@ class AppFunctionsViewModel
         private val appFunctionManager = AppFunctionManager.getInstance(application)
 
         val uiState: StateFlow<AppFunctionsUiState> =
-            appFunctionManager?.observeAppFunctions(
-                AppFunctionSearchSpec(packageNames = setOf(application.packageName)),
-            )?.map { packageMetadataList ->
-                val functions =
-                    packageMetadataList.firstOrNull {
-                        it.packageName == application.packageName
-                    }?.appFunctions ?: emptyList()
+            appFunctionManager
+                ?.observeAppFunctions()
+                ?.map { loadAppFunctions(application.packageName) }
+                ?.onStart { emit(loadAppFunctions(application.packageName)) }
+                ?.stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = AppFunctionsUiState(),
+                )
+                ?: MutableStateFlow(AppFunctionsUiState())
 
-                val functionInfos =
-                    functions.map {
+        private suspend fun loadAppFunctions(packageName: String): AppFunctionsUiState {
+            if (appFunctionManager == null) return AppFunctionsUiState()
+            val functions =
+                appFunctionManager.searchAppFunctions(
+                    AppFunctionSearchSpec(packageNames = setOf(packageName)),
+                )
+            val statesByName =
+                appFunctionManager
+                    .getAppFunctionStates(functions.map { it.name })
+                    .associateBy { it.functionName }
+
+            val functionInfos =
+                functions
+                    .map {
                         AppFunctionInfo(
                             id = it.id,
-                            isEnabled = it.isEnabled,
+                            isEnabled = statesByName[it.name]?.isEnabled ?: true,
                             description = it.description,
                         )
                     }.sortedBy { it.id }
 
-                AppFunctionsUiState(functions = functionInfos)
-            }?.stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = AppFunctionsUiState(),
-            )
-                ?: MutableStateFlow(AppFunctionsUiState())
+            return AppFunctionsUiState(functions = functionInfos)
+        }
 
         /**
          * Toggles the enabled state of an app function.

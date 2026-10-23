@@ -15,7 +15,7 @@
  */
 package com.example.appfunctions.agent.data
 
-import androidx.appfunctions.AppFunction
+import androidx.appfunctions.AppFunctionDeclaration
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
@@ -34,7 +34,7 @@ abstract class AbstractFakeAppFunctionService : AppFunctionService() {
      * @param params The test parameters containing input data.
      * @return The test response containing output data.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun fakeFunction(params: FakeParams): FakeResponse {
         return FakeResponse("success")
     }

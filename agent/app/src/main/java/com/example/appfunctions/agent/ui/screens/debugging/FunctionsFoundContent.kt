@@ -17,8 +17,8 @@ package com.example.appfunctions.agent.ui.screens.debugging
 
 import android.app.PendingIntent
 import android.widget.Toast
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
@@ -320,7 +320,6 @@ fun AppFunctionErrorItemPreview() {
             packageMetadata =
                 AppFunctionPackageMetadata(
                     packageName = "com.example.test",
-                    appFunctions = listOf(),
                     components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
                 ),
         )
@@ -351,7 +350,6 @@ fun FunctionsFoundContentPreview() {
             packageMetadata =
                 AppFunctionPackageMetadata(
                     packageName = "com.example.test",
-                    appFunctions = listOf(),
                     components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
                 ),
         )
@@ -368,7 +366,6 @@ fun FunctionsFoundContentPreview() {
             packageMetadata =
                 AppFunctionPackageMetadata(
                     packageName = "com.example.test",
-                    appFunctions = listOf(),
                     components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
                 ),
         )

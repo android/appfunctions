@@ -15,8 +15,8 @@
  */
 package com.example.appfunctions.agent.ui.screens.debugging
 
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.troubleshoot.TroubleshootReport

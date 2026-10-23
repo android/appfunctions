@@ -17,7 +17,7 @@ package com.example.appfunctions.agent.domain
 
 import android.content.Context
 import androidx.appfunctions.AppFunctionManager
-import androidx.appfunctions.metadata.AppFunctionName
+import androidx.appfunctions.AppFunctionName
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry

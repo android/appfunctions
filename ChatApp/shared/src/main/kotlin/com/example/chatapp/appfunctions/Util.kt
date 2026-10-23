@@ -18,6 +18,7 @@ package com.example.chatapp.appfunctions
 import androidx.appfunctions.AppFunctionResourceContainer
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionTextResource
+import androidx.appfunctions.ExperimentalAppFunctionsApi
 
 /**
  * Represents a result from a contact or group search.
@@ -37,6 +38,7 @@ data class ContactSearchResult(
 /**
  * Confirmation-card content for Gemini.
  */
+@OptIn(ExperimentalAppFunctionsApi::class)
 @AppFunctionSerializable(isDescribedByKDoc = true)
 data class ConfirmationPreview(
     /** Exactly one A2UI resource (mimeType "application/a2ui+json"). */

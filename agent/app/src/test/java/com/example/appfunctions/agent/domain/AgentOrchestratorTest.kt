@@ -17,9 +17,9 @@ package com.example.appfunctions.agent.domain
 
 import android.content.Intent
 import androidx.appfunctions.AppFunctionData
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmModel
@@ -377,13 +377,11 @@ class AgentOrchestratorTest {
     private fun createMockTool(
         packageName: String,
         id: String,
-        isEnabled: Boolean = true,
     ): AppFunctionMetadata {
         val tool = mockk<AppFunctionMetadata>(relaxed = true)
         every { tool.packageName } returns packageName
         every { tool.id } returns id
         every { tool.name } returns AppFunctionName(packageName, id)
-        every { tool.isEnabled } returns isEnabled
         return tool
     }
 
