@@ -83,6 +83,30 @@ class GeminiToolConverter
             return getGeminiFunctionName(tool)
         }
 
+        /**
+         * Deduplicates [tools] by their converted Gemini function name, prioritizing functions
+         * whose ID starts with their package name.
+         */
+        fun selectDistinctTools(tools: List<AppFunctionMetadata>): List<AppFunctionMetadata> =
+            tools
+                .sortedByDescending { it.id.startsWith(it.packageName) }
+                .distinctBy { getToolName(it) }
+
+        /** Finds the [AppFunctionMetadata] in [tools] matching a converted Gemini function [name]. */
+        fun findToolByName(
+            name: String,
+            tools: List<AppFunctionMetadata>,
+        ): AppFunctionMetadata? = tools.find { getToolName(it) == name }
+
+        /**
+         * Resolves the converted Gemini function name for [functionId] from [tools], falling back
+         * to [functionId] if no matching tool metadata is present.
+         */
+        fun resolveToolName(
+            functionId: String,
+            tools: List<AppFunctionMetadata>,
+        ): String = tools.find { it.id == functionId }?.let(::getToolName) ?: functionId
+
         private fun convertToolToGeminiSchema(tool: AppFunctionMetadata): JsonObject {
             val combinedName = getGeminiFunctionName(tool)
             return buildJsonObject {

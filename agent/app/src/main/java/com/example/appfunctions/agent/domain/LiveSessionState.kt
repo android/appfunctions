@@ -15,7 +15,7 @@
  */
 package com.example.appfunctions.agent.domain
 
-/** Represents the state of a Gemini Live voice session. */
+/** Represents the state of a live voice session. */
 sealed class LiveSessionState {
     object Idle : LiveSessionState()
 

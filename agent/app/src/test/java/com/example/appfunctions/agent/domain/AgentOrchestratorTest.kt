@@ -34,8 +34,10 @@ import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
+import com.example.appfunctions.agent.domain.appfunction.ExecuteToolCallUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetEnabledToolsUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -81,9 +83,23 @@ class AgentOrchestratorTest {
 
     @Before
     fun setUp() {
+        val getEnabledToolsUseCase =
+            GetEnabledToolsUseCase(
+                settingsRepository = settingsRepository,
+                getAppFunctionsUseCase = getAppFunctionsUseCase,
+                getAppFunctionStatesUseCase = getAppFunctionStatesUseCase,
+                agentInternalTools = agentInternalTools,
+            )
+        val executeToolCallUseCase =
+            ExecuteToolCallUseCase(
+                context = context,
+                convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
+                executeAppFunctionUseCase = executeAppFunctionUseCase,
+                agentInternalTools = agentInternalTools,
+            )
+
         agentOrchestrator =
             AgentOrchestrator(
-                context = context,
                 manageThreadsUseCase = manageThreadsUseCase,
                 observePendingMessagesUseCase = observePendingMessagesUseCase,
                 sendMessageUseCase = sendMessageUseCase,
@@ -91,12 +107,9 @@ class AgentOrchestratorTest {
                 updateThreadUseCase = updateThreadUseCase,
                 llmProviderFactory = llmProviderFactory,
                 settingsRepository = settingsRepository,
-                getAppFunctionsUseCase = getAppFunctionsUseCase,
-                getAppFunctionStatesUseCase = getAppFunctionStatesUseCase,
-                convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
-                executeAppFunctionUseCase = executeAppFunctionUseCase,
+                getEnabledToolsUseCase = getEnabledToolsUseCase,
+                executeToolCallUseCase = executeToolCallUseCase,
                 savePendingIntentUseCase = savePendingIntentUseCase,
-                agentInternalTools = agentInternalTools,
             )
 
         coEvery { getAppFunctionStatesUseCase(any()) } answers {

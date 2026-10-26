@@ -17,8 +17,11 @@ package com.example.appfunctions.agent.domain
 
 import com.example.appfunctions.agent.data.LlmProviderName
 
-/** Factory interface to get the correct LlmProvider. */
+/** Factory interface to get the correct [LlmProvider] or [LiveLlmProvider]. */
 interface LlmProviderFactory {
-    /** Returns the LlmProvider instance for the given name. */
+    /** Returns the [LlmProvider] instance for the given [name]. */
     fun getProvider(name: LlmProviderName): LlmProvider
+
+    /** Returns the [LiveLlmProvider] instance for the given [name]. */
+    fun getLiveProvider(name: LlmProviderName): LiveLlmProvider
 }

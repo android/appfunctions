@@ -15,21 +15,29 @@
  */
 package com.example.appfunctions.agent.data
 
+import com.example.appfunctions.agent.domain.LiveLlmProvider
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmProviderFactory
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Implementation of LlmProviderFactory. */
+/** Implementation of [LlmProviderFactory]. */
 @Singleton
 class LlmProviderFactoryImpl
     @Inject
     constructor(
         private val geminiProvider: GeminiProviderImpl,
+        private val geminiLiveProvider: GeminiLiveProviderImpl,
     ) : LlmProviderFactory {
         override fun getProvider(name: LlmProviderName): LlmProvider {
             return when (name) {
                 LlmProviderName.GEMINI -> geminiProvider
+            }
+        }
+
+        override fun getLiveProvider(name: LlmProviderName): LiveLlmProvider {
+            return when (name) {
+                LlmProviderName.GEMINI -> geminiLiveProvider
             }
         }
     }

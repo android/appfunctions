@@ -27,7 +27,6 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
-import com.example.appfunctions.agent.domain.GeminiLiveSessionManager
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
@@ -65,7 +64,6 @@ class AgentDemoViewModel
         private val consumePendingIntentUseCase: ConsumePendingIntentUseCase,
         private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
-        private val geminiLiveSessionManager: GeminiLiveSessionManager,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<AgentUiState>(AgentUiState.Loading)
         val uiState: StateFlow<AgentUiState> = _uiState.asStateFlow()
@@ -93,15 +91,6 @@ class AgentDemoViewModel
                     if (currentState is AgentUiState.Loaded) {
                         _uiState.value =
                             currentState.copy(activePendingActionIds = activePendingActionIds)
-                    }
-                }
-            }
-
-            viewModelScope.launch {
-                geminiLiveSessionManager.state.collect { liveState ->
-                    val currentState = _uiState.value
-                    if (currentState is AgentUiState.Loaded) {
-                        _uiState.value = currentState.copy(liveSessionState = liveState)
                     }
                 }
             }
@@ -151,14 +140,10 @@ class AgentDemoViewModel
                                     activePendingActionIds =
                                         currentLoadedState?.activePendingActionIds ?: emptySet(),
                                     installedApps = apps,
-                                    liveSessionState = geminiLiveSessionManager.state.value,
                                 )
 
                             // Start observing messages for the current thread if not already doing so
                             if (observationJob == null || previousThreadId != currentThread.threadId) {
-                                if (previousThreadId != null && previousThreadId != currentThread.threadId) {
-                                    geminiLiveSessionManager.stopSession()
-                                }
                                 observationJob?.cancel()
                                 observationJob =
                                     viewModelScope.launch {
@@ -222,23 +207,7 @@ class AgentDemoViewModel
                         launchPendingIntentUseCase(pendingIntent)
                     }
                 }
-                is AgentUiEvent.OnToggleLiveSession -> {
-                    if (currentState is AgentUiState.Loaded) {
-                        geminiLiveSessionManager.toggleSession(
-                            threadId = currentState.currentThread.threadId,
-                            targetPackageName = event.targetPackageName,
-                        )
-                    }
-                }
-                AgentUiEvent.OnStopLiveSession -> {
-                    geminiLiveSessionManager.stopSession()
-                }
             }
-        }
-
-        override fun onCleared() {
-            super.onCleared()
-            geminiLiveSessionManager.stopSession()
         }
 
         private suspend fun createAndSelectThread(llmModel: LlmModel) {
