@@ -20,6 +20,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import com.example.appfunctions.agent.R
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -43,7 +44,13 @@ class TroubleshootAppUseCase
             val pm = context.packageManager
 
             // 1. Check if already visible
-            val appFunctionsMap = getAppFunctionsUseCase().first()
+            val appFunctionsMap =
+                getAppFunctionsUseCase(
+                    GetAppFunctionsParams(
+                        targetPackageNames = setOf(packageName),
+                        includeInternalTools = false,
+                    ),
+                ).first()
             val isVisible = appFunctionsMap.keys.any { it.packageName == packageName }
             if (isVisible) {
                 steps.add(

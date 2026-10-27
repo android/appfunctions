@@ -28,6 +28,7 @@ import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
@@ -74,7 +75,9 @@ class AgentDemoViewModel
 
         init {
             viewModelScope.launch {
-                getAppFunctionsUseCase().collect { toolsMap ->
+                getAppFunctionsUseCase(
+                    GetAppFunctionsParams(includeInternalTools = false),
+                ).collect { toolsMap ->
                     val allTools = toolsMap.values.flatten()
                     val packagesWithTools = allTools.map { it.packageName }.toSet()
                     val filteredApps =

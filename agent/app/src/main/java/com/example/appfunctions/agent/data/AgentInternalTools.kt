@@ -375,6 +375,12 @@ class AgentInternalTools
                     qualifiedName = "com.example.appfunctions.agent.data.AgentInternalTools.GeneratedImageResult",
                 )
 
+            val internalPackageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = INTERNAL_TOOL_PACKAGE,
+                    components = AppFunctionComponentsMetadata(),
+                )
+
             val getCurrentLocationTool =
                 AppFunctionMetadata(
                     name = AppFunctionName(INTERNAL_TOOL_PACKAGE, "getCurrentLocation"),
@@ -387,11 +393,7 @@ class AgentInternalTools
                         ),
                     description = "Retrieve the current latitude and longitude coordinates of the device.",
                     deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = INTERNAL_TOOL_PACKAGE,
-                            components = AppFunctionComponentsMetadata(),
-                        ),
+                    packageMetadata = internalPackageMetadata,
                 )
 
             val geocodeAddressTool =
@@ -414,11 +416,7 @@ class AgentInternalTools
                         ),
                     description = "Geocode a physical address string into its latitude and longitude coordinates.",
                     deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = INTERNAL_TOOL_PACKAGE,
-                            components = AppFunctionComponentsMetadata(),
-                        ),
+                    packageMetadata = internalPackageMetadata,
                 )
 
             val generateImageTool =
@@ -447,11 +445,7 @@ class AgentInternalTools
                         ),
                     description = "Generates an image from a text prompt and returns the remote image URI.",
                     deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = INTERNAL_TOOL_PACKAGE,
-                            components = AppFunctionComponentsMetadata(),
-                        ),
+                    packageMetadata = internalPackageMetadata,
                 )
 
             @SuppressLint("RestrictedApi")

@@ -61,7 +61,9 @@ class GetConnectedAppsUseCaseTest {
                     app2Metadata to emptyList<androidx.appfunctions.metadata.AppFunctionMetadata>(),
                 )
 
-            every { mockGetAppFunctionsUseCase() } returns flowOf(appFunctionsMap)
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns flowOf(appFunctionsMap)
             fakeRepository.setAppConnected("com.example.app2", false)
 
             val appInfo1 = AppInfo("com.example.app1", "App 1", null)
@@ -87,7 +89,9 @@ class GetConnectedAppsUseCaseTest {
             val appFunctionsMap =
                 mapOf(app1Metadata to emptyList<androidx.appfunctions.metadata.AppFunctionMetadata>())
 
-            every { mockGetAppFunctionsUseCase() } returns flowOf(appFunctionsMap)
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns flowOf(appFunctionsMap)
             fakeRepository.setAppConnected("com.example.app1", true)
 
             every { mockGetInstalledAppsUseCase() } returns emptyList()
