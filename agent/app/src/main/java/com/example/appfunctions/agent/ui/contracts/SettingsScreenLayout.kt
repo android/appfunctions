@@ -18,6 +18,7 @@ package com.example.appfunctions.agent.ui.contracts
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.ServiceTier
 
 /**
@@ -33,5 +34,7 @@ interface SettingsScreenLayout {
         onOpenLicenses: () -> Unit,
         onNavigateToConnectedApps: () -> Unit,
         modifier: Modifier,
+        geminiLiveVoice: GeminiLiveVoice = GeminiLiveVoice.DEFAULT,
+        onGeminiLiveVoiceSelected: (GeminiLiveVoice) -> Unit = {},
     )
 }

@@ -37,6 +37,12 @@ interface SettingsRepository {
     /** Sets the service tier requested for LLM API calls. */
     suspend fun setServiceTier(tier: ServiceTier)
 
+    /** Flow of the prebuilt voice selected for Gemini Live sessions. */
+    val geminiLiveVoice: Flow<GeminiLiveVoice>
+
+    /** Sets the prebuilt voice selected for Gemini Live sessions. */
+    suspend fun setGeminiLiveVoice(voice: GeminiLiveVoice)
+
     /** Flow of pinned app package names. */
     val pinnedApps: Flow<Set<String>>
 

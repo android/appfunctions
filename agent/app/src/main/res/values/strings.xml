@@ -88,6 +88,9 @@
     <string name="settings_service_tier_description">Priority lowers response latency but requires Tier 2+ billing and costs more.</string>
     <string name="settings_service_tier_standard">Standard</string>
     <string name="settings_service_tier_priority">Priority</string>
+    <string name="settings_live_voice">Gemini Live voice</string>
+    <string name="settings_live_voice_description">Spoken voice used for Gemini Live sessions. Changes apply to new sessions.</string>
+    <string name="settings_live_voice_option">%1$s (%2$s)</string>
     <string name="settings_provider_title">Preferred Provider</string>
     <string name="settings_provider_gemini">Gemini</string>
     <string name="settings_open_source_licenses">Open source licenses</string>

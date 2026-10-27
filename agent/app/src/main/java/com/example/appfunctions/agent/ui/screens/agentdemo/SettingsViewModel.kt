@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -46,8 +47,13 @@ class SettingsViewModel
             combine(
                 settingsRepository.selectedProvider,
                 settingsRepository.serviceTier,
-            ) { provider, serviceTier ->
-                SettingsUiState(selectedProvider = provider, serviceTier = serviceTier)
+                settingsRepository.geminiLiveVoice,
+            ) { provider, serviceTier, geminiLiveVoice ->
+                SettingsUiState(
+                    selectedProvider = provider,
+                    serviceTier = serviceTier,
+                    geminiLiveVoice = geminiLiveVoice,
+                )
             }
                 .stateIn(
                     scope = viewModelScope,
@@ -78,5 +84,9 @@ class SettingsViewModel
 
         fun setServiceTier(tier: ServiceTier) {
             viewModelScope.launch { settingsRepository.setServiceTier(tier) }
+        }
+
+        fun setGeminiLiveVoice(voice: GeminiLiveVoice) {
+            viewModelScope.launch { settingsRepository.setGeminiLiveVoice(voice) }
         }
     }

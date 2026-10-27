@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -31,6 +32,9 @@ class FakeSettingsRepository : SettingsRepository {
     private val _serviceTier = MutableStateFlow(ServiceTier.STANDARD)
     override val serviceTier: Flow<ServiceTier> = _serviceTier
 
+    private val _geminiLiveVoice = MutableStateFlow(GeminiLiveVoice.DEFAULT)
+    override val geminiLiveVoice: Flow<GeminiLiveVoice> = _geminiLiveVoice
+
     private val _pinnedApps = MutableStateFlow<Set<String>>(emptySet())
     override val pinnedApps: Flow<Set<String>> = _pinnedApps
 
@@ -44,6 +48,10 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun setServiceTier(tier: ServiceTier) {
         _serviceTier.value = tier
+    }
+
+    override suspend fun setGeminiLiveVoice(voice: GeminiLiveVoice) {
+        _geminiLiveVoice.value = voice
     }
 
     override suspend fun setAppPinned(

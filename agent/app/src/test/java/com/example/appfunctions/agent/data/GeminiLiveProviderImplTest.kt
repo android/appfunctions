@@ -33,6 +33,7 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -48,6 +49,7 @@ import org.junit.Test
 import java.util.Base64
 
 class GeminiLiveProviderImplTest {
+    private lateinit var settingsRepository: SettingsRepository
     private lateinit var provider: GeminiLiveProviderImpl
 
     @Before
@@ -57,10 +59,14 @@ class GeminiLiveProviderImplTest {
         every { Log.w(any<String>(), any<String>()) } returns 0
         every { Log.e(any(), any(), any()) } returns 0
 
+        settingsRepository = mockk(relaxed = true)
+        every { settingsRepository.geminiLiveVoice } returns flowOf(GeminiLiveVoice.DEFAULT)
+
         provider =
             GeminiLiveProviderImpl(
                 httpClient = mockk<HttpClient>(relaxed = true),
                 toolConverter = GeminiToolConverter(),
+                settingsRepository = settingsRepository,
             )
     }
 
@@ -79,6 +85,16 @@ class GeminiLiveProviderImplTest {
                 .jsonArray
                 .map { it.jsonPrimitive.content }
         assertEquals(listOf("AUDIO"), modalities)
+
+        val voiceName =
+            setup["generationConfig"]!!
+                .jsonObject["speechConfig"]!!
+                .jsonObject["voiceConfig"]!!
+                .jsonObject["prebuiltVoiceConfig"]!!
+                .jsonObject["voiceName"]!!
+                .jsonPrimitive
+                .content
+        assertEquals("Zephyr", voiceName)
 
         assertTrue(setup.containsKey("inputAudioTranscription"))
         assertTrue(setup.containsKey("outputAudioTranscription"))
@@ -128,6 +144,41 @@ class GeminiLiveProviderImplTest {
             } catch (e: IllegalStateException) {
                 assertTrue(e.message!!.contains("setupComplete"))
             }
+        }
+
+    @Test
+    fun `connect sends selected GeminiLiveVoice from SettingsRepository in setup message`() =
+        runTest {
+            every { settingsRepository.geminiLiveVoice } returns flowOf(GeminiLiveVoice.AOEDE)
+
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFrames.close()
+
+            val sentFrames = mutableListOf<String>()
+            provider.webSocketConnector = { _, block ->
+                coroutineScope {
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFrames,
+                        onSendText = { sentFrames.add(it) },
+                    ).block()
+                }
+            }
+
+            provider.connect(apiKey = "key-123", tools = emptyList()) {}
+
+            val setupVoiceName =
+                Json.parseToJsonElement(sentFrames.first())
+                    .jsonObject["setup"]!!
+                    .jsonObject["generationConfig"]!!
+                    .jsonObject["speechConfig"]!!
+                    .jsonObject["voiceConfig"]!!
+                    .jsonObject["prebuiltVoiceConfig"]!!
+                    .jsonObject["voiceName"]!!
+                    .jsonPrimitive
+                    .content
+            assertEquals("Aoede", setupVoiceName)
         }
 
     @Test

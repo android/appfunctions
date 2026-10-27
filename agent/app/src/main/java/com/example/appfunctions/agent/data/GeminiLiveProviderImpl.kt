@@ -32,6 +32,7 @@ import io.ktor.websocket.readBytes
 import io.ktor.websocket.readText
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
@@ -61,6 +62,7 @@ class GeminiLiveProviderImpl
     constructor(
         private val httpClient: HttpClient,
         private val toolConverter: GeminiToolConverter,
+        private val settingsRepository: SettingsRepository,
     ) : LiveLlmProvider {
         internal var webSocketConnector:
             suspend (wsUrl: String, block: suspend WebSocketSession.() -> Unit) -> Unit =
@@ -73,10 +75,14 @@ class GeminiLiveProviderImpl
             tools: List<AppFunctionMetadata>,
             block: suspend (LiveLlmSession) -> Unit,
         ) {
+            val selectedVoice = settingsRepository.geminiLiveVoice.first()
             val wsUrl = "$GEMINI_LIVE_WS_URL?key=$apiKey"
             webSocketConnector(wsUrl) {
-                val setupMessage = buildSetupMessage(tools)
-                Log.d(TAG, "Sending Gemini Live setup for model $LIVE_MODEL_NAME")
+                val setupMessage = buildSetupMessage(tools = tools, voice = selectedVoice)
+                Log.d(
+                    TAG,
+                    "Sending Gemini Live setup for model $LIVE_MODEL_NAME (voice=${selectedVoice.apiName})",
+                )
                 send(Frame.Text(setupMessage.toString()))
 
                 val firstFrameText =
@@ -234,7 +240,10 @@ class GeminiLiveProviderImpl
             return events
         }
 
-        internal fun buildSetupMessage(tools: List<AppFunctionMetadata>): JsonObject {
+        internal fun buildSetupMessage(
+            tools: List<AppFunctionMetadata>,
+            voice: GeminiLiveVoice = GeminiLiveVoice.DEFAULT,
+        ): JsonObject {
             val functionDeclarations =
                 toolConverter
                     .selectDistinctTools(tools)
@@ -268,7 +277,7 @@ class GeminiLiveProviderImpl
                                                 put(
                                                     "prebuiltVoiceConfig",
                                                     buildJsonObject {
-                                                        put("voiceName", DEFAULT_VOICE_NAME)
+                                                        put("voiceName", voice.apiName)
                                                     },
                                                 )
                                             },
@@ -389,7 +398,6 @@ class GeminiLiveProviderImpl
         companion object {
             private const val TAG = "GeminiLiveProvider"
             const val LIVE_MODEL_NAME = "models/gemini-3.8-live"
-            private const val DEFAULT_VOICE_NAME = "CHARON"
             private const val INPUT_AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
             private const val GEMINI_LIVE_WS_URL =
                 "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"

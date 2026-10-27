@@ -77,4 +77,19 @@ class SettingsRepositoryTest {
             val value = repository.serviceTier.first()
             assertEquals(ServiceTier.PRIORITY, value)
         }
+
+    @Test
+    fun geminiLiveVoice_defaultsToZephyr() =
+        runTest {
+            val value = repository.geminiLiveVoice.first()
+            assertEquals(GeminiLiveVoice.ZEPHYR, value)
+        }
+
+    @Test
+    fun setGeminiLiveVoice_persistsValue() =
+        runTest {
+            repository.setGeminiLiveVoice(GeminiLiveVoice.AOEDE)
+            val value = repository.geminiLiveVoice.first()
+            assertEquals(GeminiLiveVoice.AOEDE, value)
+        }
 }

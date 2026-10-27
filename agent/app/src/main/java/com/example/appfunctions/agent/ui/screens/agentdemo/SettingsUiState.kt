@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
 
@@ -22,4 +23,5 @@ import com.example.appfunctions.agent.data.ServiceTier
 data class SettingsUiState(
     val selectedProvider: LlmProviderName = LlmProviderName.GEMINI,
     val serviceTier: ServiceTier = ServiceTier.STANDARD,
+    val geminiLiveVoice: GeminiLiveVoice = GeminiLiveVoice.DEFAULT,
 )

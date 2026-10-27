@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -70,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.appfunctions.agent.BuildConfig
 import com.example.appfunctions.agent.R
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.ServiceTier
 import com.google.android.gms.oss.licenses.v2.OssLicensesMenuActivity
 import kotlin.OptIn
@@ -93,6 +95,8 @@ fun SettingsScreen(
         geminiApiKeyState = viewModel.geminiApiKeyState,
         serviceTier = uiState.serviceTier,
         onServiceTierSelected = viewModel::setServiceTier,
+        geminiLiveVoice = uiState.geminiLiveVoice,
+        onGeminiLiveVoiceSelected = viewModel::setGeminiLiveVoice,
         onOpenLicenses = onOpenLicensesClick,
         onNavigateToConnectedApps = onNavigateToConnectedApps,
     )
@@ -107,6 +111,8 @@ fun SettingsScreenContent(
     onServiceTierSelected: (ServiceTier) -> Unit,
     onOpenLicenses: () -> Unit,
     onNavigateToConnectedApps: () -> Unit,
+    geminiLiveVoice: GeminiLiveVoice = GeminiLiveVoice.DEFAULT,
+    onGeminiLiveVoiceSelected: (GeminiLiveVoice) -> Unit = {},
 ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -199,6 +205,24 @@ fun SettingsScreenContent(
                 )
                 Text(
                     text = stringResource(id = R.string.settings_service_tier_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(
+                    text = stringResource(id = R.string.settings_live_voice),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                GeminiLiveVoiceDropdown(
+                    selectedVoice = geminiLiveVoice,
+                    onVoiceSelected = onGeminiLiveVoiceSelected,
+                )
+                Text(
+                    text = stringResource(id = R.string.settings_live_voice_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -325,3 +349,65 @@ private fun ServiceTier.labelRes(): Int =
         ServiceTier.STANDARD -> R.string.settings_service_tier_standard
         ServiceTier.PRIORITY -> R.string.settings_service_tier_priority
     }
+
+/** Dropdown allowing the user to pick the [GeminiLiveVoice] for Gemini Live voice sessions. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GeminiLiveVoiceDropdown(
+    selectedVoice: GeminiLiveVoice,
+    onVoiceSelected: (GeminiLiveVoice) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value =
+                stringResource(
+                    id = R.string.settings_live_voice_option,
+                    selectedVoice.apiName,
+                    selectedVoice.style,
+                ),
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            shape = CircleShape,
+            colors =
+                ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
+                ),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 320.dp),
+        ) {
+            GeminiLiveVoice.entries.forEach { voice ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text =
+                                stringResource(
+                                    id = R.string.settings_live_voice_option,
+                                    voice.apiName,
+                                    voice.style,
+                                ),
+                        )
+                    },
+                    onClick = {
+                        onVoiceSelected(voice)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}

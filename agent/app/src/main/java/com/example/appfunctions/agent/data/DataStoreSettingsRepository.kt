@@ -37,6 +37,7 @@ class DataStoreSettingsRepository
             val GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
             val SELECTED_PROVIDER = stringPreferencesKey("selected_provider")
             val SERVICE_TIER = stringPreferencesKey("service_tier")
+            val GEMINI_LIVE_VOICE = stringPreferencesKey("gemini_live_voice")
             val PINNED_APPS = stringSetPreferencesKey("pinned_apps")
             val DISCONNECTED_APPS = stringSetPreferencesKey("disconnected_apps")
         }
@@ -65,6 +66,11 @@ class DataStoreSettingsRepository
                 } ?: ServiceTier.PRIORITY
             }
 
+        override val geminiLiveVoice: Flow<GeminiLiveVoice> =
+            dataStore.data.map { preferences ->
+                GeminiLiveVoice.fromStoredValue(preferences[PreferencesKeys.GEMINI_LIVE_VOICE])
+            }
+
         override val pinnedApps: Flow<Set<String>> =
             dataStore.data.map { preferences -> preferences[PreferencesKeys.PINNED_APPS] ?: emptySet() }
 
@@ -85,6 +91,12 @@ class DataStoreSettingsRepository
 
         override suspend fun setServiceTier(tier: ServiceTier) {
             dataStore.edit { preferences -> preferences[PreferencesKeys.SERVICE_TIER] = tier.name }
+        }
+
+        override suspend fun setGeminiLiveVoice(voice: GeminiLiveVoice) {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.GEMINI_LIVE_VOICE] = voice.name
+            }
         }
 
         override suspend fun setAppPinned(
