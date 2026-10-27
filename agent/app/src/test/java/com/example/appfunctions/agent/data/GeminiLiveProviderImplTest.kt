@@ -82,7 +82,20 @@ class GeminiLiveProviderImplTest {
 
         assertTrue(setup.containsKey("inputAudioTranscription"))
         assertTrue(setup.containsKey("outputAudioTranscription"))
-        assertTrue(setup.containsKey("systemInstruction"))
+        val systemInstructionText =
+            setup["systemInstruction"]!!
+                .jsonObject["parts"]!!
+                .jsonArray
+                .first()
+                .jsonObject["text"]!!
+                .jsonPrimitive
+                .content
+        assertTrue(
+            systemInstructionText.contains(
+                "Default to English for understanding and replying unless the user clearly " +
+                    "speaks in or asks to switch to another language.",
+            ),
+        )
 
         val declarations =
             setup["tools"]!!
