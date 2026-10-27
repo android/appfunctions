@@ -31,7 +31,7 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteToolCallUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetEnabledToolsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ToolCallExecutionResult
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
-import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
+import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -68,7 +68,7 @@ class LiveAgentOrchestratorTest {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var getEnabledToolsUseCase: GetEnabledToolsUseCase
     private lateinit var executeToolCallUseCase: ExecuteToolCallUseCase
-    private lateinit var savePendingIntentUseCase: SavePendingIntentUseCase
+    private lateinit var launchPendingIntentUseCase: LaunchPendingIntentUseCase
     private lateinit var sendMessageUseCase: SendMessageUseCase
     private var currentAudioFactory: () -> LiveAudioSession = { mockk(relaxed = true) }
 
@@ -86,9 +86,10 @@ class LiveAgentOrchestratorTest {
         settingsRepository = mockk(relaxed = true)
         getEnabledToolsUseCase = mockk()
         executeToolCallUseCase = mockk()
-        savePendingIntentUseCase = mockk(relaxed = true)
+        launchPendingIntentUseCase = mockk()
         sendMessageUseCase = mockk(relaxed = true)
 
+        every { launchPendingIntentUseCase(any()) } returns Result.success(Unit)
         every { settingsRepository.selectedProvider } returns flowOf(LlmProviderName.GEMINI)
         every { settingsRepository.geminiApiKey } returns flowOf("test-api-key")
         every { llmProviderFactory.getLiveProvider(LlmProviderName.GEMINI) } returns liveLlmProvider
@@ -100,7 +101,7 @@ class LiveAgentOrchestratorTest {
                 settingsRepository = settingsRepository,
                 getEnabledToolsUseCase = getEnabledToolsUseCase,
                 executeToolCallUseCase = executeToolCallUseCase,
-                savePendingIntentUseCase = savePendingIntentUseCase,
+                launchPendingIntentUseCase = launchPendingIntentUseCase,
                 sendMessageUseCase = sendMessageUseCase,
                 audioSessionFactory = LiveAudioSessionFactory { currentAudioFactory() },
             )
@@ -275,7 +276,7 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `ToolCallRequest gates recording, updates status, saves PendingIntent and attachments, and sends ToolOutputs`() =
+    fun `ToolCallRequest gates recording, updates status, launches PendingIntent directly, saves attachments, and sends ToolOutputs`() =
         runTest {
             val ioDispatcher = StandardTestDispatcher(testScheduler)
             orchestrator.ioDispatcher = ioDispatcher
@@ -290,10 +291,10 @@ class LiveAgentOrchestratorTest {
                     arguments = mapOf("title" to "Shopping"),
                     callId = "call-1",
                 )
-            val confirmCall =
+            val callAction =
                 LlmResponsePart.ToolCall(
                     packageName = "com.example.notes",
-                    functionId = "deleteAll",
+                    functionId = "makeCall",
                     arguments = emptyMap(),
                     callId = "call-2",
                 )
@@ -310,7 +311,7 @@ class LiveAgentOrchestratorTest {
                 )
             }
             coEvery {
-                executeToolCallUseCase(confirmCall, listOf(noteTool), "thread-1")
+                executeToolCallUseCase(callAction, listOf(noteTool), "thread-1")
             } answers {
                 observedStatuses.add(orchestrator.status.value)
                 ToolCallExecutionResult.PendingIntentRequired("pi-123", pendingIntent)
@@ -323,7 +324,7 @@ class LiveAgentOrchestratorTest {
             currentAudioFactory = { mockAudio }
 
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
-            eventChannel.trySend(LiveLlmEvent.ToolCallRequest(listOf(noteCall, confirmCall)))
+            eventChannel.trySend(LiveLlmEvent.ToolCallRequest(listOf(noteCall, callAction)))
             val toolResponseSent = CompletableDeferred<Unit>()
             val fakeSession =
                 stubLiveConnection(
@@ -342,7 +343,7 @@ class LiveAgentOrchestratorTest {
             assertEquals(
                 listOf(
                     AgentStatus.InvokingTool(noteTool.id, "com.example.notes"),
-                    AgentStatus.InvokingTool("deleteAll", "com.example.notes"),
+                    AgentStatus.InvokingTool("makeCall", "com.example.notes"),
                 ),
                 observedStatuses,
             )
@@ -352,15 +353,17 @@ class LiveAgentOrchestratorTest {
                 mockAudio.resumeRecording()
                 mockAudio.release()
             }
-            verify { savePendingIntentUseCase("pi-123", pendingIntent) }
-            coVerify {
+            verify(exactly = 1) { launchPendingIntentUseCase(pendingIntent) }
+            coVerify(exactly = 0) {
                 sendMessageUseCase(
-                    threadId = "thread-1",
-                    role = MessageRole.ASSISTANT,
-                    textContent = "",
-                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    threadId = any(),
+                    role = any(),
+                    textContent = any(),
+                    processingStatus = any(),
                     pendingIntentId = "pi-123",
                 )
+            }
+            coVerify {
                 sendMessageUseCase(
                     threadId = "thread-1",
                     role = MessageRole.ASSISTANT,
@@ -375,7 +378,53 @@ class LiveAgentOrchestratorTest {
                 fakeSession.sentToolOutputs
                     .single()[1]
                     .result
-                    .contains("confirmation_required"),
+                    .contains("\"status\":\"launched\""),
+            )
+        }
+
+    @Test
+    fun `ToolCallRequest reports failure ToolOutput when PendingIntent launch fails`() =
+        runTest {
+            val ioDispatcher = StandardTestDispatcher(testScheduler)
+            orchestrator.ioDispatcher = ioDispatcher
+
+            val pendingIntent = mockk<PendingIntent>()
+            every { launchPendingIntentUseCase(pendingIntent) } returns
+                Result.failure(PendingIntent.CanceledException())
+
+            val callAction =
+                LlmResponsePart.ToolCall(
+                    packageName = "com.example.chat",
+                    functionId = "makeCall",
+                    arguments = emptyMap(),
+                    callId = "call-err",
+                )
+            coEvery { executeToolCallUseCase(callAction, emptyList(), "thread-1") } returns
+                ToolCallExecutionResult.PendingIntentRequired("pi-err", pendingIntent)
+
+            val mockAudio =
+                mockk<LiveAudioSession>(relaxed = true).apply {
+                    every { listenToRecording() } returns emptyFlow()
+                }
+            currentAudioFactory = { mockAudio }
+
+            val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
+            eventChannel.trySend(LiveLlmEvent.ToolCallRequest(listOf(callAction)))
+            val fakeSession =
+                stubLiveConnection(
+                    events = eventChannel.receiveAsFlow(),
+                    onToolResponses = { eventChannel.close() },
+                )
+
+            orchestrator.startSession("thread-1")
+            advanceUntilIdle()
+
+            assertEquals(1, fakeSession.sentToolOutputs.single().size)
+            assertTrue(
+                fakeSession.sentToolOutputs
+                    .single()[0]
+                    .result
+                    .contains("Tool execution failed for makeCall: PendingIntent canceled"),
             )
         }
 

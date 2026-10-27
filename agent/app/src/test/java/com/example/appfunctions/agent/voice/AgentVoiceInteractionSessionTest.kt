@@ -15,11 +15,14 @@
  */
 package com.example.appfunctions.agent.voice
 
+import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.graphics.Rect
 import android.os.Looper
 import android.service.voice.VoiceInteractionSession
 import androidx.test.core.app.ApplicationProvider
+import com.example.appfunctions.agent.MainActivity
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
@@ -42,6 +45,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -93,6 +98,9 @@ class AgentVoiceInteractionSessionTest {
                     ),
                 )
             every { session.hide() } just Runs
+            every { liveAgentOrchestrator.startSession(any(), any()) } answers {
+                liveStateFlow.value = LiveSessionState.Listening
+            }
 
             val args =
                 AgentVoiceInteractionService.createSessionArgs(
@@ -250,6 +258,50 @@ class AgentVoiceInteractionSessionTest {
 
             session.onHide()
             verify(exactly = 2) { liveAgentOrchestrator.stopSession() }
+
+            session.onDestroy()
+        }
+
+    @Test
+    fun `openChat launches MainActivity with active threadId while keeping Live session running`() =
+        runTest {
+            val testDispatcher = StandardTestDispatcher(testScheduler)
+            val session =
+                spyk(
+                    AgentVoiceInteractionSession(
+                        context = context,
+                        liveAgentOrchestrator = liveAgentOrchestrator,
+                        manageThreadsUseCase = manageThreadsUseCase,
+                        mainDispatcher = testDispatcher,
+                    ),
+                )
+            every { session.hide() } just Runs
+            every { liveAgentOrchestrator.startSession(any(), any()) } answers {
+                liveStateFlow.value = LiveSessionState.Listening
+            }
+
+            val args =
+                AgentVoiceInteractionService.createSessionArgs(
+                    threadId = "thread-live-42",
+                    targetPackageName = null,
+                )
+            session.onShow(args, 0)
+            advanceUntilIdle()
+
+            session.openChat()
+
+            val startedIntent = Shadows.shadowOf(context as Application).nextStartedActivity
+            assertNotNull(startedIntent)
+            assertEquals(MainActivity::class.java.name, startedIntent.component?.className)
+            assertEquals(MainActivity.ACTION_OPEN_CHAT, startedIntent.action)
+            assertEquals(
+                "thread-live-42",
+                startedIntent.getStringExtra(MainActivity.EXTRA_OPEN_THREAD_ID),
+            )
+            assertTrue(startedIntent.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+            assertTrue(startedIntent.flags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
+            verify(exactly = 0) { liveAgentOrchestrator.stopSession() }
+            verify(exactly = 0) { session.hide() }
 
             session.onDestroy()
         }

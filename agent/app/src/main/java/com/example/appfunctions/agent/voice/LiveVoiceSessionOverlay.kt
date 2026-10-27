@@ -87,6 +87,7 @@ fun LiveVoiceSessionOverlay(
     agentStatus: AgentStatus,
     onStopClick: () -> Unit,
     onRetryClick: () -> Unit,
+    onOpenChatClick: () -> Unit = {},
     onOverlayBoundsChanged: (Rect) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -97,6 +98,7 @@ fun LiveVoiceSessionOverlay(
         contentAlignment = Alignment.BottomCenter,
     ) {
         Surface(
+            onClick = onOpenChatClick,
             modifier =
                 Modifier
                     .navigationBarsPadding()

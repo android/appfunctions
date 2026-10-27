@@ -42,6 +42,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -112,6 +113,13 @@ class GeminiLiveProviderImplTest {
                     "speaks in or asks to switch to another language.",
             ),
         )
+        assertTrue(
+            systemInstructionText.contains(
+                "Execute user-requested actions directly without claiming an on-screen " +
+                    "confirmation card or button is shown",
+            ),
+        )
+        assertFalse(systemInstructionText.contains("confirmation_required"))
 
         val declarations =
             setup["tools"]!!

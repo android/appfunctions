@@ -390,8 +390,8 @@ class GeminiLiveProviderImpl
                 Default to English for understanding and replying unless the user clearly speaks in or asks to switch to another language.
                 Always reply to the user using concise, friendly, natural spoken language.
                 You have access to Android AppFunctions and internal device tools. Use them whenever the user asks to perform an action or look up information on their device.
+                Execute user-requested actions directly without claiming an on-screen confirmation card or button is shown; if you ever need confirmation before a sensitive action, ask the user verbally.
                 When a user asks you to generate an image, call the generateImage tool and then confirm to the user in a natural sentence.
-                When a tool returns status "confirmation_required", let the user know that a confirmation button is on their screen and ask them to tap it to proceed.
                 """.trimIndent()
         }
 

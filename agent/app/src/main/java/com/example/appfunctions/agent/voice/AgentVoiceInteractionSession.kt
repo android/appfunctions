@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.voice
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Rect
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
@@ -34,6 +35,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.example.appfunctions.agent.MainActivity
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.domain.LiveAgentOrchestrator
 import com.example.appfunctions.agent.domain.LiveSessionState
@@ -109,6 +111,7 @@ class AgentVoiceInteractionSession(
                         agentStatus = agentStatus,
                         onStopClick = ::stopAndHide,
                         onRetryClick = ::retrySession,
+                        onOpenChatClick = ::openChat,
                         onOverlayBoundsChanged = ::updateOverlayBounds,
                     )
                 }
@@ -212,6 +215,20 @@ class AgentVoiceInteractionSession(
             requestedThreadId = currentThreadId,
             requestedTargetPackageName = currentTargetPackageName,
         )
+    }
+
+    internal fun openChat() {
+        val intent =
+            Intent(context, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_OPEN_CHAT
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+                currentThreadId?.let { putExtra(MainActivity.EXTRA_OPEN_THREAD_ID, it) }
+            }
+        context.startActivity(intent)
     }
 
     internal fun updateOverlayBounds(bounds: Rect) {

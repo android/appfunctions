@@ -16,8 +16,11 @@
 package com.example.appfunctions.agent
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,13 +39,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.core.util.Consumer
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -99,6 +106,8 @@ class MainActivity : ComponentActivity() {
         const val ROUTE_AGENT_DEMO = "agent_demo?threadId={threadId}"
         const val ARG_THREAD_ID = "threadId"
         const val DEEPLINK_URI_PATTERN = "appfunctions-agent://chat?threadId={threadId}"
+        const val ACTION_OPEN_CHAT = "com.example.appfunctions.agent.action.OPEN_CHAT"
+        const val EXTRA_OPEN_THREAD_ID = "EXTRA_OPEN_THREAD_ID"
         const val EXTRA_INSTRUMENTATION_ERROR = "EXTRA_INSTRUMENTATION_ERROR"
     }
 }
@@ -115,6 +124,21 @@ fun MainScreen(
 ) {
     val navController = rememberNavController()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current as? ComponentActivity
+
+    LaunchedEffect(activity, navController) {
+        navigateToChatIfRequested(navController, activity?.intent)
+    }
+
+    DisposableEffect(activity, navController) {
+        val listener =
+            Consumer<Intent> { newIntent ->
+                activity?.intent = newIntent
+                navigateToChatIfRequested(navController, newIntent)
+            }
+        activity?.addOnNewIntentListener(listener)
+        onDispose { activity?.removeOnNewIntentListener(listener) }
+    }
 
     val items = listOf("debugging", "agent_demo", "settings")
     val icons = listOf(Icons.Default.Terminal, Icons.Default.PlayCircle, Icons.Default.Settings)
@@ -213,5 +237,46 @@ fun MainScreen(
                 ConnectedAppsScreen(onBack = { navController.popBackStack() })
             }
         }
+    }
+}
+
+private fun navigateToChatIfRequested(
+    navController: NavHostController,
+    intent: Intent?,
+) {
+    if (intent == null) return
+    val isOpenChatIntent =
+        intent.action == MainActivity.ACTION_OPEN_CHAT ||
+            intent.hasExtra(MainActivity.EXTRA_OPEN_THREAD_ID)
+    val deepLinkUri =
+        intent.data?.takeIf { it.scheme == "appfunctions-agent" && it.host == "chat" }
+    if (!isOpenChatIntent && deepLinkUri == null) return
+
+    val threadId =
+        intent.getStringExtra(MainActivity.EXTRA_OPEN_THREAD_ID)
+            ?: deepLinkUri?.getQueryParameter(MainActivity.ARG_THREAD_ID)
+
+    if (intent.action == MainActivity.ACTION_OPEN_CHAT) {
+        intent.action = null
+    }
+    intent.removeExtra(MainActivity.EXTRA_OPEN_THREAD_ID)
+
+    val route =
+        if (!threadId.isNullOrEmpty()) {
+            "agent_demo?threadId=${Uri.encode(threadId)}"
+        } else {
+            "agent_demo"
+        }
+
+    navController.navigate(route) {
+        popUpTo(navController.graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+    }
+    if (!threadId.isNullOrEmpty()) {
+        navController.currentBackStackEntry
+            ?.savedStateHandle
+            ?.set(MainActivity.ARG_THREAD_ID, threadId)
     }
 }

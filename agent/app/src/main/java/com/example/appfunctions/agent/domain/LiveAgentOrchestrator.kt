@@ -26,7 +26,7 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteToolCallUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetEnabledToolsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ToolCallExecutionResult
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
-import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
+import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -62,7 +62,7 @@ class LiveAgentOrchestrator
         private val settingsRepository: SettingsRepository,
         private val getEnabledToolsUseCase: GetEnabledToolsUseCase,
         private val executeToolCallUseCase: ExecuteToolCallUseCase,
-        private val savePendingIntentUseCase: SavePendingIntentUseCase,
+        private val launchPendingIntentUseCase: LaunchPendingIntentUseCase,
         private val sendMessageUseCase: SendMessageUseCase,
         private val audioSessionFactory: LiveAudioSessionFactory,
     ) {
@@ -405,21 +405,28 @@ class LiveAgentOrchestrator
                         }
 
                         is ToolCallExecutionResult.PendingIntentRequired -> {
-                            savePendingIntentUseCase(result.pendingIntentId, result.pendingIntent)
-                            sendMessageUseCase(
-                                threadId = threadId,
-                                role = MessageRole.ASSISTANT,
-                                textContent = "",
-                                processingStatus = MessageProcessingStatus.PROCESSED,
-                                pendingIntentId = result.pendingIntentId,
-                            )
-                            outputs.add(
-                                ToolOutput(
-                                    functionId = toolCall.functionId,
-                                    callId = toolCall.callId,
-                                    result = CONFIRMATION_REQUIRED_RESULT,
-                                ),
-                            )
+                            val launchResult = launchPendingIntentUseCase(result.pendingIntent)
+                            if (launchResult.isSuccess) {
+                                outputs.add(
+                                    ToolOutput(
+                                        functionId = toolCall.functionId,
+                                        callId = toolCall.callId,
+                                        result = PENDING_INTENT_LAUNCHED_RESULT,
+                                    ),
+                                )
+                            } else {
+                                val reason =
+                                    launchResult.exceptionOrNull()?.message
+                                        ?: "PendingIntent canceled"
+                                outputs.add(
+                                    ToolOutput(
+                                        functionId = toolCall.functionId,
+                                        callId = toolCall.callId,
+                                        result =
+                                            "Tool execution failed for ${toolCall.functionId}: $reason",
+                                    ),
+                                )
+                            }
                         }
 
                         is ToolCallExecutionResult.Failure -> {
@@ -508,7 +515,7 @@ class LiveAgentOrchestrator
 
         companion object {
             private const val TAG = "LiveAgentOrchestrator"
-            private const val CONFIRMATION_REQUIRED_RESULT =
-                """{"status":"confirmation_required","message":"A confirmation button has been displayed in the chat. Ask the user to tap it to confirm."}"""
+            private const val PENDING_INTENT_LAUNCHED_RESULT =
+                """{"status":"launched","message":"The action was executed and the target app UI was opened."}"""
         }
     }
