@@ -35,7 +35,9 @@ class GetConnectedAppsUseCase
     ) {
         @OptIn(ExperimentalCoroutinesApi::class)
         operator fun invoke(): Flow<List<ConnectedAppInfo>> {
-            return getAppFunctionsUseCase().flatMapLatest { appFunctionsMap ->
+            return getAppFunctionsUseCase(
+                GetAppFunctionsParams(includeInternalTools = false),
+            ).flatMapLatest { appFunctionsMap ->
                 val installedApps = getInstalledAppsUseCase()
                 val installedAppsMap = installedApps.associateBy { it.packageName }
 

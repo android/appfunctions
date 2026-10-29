@@ -32,6 +32,7 @@ import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
@@ -117,7 +118,9 @@ class DebuggingViewModelTest {
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
             val expectedAppInfo = AppInfo("com.example.app", "com.example.app", null)
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(mapOf(mockPackageMetadata to listOf(mockMetadata)))
             every { mockGetInstalledAppsUseCase() } returns listOf(expectedAppInfo)
 
@@ -153,7 +156,9 @@ class DebuggingViewModelTest {
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             val packageName = "com.example.app.resolved"
             every { mockPackageMetadata.packageName } returns packageName
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(mapOf(mockPackageMetadata to listOf(mockMetadata)))
 
             val pm = context.packageManager
@@ -216,7 +221,9 @@ class DebuggingViewModelTest {
             every { mockPackageMetadata1.packageName } returns "com.example.app1"
             val mockPackageMetadata2 = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata2.packageName } returns "com.example.app2"
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(
                     mapOf(
                         mockPackageMetadata1 to listOf(mockMetadata),
@@ -261,7 +268,9 @@ class DebuggingViewModelTest {
                 }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(mapOf(mockPackageMetadata to listOf(mockMetadata)))
 
             viewModel =
@@ -297,7 +306,9 @@ class DebuggingViewModelTest {
                 }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(mapOf(mockPackageMetadata to listOf(mockMetadata)))
 
             viewModel =
@@ -341,7 +352,9 @@ class DebuggingViewModelTest {
                 }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(mapOf(mockPackageMetadata to listOf(mockMetadata)))
 
             viewModel =
@@ -380,7 +393,9 @@ class DebuggingViewModelTest {
                 }
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(mapOf(mockPackageMetadata to listOf(mockMetadata)))
 
             val pendingIntent = mockk<PendingIntent>()
@@ -436,7 +451,9 @@ class DebuggingViewModelTest {
 
             val mockPackageMetadata = mockk<AppFunctionPackageMetadata>()
             every { mockPackageMetadata.packageName } returns "com.example.app"
-            every { mockGetAppFunctionsUseCase() } returns
+            every {
+                mockGetAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+            } returns
                 flowOf(
                     mapOf(
                         mockPackageMetadata to

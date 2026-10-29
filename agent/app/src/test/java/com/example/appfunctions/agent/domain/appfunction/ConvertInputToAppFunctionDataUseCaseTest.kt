@@ -47,7 +47,11 @@ class ConvertInputToAppFunctionDataUseCaseTest {
                 AppFunctionParameterMetadata("int", true, AppFunctionIntTypeMetadata(false)),
                 AppFunctionParameterMetadata("long", true, AppFunctionLongTypeMetadata(false)),
                 AppFunctionParameterMetadata("bool", true, AppFunctionBooleanTypeMetadata(false)),
-                AppFunctionParameterMetadata("double", true, AppFunctionDoubleTypeMetadata(false)),
+                AppFunctionParameterMetadata(
+                    "double",
+                    true,
+                    AppFunctionDoubleTypeMetadata(false),
+                ),
                 AppFunctionParameterMetadata("float", true, AppFunctionFloatTypeMetadata(false)),
             )
         val inputs =
@@ -108,11 +112,11 @@ class ConvertInputToAppFunctionDataUseCaseTest {
         val inputs =
             mapOf(
                 "strArray" to listOf("v1", "v2"),
-                "intArray" to listOf("1", "2"),
-                "longArray" to listOf("3", "4"),
+                "intArray" to listOf("1", 2),
+                "longArray" to listOf("3", 4L),
                 "boolArray" to listOf(true, false),
-                "doubleArray" to listOf("1.1", "2.2"),
-                "floatArray" to listOf("3.3", "4.4"),
+                "doubleArray" to listOf("1.1", 2.2),
+                "floatArray" to listOf("3.3", 4.4f),
             )
 
         val result = useCase(parameters, components, inputs).getOrThrow()
@@ -195,7 +199,11 @@ class ConvertInputToAppFunctionDataUseCaseTest {
             listOf(
                 AppFunctionParameterMetadata("int", false, AppFunctionIntTypeMetadata(false)),
                 AppFunctionParameterMetadata("long", false, AppFunctionLongTypeMetadata(false)),
-                AppFunctionParameterMetadata("double", false, AppFunctionDoubleTypeMetadata(false)),
+                AppFunctionParameterMetadata(
+                    "double",
+                    false,
+                    AppFunctionDoubleTypeMetadata(false),
+                ),
                 AppFunctionParameterMetadata("float", false, AppFunctionFloatTypeMetadata(false)),
             )
         val inputs =

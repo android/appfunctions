@@ -25,6 +25,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
@@ -91,13 +92,14 @@ class AgentDemoViewModelTest {
         getAppFunctionsUseCase = mockk()
 
         every { getInstalledAppsUseCase() } returns emptyList()
-        every { getAppFunctionsUseCase() } returns flowOf(emptyMap())
+        every {
+            getAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
+        } returns flowOf(emptyMap())
 
         every { manageThreadsUseCase.getThreads() } returns threadsFlow
         every { settingsRepository.selectedProvider } returns selectedProviderFlow
         every { agentOrchestrator.status } returns agentStatusFlow
         every { getChatHistoryUseCase(any()) } returns messagesFlow
-        every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
         every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
 
         coEvery { agentOrchestrator.observeAndProcessMessages(any()) } returns Unit
@@ -123,20 +125,7 @@ class AgentDemoViewModelTest {
                 manageThreadsUseCase.updateThreadModel("thread-1", LlmModel.GEMINI_3_1_PRO_PREVIEW)
             } returns Unit
 
-            viewModel =
-                AgentDemoViewModel(
-                    savedStateHandle,
-                    getChatHistoryUseCase,
-                    manageThreadsUseCase,
-                    sendMessageUseCase,
-                    agentOrchestrator,
-                    settingsRepository,
-                    observeActivePendingIntentsUseCase,
-                    launchPendingIntentUseCase,
-                    consumePendingIntentUseCase,
-                    getInstalledAppsUseCase,
-                    getAppFunctionsUseCase,
-                )
+            viewModel = createViewModel()
 
             viewModel.onEvent(AgentUiEvent.OnModelSelected(LlmModel.GEMINI_3_1_PRO_PREVIEW))
 
@@ -151,20 +140,7 @@ class AgentDemoViewModelTest {
             threadsFlow.value = emptyList()
             coEvery { manageThreadsUseCase.createThread(LlmModel.DEFAULT) } returns "thread-new"
 
-            viewModel =
-                AgentDemoViewModel(
-                    savedStateHandle,
-                    getChatHistoryUseCase,
-                    manageThreadsUseCase,
-                    sendMessageUseCase,
-                    agentOrchestrator,
-                    settingsRepository,
-                    observeActivePendingIntentsUseCase,
-                    launchPendingIntentUseCase,
-                    consumePendingIntentUseCase,
-                    getInstalledAppsUseCase,
-                    getAppFunctionsUseCase,
-                )
+            viewModel = createViewModel()
 
             coVerify { manageThreadsUseCase.createThread(LlmModel.DEFAULT) }
         }
@@ -182,20 +158,7 @@ class AgentDemoViewModelTest {
             threadsFlow.value = listOf(existingThread)
             selectedProviderFlow.value = LlmProviderName.GEMINI
 
-            viewModel =
-                AgentDemoViewModel(
-                    savedStateHandle,
-                    getChatHistoryUseCase,
-                    manageThreadsUseCase,
-                    sendMessageUseCase,
-                    agentOrchestrator,
-                    settingsRepository,
-                    observeActivePendingIntentsUseCase,
-                    launchPendingIntentUseCase,
-                    consumePendingIntentUseCase,
-                    getInstalledAppsUseCase,
-                    getAppFunctionsUseCase,
-                )
+            viewModel = createViewModel()
 
             coVerify(exactly = 0) { manageThreadsUseCase.createThread(any()) }
             assertEquals(
@@ -217,20 +180,7 @@ class AgentDemoViewModelTest {
             threadsFlow.value = listOf(existingThread)
             selectedProviderFlow.value = LlmProviderName.GEMINI
 
-            viewModel =
-                AgentDemoViewModel(
-                    savedStateHandle,
-                    getChatHistoryUseCase,
-                    manageThreadsUseCase,
-                    sendMessageUseCase,
-                    agentOrchestrator,
-                    settingsRepository,
-                    observeActivePendingIntentsUseCase,
-                    launchPendingIntentUseCase,
-                    consumePendingIntentUseCase,
-                    getInstalledAppsUseCase,
-                    getAppFunctionsUseCase,
-                )
+            viewModel = createViewModel()
 
             coEvery { sendMessageUseCase(any(), any(), any(), any()) } returns Unit
 
@@ -259,20 +209,7 @@ class AgentDemoViewModelTest {
             threadsFlow.value = listOf(existingThread)
             selectedProviderFlow.value = LlmProviderName.GEMINI
 
-            viewModel =
-                AgentDemoViewModel(
-                    savedStateHandle,
-                    getChatHistoryUseCase,
-                    manageThreadsUseCase,
-                    sendMessageUseCase,
-                    agentOrchestrator,
-                    settingsRepository,
-                    observeActivePendingIntentsUseCase,
-                    launchPendingIntentUseCase,
-                    consumePendingIntentUseCase,
-                    getInstalledAppsUseCase,
-                    getAppFunctionsUseCase,
-                )
+            viewModel = createViewModel()
 
             val message =
                 MessageEntity(
@@ -308,21 +245,23 @@ class AgentDemoViewModelTest {
             threadsFlow.value = listOf(newThread, oldThread)
             selectedProviderFlow.value = LlmProviderName.GEMINI
 
-            viewModel =
-                AgentDemoViewModel(
-                    savedStateHandle,
-                    getChatHistoryUseCase,
-                    manageThreadsUseCase,
-                    sendMessageUseCase,
-                    agentOrchestrator,
-                    settingsRepository,
-                    observeActivePendingIntentsUseCase,
-                    launchPendingIntentUseCase,
-                    consumePendingIntentUseCase,
-                    getInstalledAppsUseCase,
-                    getAppFunctionsUseCase,
-                )
+            viewModel = createViewModel()
 
             assertEquals(newThread, (viewModel.uiState.value as AgentUiState.Loaded).currentThread)
         }
+
+    private fun createViewModel(): AgentDemoViewModel =
+        AgentDemoViewModel(
+            savedStateHandle,
+            getChatHistoryUseCase,
+            manageThreadsUseCase,
+            sendMessageUseCase,
+            agentOrchestrator,
+            settingsRepository,
+            observeActivePendingIntentsUseCase,
+            launchPendingIntentUseCase,
+            consumePendingIntentUseCase,
+            getInstalledAppsUseCase,
+            getAppFunctionsUseCase,
+        )
 }

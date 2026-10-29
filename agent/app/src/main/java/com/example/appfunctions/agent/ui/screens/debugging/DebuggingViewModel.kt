@@ -31,6 +31,7 @@ import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFuncti
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
@@ -92,7 +93,9 @@ class DebuggingViewModel
         private fun loadAppFunctions() {
             viewModelScope.launch {
                 _uiState.update { it.copy(isLoading = true) }
-                getAppFunctionsUseCase().collect { appFunctionsMap ->
+                getAppFunctionsUseCase(
+                    GetAppFunctionsParams(includeInternalTools = false),
+                ).collect { appFunctionsMap ->
                     val allFunctionNames = appFunctionsMap.values.flatten().map { it.name }
                     val appFunctionStates = getAppFunctionStatesUseCase(allFunctionNames)
                     allAppFunctions = appFunctionsMap

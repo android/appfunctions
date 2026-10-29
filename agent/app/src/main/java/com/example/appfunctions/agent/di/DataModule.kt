@@ -22,6 +22,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.DataStoreSettingsRepository
+import com.example.appfunctions.agent.data.FileDownloadHelper
+import com.example.appfunctions.agent.data.FileDownloadHelperImpl
 import com.example.appfunctions.agent.data.InMemoryPendingIntentRepository
 import com.example.appfunctions.agent.data.PendingIntentRepository
 import com.example.appfunctions.agent.data.RoomChatRepository
@@ -65,6 +67,10 @@ abstract class DataModule {
     abstract fun bindLlmProviderFactory(
         impl: com.example.appfunctions.agent.data.LlmProviderFactoryImpl,
     ): com.example.appfunctions.agent.domain.LlmProviderFactory
+
+    @Binds
+    @Singleton
+    abstract fun bindFileDownloadHelper(impl: FileDownloadHelperImpl): FileDownloadHelper
 
     companion object {
         @Provides

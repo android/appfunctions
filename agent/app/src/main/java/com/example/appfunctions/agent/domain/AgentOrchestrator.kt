@@ -16,18 +16,8 @@
 package com.example.appfunctions.agent.domain
 
 import android.app.PendingIntent
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.util.Log
-import androidx.appfunctions.metadata.AppFunctionArrayTypeMetadata
-import androidx.appfunctions.metadata.AppFunctionDataTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
-import androidx.appfunctions.metadata.AppFunctionParameterMetadata
-import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
-import androidx.core.content.FileProvider
-import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
@@ -39,8 +29,9 @@ import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFor
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
-import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -49,9 +40,7 @@ import com.example.appfunctions.agent.domain.chat.UpdateMessageUseCase
 import com.example.appfunctions.agent.domain.chat.UpdateThreadParams
 import com.example.appfunctions.agent.domain.chat.UpdateThreadUseCase
 import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,11 +49,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -74,7 +62,6 @@ import javax.inject.Singleton
 class AgentOrchestrator
     @Inject
     constructor(
-        @ApplicationContext private val context: Context,
         private val manageThreadsUseCase: ManageThreadsUseCase,
         private val observePendingMessagesUseCase: ObservePendingMessagesUseCase,
         private val sendMessageUseCase: SendMessageUseCase,
@@ -83,11 +70,10 @@ class AgentOrchestrator
         private val llmProviderFactory: LlmProviderFactory,
         private val settingsRepository: SettingsRepository,
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
-        private val getAppFunctionStatesUseCase: GetAppFunctionStatesUseCase,
+        private val resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase,
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val savePendingIntentUseCase: SavePendingIntentUseCase,
-        private val agentInternalTools: AgentInternalTools,
     ) {
         private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
 
@@ -132,27 +118,38 @@ class AgentOrchestrator
                     return
                 }
 
-                val disconnectedApps = settingsRepository.disconnectedApps.first()
-                val allTools =
-                    getAppFunctionsUseCase().first().values.flatten() +
-                        agentInternalTools.getInternalToolsMetadata().map { it.first }
+                val targetPackage = message.targetPackageName
+                val targetPackageNames =
+                    if (targetPackage != null) {
+                        setOf(targetPackage)
+                    } else {
+                        null
+                    }
 
-                val targetPackageName = message.targetPackageName
-                val queryText = message.textContent
-
-                val tools = filterTools(allTools, disconnectedApps, targetPackageName)
+                val tools =
+                    getAppFunctionsUseCase(
+                        GetAppFunctionsParams(
+                            targetPackageNames = targetPackageNames,
+                            isEnabled = true,
+                            isConnected = true,
+                            includeInternalTools = true,
+                        ),
+                    ).first().values.flatten()
 
                 runInteractionLoop(
                     message = message,
                     thread = thread,
                     apiKey = apiKey,
                     tools = tools,
-                    initialInput = queryText,
+                    initialInput = message.textContent,
                 )
 
                 _status.value = AgentStatus.Idle
+            } catch (e: CancellationException) {
+                _status.value = AgentStatus.Idle
+                throw e
             } catch (e: Exception) {
-                Log.e("AgentOrchestrator", "Error processing message", e)
+                Log.e(TAG, "Error processing message", e)
                 completeMessageWithError(
                     message.messageId,
                     message.threadId,
@@ -160,31 +157,6 @@ class AgentOrchestrator
                 )
                 _status.value = AgentStatus.Idle
             }
-        }
-
-        private suspend fun filterTools(
-            allTools: List<AppFunctionMetadata>,
-            disconnectedApps: Set<String>,
-            targetPackageName: String?,
-        ): List<AppFunctionMetadata> {
-            val functionNames = allTools.map { it.name }
-            val states = getAppFunctionStatesUseCase(functionNames) + agentInternalTools.getInternalToolsMetadata().map { it.second }
-            val stateMap = states.associateBy { it.functionName }
-
-            return allTools
-                .filter { metadata ->
-                    val isEnabled =
-                        if (metadata.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
-                            true
-                        } else {
-                            stateMap[metadata.name]?.isEnabled ?: false
-                        }
-                    isEnabled &&
-                        metadata.packageName !in disconnectedApps &&
-                        (targetPackageName == null || metadata.packageName == targetPackageName)
-                }
-                .sortedByDescending { metadata -> metadata.id.startsWith(metadata.packageName) }
-                .distinctBy { metadata -> metadata.id }
         }
 
         private suspend fun runInteractionLoop(
@@ -202,7 +174,7 @@ class AgentOrchestrator
             var previousInteractionId = thread.latestInteractionId
             var currentToolOutputs = emptyList<ToolOutput>()
             var continueLoop = true
-            var currentInput = initialInput
+            val currentInput = initialInput
             val capturedAttachments = mutableListOf<MessageAttachment>()
 
             while (continueLoop) {
@@ -293,23 +265,11 @@ class AgentOrchestrator
                     val textContent = textParts.joinToString("\n") { it.text }
 
                     if (toolCalls.isNotEmpty()) {
-                        when (val toolResult = executeToolCalls(toolCalls, tools, message)) {
+                        when (
+                            val toolResult =
+                                executeToolCalls(toolCalls, tools, message, capturedAttachments)
+                        ) {
                             is ExecuteToolCallsResult.Success -> {
-                                for (output in toolResult.toolOutputs) {
-                                    runCatching {
-                                        val json = JSONObject(output.result)
-                                        val uri = json.optString("imageUri")
-                                        if (uri.isNotBlank()) {
-                                            val mimeType =
-                                                json.optString("mimeType")
-                                                    .takeIf { it.isNotBlank() }
-                                                    ?: "image/png"
-                                            capturedAttachments.add(
-                                                MessageAttachment(uri = uri, mimeType = mimeType),
-                                            )
-                                        }
-                                    }
-                                }
                                 if (textContent.isNotEmpty()) {
                                     sendMessageUseCase(
                                         threadId = message.threadId,
@@ -358,7 +318,7 @@ class AgentOrchestrator
                 }
 
                 is LlmResponse.Error -> {
-                    Log.e("AgentOrchestrator", "LLM Error: ${response.errorMessage}")
+                    Log.e(TAG, "LLM Error: ${response.errorMessage}")
                     completeMessageWithError(
                         message.messageId,
                         message.threadId,
@@ -374,39 +334,16 @@ class AgentOrchestrator
             toolCalls: List<LlmResponsePart.ToolCall>,
             tools: List<AppFunctionMetadata>,
             message: MessageEntity,
+            capturedAttachments: MutableList<MessageAttachment>,
         ): ExecuteToolCallsResult {
             val results = mutableListOf<ToolOutput>()
             for (toolCall in toolCalls) {
                 _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
 
-                if (toolCall.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
-                    val executionResult = executeInternalTool(toolCall)
-                    executionResult
-                        .onSuccess { jsonString ->
-                            results.add(
-                                ToolOutput(
-                                    functionId = toolCall.functionId,
-                                    callId = toolCall.callId,
-                                    result = jsonString,
-                                ),
-                            )
-                        }
-                        .onFailure { exception ->
-                            completeMessageWithError(
-                                message.messageId,
-                                message.threadId,
-                                "Internal tool execution failed: ${exception.message}",
-                            )
-                            return ExecuteToolCallsResult.Error
-                        }
-                    continue
-                }
-
                 val matchingTool =
                     tools.find {
                         it.packageName == toolCall.packageName && it.id == toolCall.functionId
                     }
-
                 if (matchingTool == null) {
                     completeMessageWithError(
                         message.messageId,
@@ -416,65 +353,45 @@ class AgentOrchestrator
                     return ExecuteToolCallsResult.Error
                 }
 
-                val rawConvertedInputs = toolCall.arguments.filterValues { it != null } as Map<String, Any>
-                val convertedInputs =
-                    try {
-                        withContext(Dispatchers.IO) {
-                            resolveRemoteFileReferencesRecursively(
-                                context = context,
-                                parametersMetadata = matchingTool.parameters,
-                                inputs = rawConvertedInputs,
-                            )
-                        }
-                    } catch (e: Exception) {
-                        completeMessageWithError(
-                            message.messageId,
-                            message.threadId,
-                            "Failed to download remote file reference: ${e.message}",
-                        )
-                        return ExecuteToolCallsResult.Error
-                    }
-
-                grantContentUriPermissionsRecursively(context, toolCall.packageName, convertedInputs)
-
-                for (value in convertedInputs.values) {
-                    if (value is String && value.startsWith("content://")) {
-                        runCatching {
-                            val uri = Uri.parse(value)
-                            context.grantUriPermission(
-                                toolCall.packageName,
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                            )
-                        }
-                    }
-                }
-
+                val inputs = nonNullArguments(toolCall.arguments)
+                val convertedLocalFileInput =
+                    resolveRemoteFileToLocalUriUseCase(
+                        parameters = matchingTool.parameters,
+                        components = matchingTool.components,
+                        inputs = inputs,
+                    )
                 val appFunctionDataResult =
-                    withContext(Dispatchers.Default) {
-                        convertInputToAppFunctionDataUseCase(
-                            parameters = matchingTool.parameters,
-                            components = matchingTool.components,
-                            inputs = convertedInputs,
-                        )
-                    }
+                    convertInputToAppFunctionDataUseCase(
+                        parameters = matchingTool.parameters,
+                        components = matchingTool.components,
+                        inputs = convertedLocalFileInput,
+                    )
                 if (appFunctionDataResult.isFailure) {
+                    val exception = appFunctionDataResult.exceptionOrNull()
+                    if (exception is CancellationException) {
+                        throw exception
+                    }
+                    val errorMessage =
+                        "Failed to convert arguments for ${toolCall.functionId}\n $exception"
+                    if (exception != null) {
+                        Log.e(TAG, errorMessage, exception)
+                    }
                     completeMessageWithError(
                         message.messageId,
                         message.threadId,
-                        "Failed to convert arguments for ${toolCall.functionId}\n ${appFunctionDataResult.exceptionOrNull()}",
+                        errorMessage,
                     )
                     return ExecuteToolCallsResult.Error
                 }
 
-                val executionResult =
-                    executeAppFunctionUseCase(
-                        function = matchingTool,
-                        parameters = appFunctionDataResult.getOrThrow(),
-                        threadId = message.threadId,
-                    )
-
-                when (executionResult) {
+                when (
+                    val executionResult =
+                        executeAppFunctionUseCase(
+                            function = matchingTool,
+                            parameters = appFunctionDataResult.getOrThrow(),
+                            threadId = message.threadId,
+                        )
+                ) {
                     is ExecuteAppFunctionResult.Data -> {
                         results.add(
                             ToolOutput(
@@ -483,13 +400,16 @@ class AgentOrchestrator
                                 result = executionResult.formattedJson,
                             ),
                         )
+                        val attachment = extractMessageAttachment(executionResult.formattedJson)
+                        if (attachment != null) {
+                            capturedAttachments.add(attachment)
+                        }
                     }
 
                     is ExecuteAppFunctionResult.PendingIntentAction -> {
-                        val pendingIntentId = java.util.UUID.randomUUID().toString()
                         return ExecuteToolCallsResult.PendingIntentAction(
-                            pendingIntentId,
-                            executionResult.pendingIntent,
+                            pendingIntentId = UUID.randomUUID().toString(),
+                            pendingIntent = executionResult.pendingIntent,
                         )
                     }
 
@@ -513,10 +433,15 @@ class AgentOrchestrator
                                 ),
                             )
                         } else {
-                            throw IllegalStateException(
-                                "Tool execution failed for ${toolCall.functionId}: ${exception.message}",
-                                exception,
+                            val errorMessage =
+                                "Tool execution failed for ${toolCall.functionId}: ${exception.message}"
+                            Log.e(TAG, errorMessage, exception)
+                            completeMessageWithError(
+                                message.messageId,
+                                message.threadId,
+                                errorMessage,
                             )
+                            return ExecuteToolCallsResult.Error
                         }
                     }
                 }
@@ -541,207 +466,33 @@ class AgentOrchestrator
             )
         }
 
-        private fun resolveRemoteFileReferencesRecursively(
-            context: Context,
-            parametersMetadata: List<AppFunctionParameterMetadata>,
-            inputs: Map<String, Any>,
-        ): Map<String, Any> {
-            val paramMap = parametersMetadata.associateBy { it.name }
-            return inputs.mapValues { (key, value) ->
-                val paramMeta = paramMap[key]
-                resolveValueRecursively(context, paramMeta?.dataType, value, key)
+        private fun nonNullArguments(arguments: Map<String, Any?>): Map<String, Any> =
+            buildMap {
+                for ((key, value) in arguments) {
+                    if (value != null) {
+                        put(key, value)
+                    }
+                }
+            }
+
+        private fun extractMessageAttachment(jsonString: String): MessageAttachment? {
+            return try {
+                val json = Json.parseToJsonElement(jsonString) as? JsonObject ?: return null
+                val uri = json["imageUri"]?.jsonPrimitive?.contentOrNull
+                if (!uri.isNullOrBlank()) {
+                    val mimeType =
+                        json["mimeType"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                            ?: "image/png"
+                    MessageAttachment(uri = uri, mimeType = mimeType)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
             }
         }
 
-        private fun resolveValueRecursively(
-            context: Context,
-            dataType: AppFunctionDataTypeMetadata?,
-            value: Any,
-            paramName: String?,
-        ): Any {
-            return when (value) {
-                is String -> {
-                    val shouldResolve =
-                        isFileReferenceParameter(paramName) || isUriMetadata(dataType)
-                    if (shouldResolve && (
-                            value.startsWith(
-                                "http://",
-                            ) || value.startsWith("https://")
-                        )
-                    ) {
-                        downloadRemoteFileToContentUri(context, value)
-                    } else {
-                        value
-                    }
-                }
-                is Map<*, *> -> {
-                    value.entries.associate { entry ->
-                        val k = entry.key as String
-                        val propType =
-                            (dataType as? AppFunctionObjectTypeMetadata)?.properties?.get(k)
-                        k to (
-                            entry.value?.let {
-                                resolveValueRecursively(
-                                    context,
-                                    propType,
-                                    it,
-                                    k,
-                                )
-                            } ?: ""
-                        )
-                    }
-                }
-                is List<*> -> {
-                    val itemType = (dataType as? AppFunctionArrayTypeMetadata)?.itemType
-                    value.mapNotNull { item ->
-                        if (item != null) resolveValueRecursively(context, itemType, item, paramName) else null
-                    }
-                }
-                else -> value
-            }
-        }
-
-        private fun downloadRemoteFileToContentUri(
-            context: Context,
-            urlString: String,
-        ): String {
-            val url = URL(urlString)
-            val connection =
-                (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 10000
-                    readTimeout = 15000
-                }
-            try {
-                connection.connect()
-                val contentType = connection.contentType ?: ""
-                val ext =
-                    when {
-                        contentType.contains("png", ignoreCase = true) -> "png"
-                        contentType.contains("jpeg", ignoreCase = true) ||
-                            contentType.contains("jpg", ignoreCase = true) -> "jpg"
-                        contentType.contains("gif", ignoreCase = true) -> "gif"
-                        contentType.contains("webp", ignoreCase = true) -> "webp"
-                        urlString.substringAfterLast("/", "").contains(".") ->
-                            urlString.substringAfterLast("/").substringAfterLast(".")
-                        else -> "jpg"
-                    }
-                val cacheDir = File(context.cacheDir, "file_references").apply { mkdirs() }
-                val file = File(cacheDir, "generated_${UUID.randomUUID()}.$ext")
-                connection.inputStream.use { input ->
-                    file.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                val contentUri =
-                    FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        file,
-                    )
-                return contentUri.toString()
-            } finally {
-                connection.disconnect()
-            }
-        }
-
-        private fun grantContentUriPermissionsRecursively(
-            context: Context,
-            targetPackageName: String,
-            value: Any?,
-        ) {
-            when (value) {
-                is String -> {
-                    if (value.startsWith("content://")) {
-                        runCatching {
-                            val uri = Uri.parse(value)
-                            context.grantUriPermission(
-                                targetPackageName,
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                            )
-                        }
-                    }
-                }
-                is Map<*, *> ->
-                    value.values.forEach {
-                        grantContentUriPermissionsRecursively(context, targetPackageName, it)
-                    }
-                is List<*> ->
-                    value.forEach {
-                        grantContentUriPermissionsRecursively(context, targetPackageName, it)
-                    }
-            }
-        }
-
-        private fun isFileReferenceParameter(parameterName: String?): Boolean {
-            if (parameterName == null) return false
-            if (parameterName in KNOWN_FILE_REFERENCE_PARAM_NAMES) return true
-            return parameterName.endsWith("Uri", ignoreCase = true) ||
-                parameterName.endsWith("Uris", ignoreCase = true)
-        }
-
-        private fun isUriMetadata(dataType: AppFunctionDataTypeMetadata?): Boolean {
-            if (dataType == null) return false
-            if (dataType is AppFunctionObjectTypeMetadata && dataType.qualifiedName == "android.net.Uri") return true
-            if (dataType is AppFunctionReferenceTypeMetadata && dataType.referenceDataType == "android.net.Uri") return true
-            return false
-        }
-
-        private suspend fun executeInternalTool(toolCall: LlmResponsePart.ToolCall): Result<String> {
-            return runCatching {
-                when (toolCall.functionId) {
-                    "getCurrentLocation" -> {
-                        val location = agentInternalTools.getCurrentLocation()
-                        if (location != null) {
-                            JSONObject().apply {
-                                put("latitude", location.latitude)
-                                put("longitude", location.longitude)
-                            }.toString()
-                        } else {
-                            "null"
-                        }
-                    }
-                    "geocodeAddress" -> {
-                        val address =
-                            toolCall.arguments["address"] as? String
-                                ?: throw IllegalArgumentException("Missing required parameter 'address'")
-                        val location = agentInternalTools.geocodeAddress(address)
-                        if (location != null) {
-                            JSONObject().apply {
-                                put("latitude", location.latitude)
-                                put("longitude", location.longitude)
-                            }.toString()
-                        } else {
-                            "null"
-                        }
-                    }
-                    "generateImage" -> {
-                        val prompt =
-                            toolCall.arguments["prompt"] as? String
-                                ?: throw IllegalArgumentException("Missing required parameter 'prompt'")
-                        val aspectRatio = toolCall.arguments["aspectRatio"] as? String
-                        val result = agentInternalTools.generateImage(prompt, aspectRatio)
-                        JSONObject().apply {
-                            put("imageUri", result.imageUri)
-                            put("mimeType", result.mimeType)
-                            put("prompt", result.prompt)
-                        }.toString()
-                    }
-                    else -> throw IllegalArgumentException("Unknown internal tool: ${toolCall.functionId}")
-                }
-            }
-        }
-
-        companion object {
-            private val KNOWN_FILE_REFERENCE_PARAM_NAMES =
-                setOf(
-                    "wallpaperUri",
-                    "imageUri",
-                    "attachmentUri",
-                    "ringtoneUri",
-                    "profilePictureUri",
-                    "audioUri",
-                    "voiceNoteUri",
-                )
+        private companion object {
+            const val TAG = "AgentOrchestrator"
         }
     }

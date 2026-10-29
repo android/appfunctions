@@ -20,9 +20,13 @@ import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionPermissionRequiredException
 import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import com.example.appfunctions.agent.data.AgentInternalTools
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -36,7 +40,16 @@ import org.robolectric.annotation.Config
 class ExecuteAppFunctionUseCaseTest {
     private val appFunctionManager = mockk<AppFunctionManager>()
     private val convertAppFunctionDataToJsonUseCase = mockk<ConvertAppFunctionDataToJsonUseCase>()
-    private val useCase = ExecuteAppFunctionUseCase(appFunctionManager, convertAppFunctionDataToJsonUseCase)
+    private val agentInternalTools = mockk<AgentInternalTools>(relaxed = true)
+    private val grantAppFunctionUriPermissionsUseCase =
+        mockk<GrantAppFunctionUriPermissionsUseCase>(relaxed = true)
+    private val useCase =
+        ExecuteAppFunctionUseCase(
+            appFunctionManager = appFunctionManager,
+            convertAppFunctionDataToJsonUseCase = convertAppFunctionDataToJsonUseCase,
+            agentInternalTools = agentInternalTools,
+            grantAppFunctionUriPermissionsUseCase = grantAppFunctionUriPermissionsUseCase,
+        )
 
     @Test
     fun `invoke returns Error with original AppFunctionException when response is Error`() =
@@ -44,16 +57,19 @@ class ExecuteAppFunctionUseCaseTest {
             val function = mockk<AppFunctionMetadata>(relaxed = true)
             every { function.packageName } returns "com.example.app"
             every { function.id } returns "test_function"
+            every { function.parameters } returns emptyList()
             val parameters = mockk<AppFunctionData>()
 
             val appException = AppFunctionPermissionRequiredException("Permission needed")
-            coEvery { appFunctionManager.executeAppFunction(any()) } returns ExecuteAppFunctionResponse.Error(appException)
+            coEvery { appFunctionManager.executeAppFunction(any()) } returns
+                ExecuteAppFunctionResponse.Error(appException)
 
             val result = useCase(function, parameters)
 
             assertTrue(result is ExecuteAppFunctionResult.Error)
             val errorResult = result as ExecuteAppFunctionResult.Error
             assertEquals(appException, errorResult.exception)
+            verify(exactly = 1) { grantAppFunctionUriPermissionsUseCase(function, parameters) }
         }
 
     @Test
@@ -62,6 +78,7 @@ class ExecuteAppFunctionUseCaseTest {
             val function = mockk<AppFunctionMetadata>(relaxed = true)
             every { function.packageName } returns "com.example.app"
             every { function.id } returns "test_function"
+            every { function.parameters } returns emptyList()
             val parameters = mockk<AppFunctionData>()
 
             val runtimeException = RuntimeException("Unexpected crash")
@@ -72,5 +89,57 @@ class ExecuteAppFunctionUseCaseTest {
             assertTrue(result is ExecuteAppFunctionResult.Error)
             val errorResult = result as ExecuteAppFunctionResult.Error
             assertEquals(runtimeException, errorResult.exception)
+        }
+
+    @Test
+    fun `invoke grants URI permissions before executing external AppFunction`() =
+        runTest {
+            val function = mockk<AppFunctionMetadata>(relaxed = true)
+            every { function.packageName } returns "com.example.notes"
+            every { function.id } returns "attachMedia"
+            every { function.response.valueType } returns AppFunctionStringTypeMetadata(false)
+            val parameters = AppFunctionData.EMPTY
+
+            coEvery { appFunctionManager.executeAppFunction(any()) } returns
+                ExecuteAppFunctionResponse.Success(AppFunctionData.EMPTY)
+            every {
+                convertAppFunctionDataToJsonUseCase(any(), any(), any(), any())
+            } returns """{"ok":true}"""
+
+            val result = useCase(function, parameters)
+
+            assertTrue(result is ExecuteAppFunctionResult.Data)
+            assertEquals("""{"ok":true}""", (result as ExecuteAppFunctionResult.Data).formattedJson)
+            verify(exactly = 1) { grantAppFunctionUriPermissionsUseCase(function, parameters) }
+        }
+
+    @Test
+    fun `invoke delegates internal tools to AgentInternalTools even when AppFunctionManager is null`() =
+        runTest {
+            val nullManagerUseCase =
+                ExecuteAppFunctionUseCase(
+                    appFunctionManager = null,
+                    convertAppFunctionDataToJsonUseCase = convertAppFunctionDataToJsonUseCase,
+                    agentInternalTools = agentInternalTools,
+                    grantAppFunctionUriPermissionsUseCase = grantAppFunctionUriPermissionsUseCase,
+                )
+            val function = mockk<AppFunctionMetadata>(relaxed = true)
+            every { function.packageName } returns AgentInternalTools.INTERNAL_TOOL_PACKAGE
+            every { function.id } returns "generateImage"
+            val parameters = AppFunctionData.EMPTY
+            val expectedResult =
+                ExecuteAppFunctionResult.Data(
+                    data = AppFunctionData.EMPTY,
+                    formattedJson = """{"imageUri":"content://test/cat.png"}""",
+                )
+            coEvery {
+                agentInternalTools.executeInternalTool(function, parameters)
+            } returns expectedResult
+
+            val result = nullManagerUseCase(function, parameters)
+
+            assertEquals(expectedResult, result)
+            coVerify(exactly = 1) { agentInternalTools.executeInternalTool(function, parameters) }
+            verify(exactly = 0) { grantAppFunctionUriPermissionsUseCase(any(), any()) }
         }
 }

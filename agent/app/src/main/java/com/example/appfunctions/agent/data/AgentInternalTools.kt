@@ -24,8 +24,10 @@ import android.location.Geocoder
 import android.location.LocationManager
 import android.util.Base64
 import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
+import androidx.appfunctions.ExecuteAppFunctionResponse.Success.Companion.PROPERTY_RETURN_VALUE
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionDoubleTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
@@ -40,7 +42,9 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.appfunctions.agent.BuildConfig
+import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -375,6 +379,12 @@ class AgentInternalTools
                     qualifiedName = "com.example.appfunctions.agent.data.AgentInternalTools.GeneratedImageResult",
                 )
 
+            val internalPackageMetadata =
+                AppFunctionPackageMetadata(
+                    packageName = INTERNAL_TOOL_PACKAGE,
+                    components = AppFunctionComponentsMetadata(),
+                )
+
             val getCurrentLocationTool =
                 AppFunctionMetadata(
                     name = AppFunctionName(INTERNAL_TOOL_PACKAGE, "getCurrentLocation"),
@@ -387,11 +397,7 @@ class AgentInternalTools
                         ),
                     description = "Retrieve the current latitude and longitude coordinates of the device.",
                     deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = INTERNAL_TOOL_PACKAGE,
-                            components = AppFunctionComponentsMetadata(),
-                        ),
+                    packageMetadata = internalPackageMetadata,
                 )
 
             val geocodeAddressTool =
@@ -414,11 +420,7 @@ class AgentInternalTools
                         ),
                     description = "Geocode a physical address string into its latitude and longitude coordinates.",
                     deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = INTERNAL_TOOL_PACKAGE,
-                            components = AppFunctionComponentsMetadata(),
-                        ),
+                    packageMetadata = internalPackageMetadata,
                 )
 
             val generateImageTool =
@@ -447,11 +449,7 @@ class AgentInternalTools
                         ),
                     description = "Generates an image from a text prompt and returns the remote image URI.",
                     deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = INTERNAL_TOOL_PACKAGE,
-                            components = AppFunctionComponentsMetadata(),
-                        ),
+                    packageMetadata = internalPackageMetadata,
                 )
 
             @SuppressLint("RestrictedApi")
@@ -460,6 +458,115 @@ class AgentInternalTools
                 geocodeAddressTool to AppFunctionState(functionName = geocodeAddressTool.name, isEnabled = true),
                 generateImageTool to AppFunctionState(functionName = generateImageTool.name, isEnabled = true),
             )
+        }
+
+        /**
+         * Executes an internal agent tool identified by [function] using [parameters] and maps the
+         * output into an [ExecuteAppFunctionResult].
+         */
+        suspend fun executeInternalTool(
+            function: AppFunctionMetadata,
+            parameters: AppFunctionData,
+        ): ExecuteAppFunctionResult {
+            return try {
+                when (function.id) {
+                    "getCurrentLocation" -> {
+                        val location = getCurrentLocation()
+                        buildLatLngResult(function, location)
+                    }
+                    "geocodeAddress" -> {
+                        val address =
+                            parameters.getString("address")
+                                ?: throw IllegalArgumentException(
+                                    "Missing required parameter 'address'",
+                                )
+                        val location = geocodeAddress(address)
+                        buildLatLngResult(function, location)
+                    }
+                    "generateImage" -> {
+                        val prompt =
+                            parameters.getString("prompt")
+                                ?: throw IllegalArgumentException(
+                                    "Missing required parameter 'prompt'",
+                                )
+                        val aspectRatio = parameters.getString("aspectRatio")
+                        val result = generateImage(prompt, aspectRatio)
+                        buildGeneratedImageResult(function, result)
+                    }
+                    else ->
+                        throw IllegalArgumentException(
+                            "Unknown internal tool: ${function.id}",
+                        )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ExecuteAppFunctionResult.Error(e)
+            }
+        }
+
+        private fun buildLatLngResult(
+            function: AppFunctionMetadata,
+            location: LatLng?,
+        ): ExecuteAppFunctionResult.Data {
+            if (location == null) {
+                return ExecuteAppFunctionResult.Data(
+                    data = AppFunctionData.EMPTY,
+                    formattedJson = "null",
+                )
+            }
+            val formattedJson =
+                JSONObject()
+                    .apply {
+                        put("latitude", location.latitude)
+                        put("longitude", location.longitude)
+                    }
+                    .toString()
+            val valueType = function.response.valueType
+            val data =
+                if (valueType is AppFunctionObjectTypeMetadata) {
+                    val locationData =
+                        AppFunctionData.Builder(valueType, function.components)
+                            .setDouble("latitude", location.latitude)
+                            .setDouble("longitude", location.longitude)
+                            .build()
+                    AppFunctionData.Builder(function.response, function.components)
+                        .setAppFunctionData(PROPERTY_RETURN_VALUE, locationData)
+                        .build()
+                } else {
+                    AppFunctionData.EMPTY
+                }
+            return ExecuteAppFunctionResult.Data(data = data, formattedJson = formattedJson)
+        }
+
+        private fun buildGeneratedImageResult(
+            function: AppFunctionMetadata,
+            result: GeneratedImageResult,
+        ): ExecuteAppFunctionResult.Data {
+            val formattedJson =
+                JSONObject()
+                    .apply {
+                        put("imageUri", result.imageUri)
+                        put("mimeType", result.mimeType)
+                        put("prompt", result.prompt)
+                    }
+                    .toString()
+            val valueType = function.response.valueType
+            val data =
+                if (valueType is AppFunctionObjectTypeMetadata) {
+                    val imageData =
+                        AppFunctionData.Builder(valueType, function.components)
+                            .setString("imageUri", result.imageUri)
+                            .setString("mimeType", result.mimeType)
+                            .setString("prompt", result.prompt)
+                            .build()
+                    AppFunctionData.Builder(function.response, function.components)
+                        .setAppFunctionData(PROPERTY_RETURN_VALUE, imageData)
+                        .build()
+                } else {
+                    AppFunctionData.EMPTY
+                }
+            return ExecuteAppFunctionResult.Data(data = data, formattedJson = formattedJson)
         }
 
         /** Represents the latitude and longitude coordinates. */

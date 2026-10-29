@@ -39,7 +39,7 @@ class ConvertInputToAppFunctionDataUseCase
          *
          * @param parameters The list of parameter metadata for the function.
          * @param components The component metadata for resolving references.
-         * @param inputs The map of raw inputs from the UI.
+         * @param inputs The map of raw inputs from the UI or LLM tool call.
          * @return The converted [AppFunctionData].
          */
         operator fun invoke(
@@ -51,7 +51,13 @@ class ConvertInputToAppFunctionDataUseCase
                 val builder = AppFunctionData.Builder(parameters, components)
                 for (parameter in parameters) {
                     val value = inputs[parameter.name] ?: continue
-                    setParameterValue(builder, parameter.name, parameter.dataType, value, components)
+                    setParameterValue(
+                        builder,
+                        parameter.name,
+                        parameter.dataType,
+                        value,
+                        components,
+                    )
                 }
                 builder.build()
             }
@@ -82,19 +88,28 @@ class ConvertInputToAppFunctionDataUseCase
                 is AppFunctionBooleanTypeMetadata -> {
                     when (value) {
                         is Boolean -> builder.setBoolean(name, value)
-                        is String -> if (value.isNotEmpty()) builder.setBoolean(name, value.toBoolean())
+                        is String ->
+                            if (value.isNotEmpty()) {
+                                builder.setBoolean(name, value.toBoolean())
+                            }
                     }
                 }
                 is AppFunctionDoubleTypeMetadata -> {
                     when (value) {
                         is Number -> builder.setDouble(name, value.toDouble())
-                        is String -> if (value.isNotEmpty()) builder.setDouble(name, value.toDouble())
+                        is String ->
+                            if (value.isNotEmpty()) {
+                                builder.setDouble(name, value.toDouble())
+                            }
                     }
                 }
                 is AppFunctionFloatTypeMetadata -> {
                     when (value) {
                         is Number -> builder.setFloat(name, value.toFloat())
-                        is String -> if (value.isNotEmpty()) builder.setFloat(name, value.toFloat())
+                        is String ->
+                            if (value.isNotEmpty()) {
+                                builder.setFloat(name, value.toFloat())
+                            }
                     }
                 }
                 is AppFunctionObjectTypeMetadata -> {
@@ -155,11 +170,17 @@ class ConvertInputToAppFunctionDataUseCase
                     builder.setStringList(name, values.map { it as String })
                 }
                 is AppFunctionIntTypeMetadata -> {
-                    val intArray = values.map { (it as String).toInt() }.toIntArray()
+                    val intArray =
+                        values
+                            .map { if (it is Number) it.toInt() else (it as String).toInt() }
+                            .toIntArray()
                     builder.setIntArray(name, intArray)
                 }
                 is AppFunctionLongTypeMetadata -> {
-                    val longArray = values.map { (it as String).toLong() }.toLongArray()
+                    val longArray =
+                        values
+                            .map { if (it is Number) it.toLong() else (it as String).toLong() }
+                            .toLongArray()
                     builder.setLongArray(name, longArray)
                 }
                 is AppFunctionBooleanTypeMetadata -> {
@@ -167,11 +188,21 @@ class ConvertInputToAppFunctionDataUseCase
                     builder.setBooleanArray(name, booleanArray)
                 }
                 is AppFunctionDoubleTypeMetadata -> {
-                    val doubleArray = values.map { (it as String).toDouble() }.toDoubleArray()
+                    val doubleArray =
+                        values
+                            .map {
+                                if (it is Number) it.toDouble() else (it as String).toDouble()
+                            }
+                            .toDoubleArray()
                     builder.setDoubleArray(name, doubleArray)
                 }
                 is AppFunctionFloatTypeMetadata -> {
-                    val floatArray = values.map { (it as String).toFloat() }.toFloatArray()
+                    val floatArray =
+                        values
+                            .map {
+                                if (it is Number) it.toFloat() else (it as String).toFloat()
+                            }
+                            .toFloatArray()
                     builder.setFloatArray(name, floatArray)
                 }
                 is AppFunctionObjectTypeMetadata -> {

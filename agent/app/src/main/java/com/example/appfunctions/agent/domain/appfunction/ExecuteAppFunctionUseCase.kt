@@ -26,32 +26,46 @@ import androidx.appfunctions.ExecuteAppFunctionResponse.Success.Companion.PROPER
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionParcelableTypeMetadata
 import androidx.core.net.toUri
+import com.example.appfunctions.agent.data.AgentInternalTools
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
-/** Use case to execute an AppFunction. */
+/**
+ * Use case to execute an AppFunction (or internal agent tool), performing common pre-execution
+ * steps such as recursive content URI read permission grants.
+ */
 class ExecuteAppFunctionUseCase
     @Inject
     constructor(
         private val appFunctionManager: AppFunctionManager?,
         private val convertAppFunctionDataToJsonUseCase: ConvertAppFunctionDataToJsonUseCase,
+        private val agentInternalTools: AgentInternalTools,
+        private val grantAppFunctionUriPermissionsUseCase: GrantAppFunctionUriPermissionsUseCase,
     ) {
         /**
          * Executes the use case.
          *
          * @param function The metadata of the function to execute.
          * @param parameters The input parameters for the function.
-         * @return A [ExecuteAppFunctionResult].
+         * @param threadId Optional chat thread ID used for interaction attribution on API 37+.
+         * @return An [ExecuteAppFunctionResult].
          */
         suspend operator fun invoke(
             function: AppFunctionMetadata,
             parameters: AppFunctionData,
             threadId: String? = null,
         ): ExecuteAppFunctionResult {
+            if (function.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
+                return agentInternalTools.executeInternalTool(function, parameters)
+            }
+
             if (appFunctionManager == null) {
                 return ExecuteAppFunctionResult.Error(
                     IllegalStateException("AppFunctionManager not available on this device"),
                 )
             }
+
+            grantAppFunctionUriPermissionsUseCase(function, parameters)
 
             val request =
                 if (Build.VERSION.SDK_INT >= 37) {
@@ -89,7 +103,10 @@ class ExecuteAppFunctionUseCase
                             valueType.qualifiedName == PendingIntent::class.java.name
                         ) {
                             val pendingIntent =
-                                data.getParcelable(PROPERTY_RETURN_VALUE, PendingIntent::class.java)
+                                data.getParcelable(
+                                    PROPERTY_RETURN_VALUE,
+                                    PendingIntent::class.java,
+                                )
                             if (pendingIntent != null) {
                                 ExecuteAppFunctionResult.PendingIntentAction(pendingIntent)
                             } else {
@@ -112,6 +129,8 @@ class ExecuteAppFunctionUseCase
                         ExecuteAppFunctionResult.Error(response.error)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 ExecuteAppFunctionResult.Error(e)
             }

@@ -20,6 +20,10 @@ import androidx.appfunctions.AppFunctionManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.appfunctions.agent.data.AgentInternalTools
+import com.example.appfunctions.agent.data.DataStoreSettingsRepository
+import com.example.appfunctions.agent.di.settingsDataStore
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -38,7 +42,14 @@ class GetAppFunctionsUseCaseTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         appFunctionManager = AppFunctionManager.getInstance(context)!!
-        useCase = GetAppFunctionsUseCase(appFunctionManager)
+        val dataStore = context.settingsDataStore
+        useCase =
+            GetAppFunctionsUseCase(
+                appFunctionManager = appFunctionManager,
+                getAppFunctionStatesUseCase = GetAppFunctionStatesUseCase(appFunctionManager),
+                settingsRepository = DataStoreSettingsRepository(dataStore),
+                agentInternalTools = AgentInternalTools(context, dataStore),
+            )
 
         // Adopt shell permission identity
         InstrumentationRegistry.getInstrumentation()
