@@ -251,6 +251,7 @@ fun AgentDemoLoadedScreen(
                             .weight(1f)
                             .padding(horizontal = 8.dp),
                     currentThread = uiState.currentThread,
+                    availableModels = uiState.availableModels,
                     onModelSelected = { onEvent(AgentUiEvent.OnModelSelected(it)) },
                     onMenuClick = {
                         if (isWideScreen) {
@@ -260,10 +261,15 @@ fun AgentDemoLoadedScreen(
                         }
                     },
                 )
+                val defaultModel =
+                    uiState.currentThread?.llmModel ?: uiState.availableModels.firstOrNull()
                 IconButton(
                     onClick = {
-                        onEvent(AgentUiEvent.OnCreateThread(uiState.currentThread.llmModel))
+                        if (defaultModel != null) {
+                            onEvent(AgentUiEvent.OnCreateThread(defaultModel))
+                        }
                     },
+                    enabled = defaultModel != null,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = "Create Thread")
@@ -304,43 +310,63 @@ fun AgentDemoLoadedScreen(
                         .padding(start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                // Messages List
-                LazyColumn(
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp)),
-                    reverseLayout = true,
-                ) {
-                    // Status item at the bottom (above input) if not
-                    // idle
-                    if (uiState.status != AgentStatus.Idle) {
-                        item {
-                            StatusIndicator(
-                                status = uiState.status,
-                                packageManager = packageManager,
+                if (uiState.currentThread == null) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.agent_demo_select_model_placeholder),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    // Messages List
+                    LazyColumn(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp)),
+                        reverseLayout = true,
+                    ) {
+                        // Status item at the bottom (above input) if not
+                        // idle
+                        if (uiState.status != AgentStatus.Idle) {
+                            item {
+                                StatusIndicator(
+                                    status = uiState.status,
+                                    packageManager = packageManager,
+                                )
+                            }
+                        }
+
+                        items(
+                            items = uiState.messages.reversed(),
+                            key = { message -> message.messageId },
+                        ) { message ->
+                            MessageBubble(
+                                message = message,
+                                isValidAction =
+                                    message.pendingIntentId in uiState.activePendingActionIds,
+                                installedApps = uiState.installedApps,
+                                onConfirmAction = { onEvent(AgentUiEvent.OnConfirmAction(it)) },
                             )
                         }
-                    }
-
-                    items(
-                        items = uiState.messages.reversed(),
-                        key = { message -> message.messageId },
-                    ) { message ->
-                        MessageBubble(
-                            message = message,
-                            isValidAction =
-                                message.pendingIntentId in uiState.activePendingActionIds,
-                            installedApps = uiState.installedApps,
-                            onConfirmAction = { onEvent(AgentUiEvent.OnConfirmAction(it)) },
-                        )
                     }
                 }
 
                 val sendMessage = {
                     val textStr = messageText.text
-                    if (textStr.isNotBlank() && uiState.status == AgentStatus.Idle) {
+                    if (
+                        uiState.currentThread != null &&
+                        textStr.isNotBlank() &&
+                        uiState.status == AgentStatus.Idle
+                    ) {
                         onEvent(AgentUiEvent.OnSendMessage(textStr, selectedAppPackageName))
                         messageText = TextFieldValue("")
                         selectedAppPackageName = null
@@ -428,7 +454,8 @@ fun AgentDemoLoadedScreen(
                                         false
                                     }
                                 },
-                        enabled = uiState.status == AgentStatus.Idle,
+                        enabled =
+                            uiState.currentThread != null && uiState.status == AgentStatus.Idle,
                         shape = CircleShape,
                         placeholder = { Text(stringResource(R.string.agent_demo_ask_agent)) },
                         visualTransformation = visualTransformation,
@@ -443,7 +470,8 @@ fun AgentDemoLoadedScreen(
                             IconButton(
                                 onClick = sendMessage,
                                 enabled =
-                                    messageText.text.isNotBlank() &&
+                                    uiState.currentThread != null &&
+                                        messageText.text.isNotBlank() &&
                                         uiState.status == AgentStatus.Idle,
                             ) {
                                 Icon(
@@ -524,10 +552,15 @@ fun AgentDemoLoadedScreen(
 fun ModelDropdown(
     modifier: Modifier = Modifier,
     currentThread: ThreadEntity?,
+    availableModels: List<LlmModel> = emptyList(),
     onModelSelected: (LlmModel) -> Unit,
     onMenuClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val modelsByProvider =
+        remember(availableModels) {
+            availableModels.groupBy { it.providerName }
+        }
     ExposedDropdownMenuBox(
         modifier = modifier,
         expanded = expanded,
@@ -597,31 +630,28 @@ fun ModelDropdown(
             containerColor = MaterialTheme.colorScheme.surfaceBright,
             shape = RoundedCornerShape(28.dp),
         ) {
-            item {
-                Text(
-                    "--- Gemini ---",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-            val models =
-                listOf(
-                    LlmModel.GEMINI_3_5_FLASH,
-                    LlmModel.GEMINI_3_1_FLASH_LITE,
-                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
-                    LlmModel.GEMINI_3_FLASH_PREVIEW,
-                    LlmModel.GEMINI_3_1_FLASH_LITE_PREVIEW,
-                )
-            items(models) { model ->
-                DropdownMenuItem(
-                    text = { Text(model.modelName) },
-                    onClick = {
-                        onModelSelected(model)
-                        expanded = false
-                    },
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
-                )
+            modelsByProvider.forEach { (provider, models) ->
+                item(key = "header_${provider.name}") {
+                    Text(
+                        "--- ${provider.displayName} ---",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                items(
+                    items = models,
+                    key = { model -> "${model.providerName.name}:${model.modelName}" },
+                ) { model ->
+                    DropdownMenuItem(
+                        text = { Text(model.modelName) },
+                        onClick = {
+                            onModelSelected(model)
+                            expanded = false
+                        },
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+                    )
+                }
             }
         }
     }

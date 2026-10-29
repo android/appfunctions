@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelStore
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -25,6 +26,8 @@ import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LlmProvider
+import com.example.appfunctions.agent.domain.LlmProviderFactory
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
@@ -41,7 +44,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -54,12 +57,15 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentDemoViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
+    private val viewModelStore = ViewModelStore()
 
     private lateinit var getChatHistoryUseCase: GetChatHistoryUseCase
     private lateinit var manageThreadsUseCase: ManageThreadsUseCase
     private lateinit var sendMessageUseCase: SendMessageUseCase
     private lateinit var agentOrchestrator: AgentOrchestrator
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var llmProviderFactory: LlmProviderFactory
+    private lateinit var llmProvider: LlmProvider
     private lateinit var savedStateHandle: SavedStateHandle
     private lateinit var observeActivePendingIntentsUseCase: ObserveActivePendingIntentsUseCase
     private lateinit var launchPendingIntentUseCase: LaunchPendingIntentUseCase
@@ -69,8 +75,12 @@ class AgentDemoViewModelTest {
 
     private lateinit var viewModel: AgentDemoViewModel
 
+    private val testModelFlash = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash")
+    private val testModelPro = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-pro")
+
     private val threadsFlow = MutableStateFlow<List<ThreadEntity>>(emptyList())
     private val selectedProviderFlow = MutableStateFlow<LlmProviderName>(LlmProviderName.GEMINI)
+    private val geminiApiKeyFlow = MutableStateFlow<String?>(null)
     private val agentStatusFlow = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
     private val messagesFlow = MutableStateFlow<List<MessageEntity>>(emptyList())
     private val activePendingActionIdsFlow = MutableStateFlow<Set<String>>(emptySet())
@@ -84,6 +94,8 @@ class AgentDemoViewModelTest {
         sendMessageUseCase = mockk()
         agentOrchestrator = mockk()
         settingsRepository = mockk()
+        llmProviderFactory = mockk()
+        llmProvider = mockk()
         savedStateHandle = SavedStateHandle()
         observeActivePendingIntentsUseCase = mockk()
         launchPendingIntentUseCase = mockk()
@@ -94,10 +106,13 @@ class AgentDemoViewModelTest {
         every { getInstalledAppsUseCase() } returns emptyList()
         every {
             getAppFunctionsUseCase(GetAppFunctionsParams(includeInternalTools = false))
-        } returns flowOf(emptyMap())
+        } returns emptyFlow()
 
         every { manageThreadsUseCase.getThreads() } returns threadsFlow
         every { settingsRepository.selectedProvider } returns selectedProviderFlow
+        every { settingsRepository.geminiApiKey } returns geminiApiKeyFlow
+        every { llmProviderFactory.getProvider(any()) } returns llmProvider
+        coEvery { llmProvider.getAvailableModels(any()) } returns listOf(testModelFlash, testModelPro)
         every { agentOrchestrator.status } returns agentStatusFlow
         every { getChatHistoryUseCase(any()) } returns messagesFlow
         every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
@@ -107,8 +122,25 @@ class AgentDemoViewModelTest {
 
     @After
     fun tearDown() {
+        viewModelStore.clear()
         Dispatchers.resetMain()
     }
+
+    private fun createViewModel(): AgentDemoViewModel =
+        AgentDemoViewModel(
+            savedStateHandle,
+            getChatHistoryUseCase,
+            manageThreadsUseCase,
+            sendMessageUseCase,
+            agentOrchestrator,
+            settingsRepository,
+            llmProviderFactory,
+            observeActivePendingIntentsUseCase,
+            launchPendingIntentUseCase,
+            consumePendingIntentUseCase,
+            getInstalledAppsUseCase,
+            getAppFunctionsUseCase,
+        ).also { viewModelStore.put("AgentDemoViewModel", it) }
 
     @Test
     fun `onEvent OnModelSelected updates thread model when thread exists`() =
@@ -117,20 +149,20 @@ class AgentDemoViewModelTest {
                 ThreadEntity(
                     "thread-1",
                     System.currentTimeMillis(),
-                    LlmModel.GEMINI_3_FLASH_PREVIEW,
+                    testModelFlash,
                     null,
                 )
             threadsFlow.value = listOf(existingThread)
             coEvery {
-                manageThreadsUseCase.updateThreadModel("thread-1", LlmModel.GEMINI_3_1_PRO_PREVIEW)
+                manageThreadsUseCase.updateThreadModel("thread-1", testModelPro)
             } returns Unit
 
             viewModel = createViewModel()
 
-            viewModel.onEvent(AgentUiEvent.OnModelSelected(LlmModel.GEMINI_3_1_PRO_PREVIEW))
+            viewModel.onEvent(AgentUiEvent.OnModelSelected(testModelPro))
 
             coVerify {
-                manageThreadsUseCase.updateThreadModel("thread-1", LlmModel.GEMINI_3_1_PRO_PREVIEW)
+                manageThreadsUseCase.updateThreadModel("thread-1", testModelPro)
             }
         }
 
@@ -138,11 +170,11 @@ class AgentDemoViewModelTest {
     fun `init creates thread when none exists`() =
         runTest {
             threadsFlow.value = emptyList()
-            coEvery { manageThreadsUseCase.createThread(LlmModel.DEFAULT) } returns "thread-new"
+            coEvery { manageThreadsUseCase.createThread(testModelFlash) } returns "thread-new"
 
             viewModel = createViewModel()
 
-            coVerify { manageThreadsUseCase.createThread(LlmModel.DEFAULT) }
+            coVerify { manageThreadsUseCase.createThread(testModelFlash) }
         }
 
     @Test
@@ -152,7 +184,7 @@ class AgentDemoViewModelTest {
                 ThreadEntity(
                     "thread-1",
                     System.currentTimeMillis(),
-                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
+                    testModelPro,
                     null,
                 )
             threadsFlow.value = listOf(existingThread)
@@ -174,7 +206,7 @@ class AgentDemoViewModelTest {
                 ThreadEntity(
                     "thread-1",
                     System.currentTimeMillis(),
-                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
+                    testModelPro,
                     null,
                 )
             threadsFlow.value = listOf(existingThread)
@@ -203,7 +235,7 @@ class AgentDemoViewModelTest {
                 ThreadEntity(
                     "thread-1",
                     System.currentTimeMillis(),
-                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
+                    testModelPro,
                     null,
                 )
             threadsFlow.value = listOf(existingThread)
@@ -232,14 +264,14 @@ class AgentDemoViewModelTest {
                 ThreadEntity(
                     "thread-old",
                     System.currentTimeMillis() - 1000,
-                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
+                    testModelPro,
                     null,
                 )
             val newThread =
                 ThreadEntity(
                     "thread-new",
                     System.currentTimeMillis(),
-                    LlmModel.GEMINI_3_1_PRO_PREVIEW,
+                    testModelPro,
                     null,
                 )
             threadsFlow.value = listOf(newThread, oldThread)
@@ -250,18 +282,39 @@ class AgentDemoViewModelTest {
             assertEquals(newThread, (viewModel.uiState.value as AgentUiState.Loaded).currentThread)
         }
 
-    private fun createViewModel(): AgentDemoViewModel =
-        AgentDemoViewModel(
-            savedStateHandle,
-            getChatHistoryUseCase,
-            manageThreadsUseCase,
-            sendMessageUseCase,
-            agentOrchestrator,
-            settingsRepository,
-            observeActivePendingIntentsUseCase,
-            launchPendingIntentUseCase,
-            consumePendingIntentUseCase,
-            getInstalledAppsUseCase,
-            getAppFunctionsUseCase,
-        )
+    @Test
+    fun `availableModels loads dynamically from provider`() =
+        runTest {
+            val dynamicModels = listOf(testModelPro)
+            coEvery { llmProvider.getAvailableModels("test-api-key") } returns dynamicModels
+            geminiApiKeyFlow.value = "test-api-key"
+            val existingThread =
+                ThreadEntity(
+                    "thread-1",
+                    System.currentTimeMillis(),
+                    testModelFlash,
+                    null,
+                )
+            threadsFlow.value = listOf(existingThread)
+
+            viewModel = createViewModel()
+
+            assertEquals(
+                dynamicModels,
+                (viewModel.uiState.value as AgentUiState.Loaded).availableModels,
+            )
+        }
+
+    @Test
+    fun `init emits Loaded with null currentThread when no threads and no models exist`() =
+        runTest {
+            threadsFlow.value = emptyList()
+            coEvery { llmProvider.getAvailableModels(any()) } returns emptyList()
+
+            viewModel = createViewModel()
+
+            val loadedState = viewModel.uiState.value as AgentUiState.Loaded
+            assertEquals(null, loadedState.currentThread)
+            assertEquals(emptyList<LlmModel>(), loadedState.availableModels)
+        }
 }
