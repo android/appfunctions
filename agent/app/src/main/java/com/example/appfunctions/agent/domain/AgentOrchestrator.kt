@@ -31,6 +31,7 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResul
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -69,6 +70,7 @@ class AgentOrchestrator
         private val llmProviderFactory: LlmProviderFactory,
         private val settingsRepository: SettingsRepository,
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
+        private val resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase,
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val savePendingIntentUseCase: SavePendingIntentUseCase,
@@ -116,10 +118,18 @@ class AgentOrchestrator
                     return
                 }
 
+                val targetPackage = message.targetPackageName
+                val targetPackageNames =
+                    if (targetPackage != null) {
+                        setOf(targetPackage)
+                    } else {
+                        null
+                    }
+
                 val tools =
                     getAppFunctionsUseCase(
                         GetAppFunctionsParams(
-                            targetPackageNames = message.targetPackageName?.let { setOf(it) },
+                            targetPackageNames = targetPackageNames,
                             isEnabled = true,
                             isConnected = true,
                             includeInternalTools = true,
@@ -344,11 +354,17 @@ class AgentOrchestrator
                 }
 
                 val inputs = nonNullArguments(toolCall.arguments)
+                val convertedLocalFileInput =
+                    resolveRemoteFileToLocalUriUseCase(
+                        parameters = matchingTool.parameters,
+                        components = matchingTool.components,
+                        inputs = inputs,
+                    )
                 val appFunctionDataResult =
                     convertInputToAppFunctionDataUseCase(
                         parameters = matchingTool.parameters,
                         components = matchingTool.components,
-                        inputs = inputs,
+                        inputs = convertedLocalFileInput,
                     )
                 if (appFunctionDataResult.isFailure) {
                     val exception = appFunctionDataResult.exceptionOrNull()
@@ -384,8 +400,9 @@ class AgentOrchestrator
                                 result = executionResult.formattedJson,
                             ),
                         )
-                        extractMessageAttachment(executionResult.formattedJson)?.let {
-                            capturedAttachments.add(it)
+                        val attachment = extractMessageAttachment(executionResult.formattedJson)
+                        if (attachment != null) {
+                            capturedAttachments.add(attachment)
                         }
                     }
 
@@ -449,31 +466,33 @@ class AgentOrchestrator
             )
         }
 
+        private fun nonNullArguments(arguments: Map<String, Any?>): Map<String, Any> =
+            buildMap {
+                for ((key, value) in arguments) {
+                    if (value != null) {
+                        put(key, value)
+                    }
+                }
+            }
+
+        private fun extractMessageAttachment(jsonString: String): MessageAttachment? {
+            return try {
+                val json = Json.parseToJsonElement(jsonString) as? JsonObject ?: return null
+                val uri = json["imageUri"]?.jsonPrimitive?.contentOrNull
+                if (!uri.isNullOrBlank()) {
+                    val mimeType =
+                        json["mimeType"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                            ?: "image/png"
+                    MessageAttachment(uri = uri, mimeType = mimeType)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
         private companion object {
             const val TAG = "AgentOrchestrator"
         }
     }
-
-internal fun nonNullArguments(arguments: Map<String, Any?>): Map<String, Any> =
-    buildMap {
-        for ((key, value) in arguments) {
-            if (value != null) {
-                put(key, value)
-            }
-        }
-    }
-
-internal fun extractMessageAttachment(jsonString: String): MessageAttachment? {
-    return runCatching {
-        val json = Json.parseToJsonElement(jsonString) as? JsonObject ?: return null
-        val uri = json["imageUri"]?.jsonPrimitive?.contentOrNull
-        if (!uri.isNullOrBlank()) {
-            val mimeType =
-                json["mimeType"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                    ?: "image/png"
-            MessageAttachment(uri = uri, mimeType = mimeType)
-        } else {
-            null
-        }
-    }.getOrNull()
-}

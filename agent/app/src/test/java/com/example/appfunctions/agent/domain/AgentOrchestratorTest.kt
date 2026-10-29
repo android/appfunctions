@@ -15,20 +15,11 @@
  */
 package com.example.appfunctions.agent.domain
 
-import android.content.Intent
 import androidx.appfunctions.AppFunctionData
-import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionName
-import androidx.appfunctions.AppFunctionState
-import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
-import androidx.appfunctions.metadata.AppFunctionParameterMetadata
-import androidx.appfunctions.metadata.AppFunctionResponseMetadata
-import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
-import androidx.test.core.app.ApplicationProvider
-import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
@@ -38,12 +29,12 @@ import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
-import com.example.appfunctions.agent.domain.appfunction.ConvertAppFunctionDataToJsonUseCase
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
-import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -56,8 +47,8 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -77,30 +68,19 @@ class AgentOrchestratorTest {
     private val manageThreadsUseCase: ManageThreadsUseCase = mockk(relaxed = true)
     private val settingsRepository: SettingsRepository = mockk()
     private val llmProviderFactory: LlmProviderFactory = mockk()
-    private val appFunctionManager: AppFunctionManager = mockk()
-    private val getAppFunctionStatesUseCase: GetAppFunctionStatesUseCase = mockk()
+    private val getAppFunctionsUseCase: GetAppFunctionsUseCase = mockk()
+    private val resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase = mockk()
+    private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
     private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase = mockk()
     private val sendMessageUseCase: SendMessageUseCase = mockk(relaxed = true)
-    private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
-    private val context: android.content.Context = mockk(relaxed = true)
     private val savePendingIntentUseCase: SavePendingIntentUseCase = mockk(relaxed = true)
-    private val agentInternalTools: AgentInternalTools = mockk(relaxed = true)
 
-    private lateinit var getAppFunctionsUseCase: GetAppFunctionsUseCase
     private lateinit var agentOrchestrator: AgentOrchestrator
 
     @Before
     fun setUp() {
-        every { appFunctionManager.observeAppFunctions() } returns emptyFlow()
-        coEvery { appFunctionManager.searchAppFunctions(any()) } returns emptyList()
-
-        getAppFunctionsUseCase =
-            GetAppFunctionsUseCase(
-                appFunctionManager = appFunctionManager,
-                getAppFunctionStatesUseCase = getAppFunctionStatesUseCase,
-                settingsRepository = settingsRepository,
-                agentInternalTools = agentInternalTools,
-            )
+        every { getAppFunctionsUseCase(any()) } returns flowOf(emptyMap())
+        coEvery { resolveRemoteFileToLocalUriUseCase(any(), any(), any()) } answers { thirdArg() }
 
         agentOrchestrator =
             AgentOrchestrator(
@@ -112,20 +92,11 @@ class AgentOrchestratorTest {
                 llmProviderFactory = llmProviderFactory,
                 settingsRepository = settingsRepository,
                 getAppFunctionsUseCase = getAppFunctionsUseCase,
+                resolveRemoteFileToLocalUriUseCase = resolveRemoteFileToLocalUriUseCase,
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
                 savePendingIntentUseCase = savePendingIntentUseCase,
             )
-
-        coEvery { getAppFunctionStatesUseCase(any()) } answers {
-            val names = firstArg<List<AppFunctionName>>()
-            names.map { name ->
-                val state = mockk<AppFunctionState>()
-                every { state.functionName } returns name
-                every { state.isEnabled } returns true
-                state
-            }
-        }
     }
 
     @Test
@@ -139,10 +110,8 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
-            // Verify behavior (state)
             assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
 
-            // Verify interactions
             coVerify {
                 updateMessageUseCase(
                     message.messageId,
@@ -174,10 +143,8 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
-            // Verify behavior (state)
             assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
 
-            // Verify interactions
             coVerify {
                 updateMessageUseCase(
                     message.messageId,
@@ -210,10 +177,8 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
-            // Verify behavior (state)
             assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
 
-            // Verify interactions
             coVerify {
                 updateThreadUseCase(threadId, UpdateThreadParams(interactionId = "interaction_123"))
                 sendMessageUseCase(
@@ -233,19 +198,18 @@ class AgentOrchestratorTest {
     fun `observeAndProcessMessages scopes tools when targetPackageName is set`() =
         runTest {
             val threadId = "thread_1"
+            val targetPkg = "com.google.android.appfunctiontestingagent"
             val message =
                 createUserMessage(
                     threadId = threadId,
                     textContent = "run geo code address for n1c4ag",
-                    targetPackageName = "com.google.android.appfunctiontestingagent",
+                    targetPackageName = targetPkg,
                 )
             val thread = createThread(threadId)
             val llmProvider = mockk<LlmProvider>()
 
-            val tool1 = createMockTool("com.google.android.appfunctiontestingagent", "run_geo_code")
-            val tool2 =
-                createMockTool("com.google.android.digitalwellbeing", "digital_well_being_tool")
-            mockAppFunctions(listOf(tool1, tool2))
+            val tool1 = createMockTool(targetPkg, "run_geo_code")
+            mockAppFunctions(listOf(tool1))
 
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
@@ -255,6 +219,16 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
+            verify {
+                getAppFunctionsUseCase(
+                    GetAppFunctionsParams(
+                        targetPackageNames = setOf(targetPkg),
+                        isEnabled = true,
+                        isConnected = true,
+                        includeInternalTools = true,
+                    ),
+                )
+            }
             coVerify {
                 llmProvider.generateResponse(
                     previousInteractionId = null,
@@ -287,6 +261,16 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
+            verify {
+                getAppFunctionsUseCase(
+                    GetAppFunctionsParams(
+                        targetPackageNames = null,
+                        isEnabled = true,
+                        isConnected = true,
+                        includeInternalTools = true,
+                    ),
+                )
+            }
             coVerify {
                 llmProvider.generateResponse(
                     previousInteractionId = null,
@@ -313,7 +297,7 @@ class AgentOrchestratorTest {
 
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
-            coEvery {
+            every {
                 convertInputToAppFunctionDataUseCase(any(), any(), any())
             } returns Result.success(mockk())
 
@@ -375,72 +359,47 @@ class AgentOrchestratorTest {
             }
         }
 
-    private fun createUserMessage(
-        threadId: String,
-        textContent: String,
-        messageId: String = "message_1",
-        targetPackageName: String? = null,
-    ) = MessageEntity(
-        messageId = messageId,
-        threadId = threadId,
-        role = MessageRole.USER,
-        textContent = textContent,
-        timestamp = System.currentTimeMillis(),
-        processingStatus = MessageProcessingStatus.PENDING_AGENT_RESPONSE,
-        targetPackageName = targetPackageName,
-    )
+    @Test
+    fun `observeAndProcessMessages chains resolveRemoteFileToLocalUriUseCase before converting input`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "set wallpaper")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
 
-    private fun createThread(
-        threadId: String,
-        llmModel: LlmModel = LlmModel.GEMINI_3_FLASH_PREVIEW,
-        latestInteractionId: String? = null,
-    ) = ThreadEntity(
-        threadId = threadId,
-        createdAt = System.currentTimeMillis(),
-        llmModel = llmModel,
-        latestInteractionId = latestInteractionId,
-    )
+            val targetTool = createMockTool("com.example.targetapp", "setWallpaper")
+            mockAppFunctions(listOf(targetTool))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
 
-    private fun createMockTool(
-        packageName: String,
-        id: String,
-    ): AppFunctionMetadata {
-        val pkgMetadata =
-            AppFunctionPackageMetadata(
-                packageName = packageName,
-                components = AppFunctionComponentsMetadata(),
+            val rawArgs = mapOf("wallpaperUri" to "https://example.com/wallpaper.png")
+            val resolvedArgs = mapOf("wallpaperUri" to "content://com.example/resolved.png")
+            coEvery {
+                resolveRemoteFileToLocalUriUseCase(any(), any(), rawArgs)
+            } returns resolvedArgs
+
+            val toolCall =
+                LlmResponsePart.ToolCall(
+                    packageName = "com.example.targetapp",
+                    functionId = "setWallpaper",
+                    arguments = rawArgs,
+                    callId = "call_1",
+                )
+            setupTwoStepToolCallAndExecution(
+                llmProvider = llmProvider,
+                toolCall = toolCall,
+                secondResponseText = "Wallpaper set",
+                toolResultJson = """{"ok":true}""",
             )
-        val tool = mockk<AppFunctionMetadata>(relaxed = true)
-        every { tool.packageName } returns packageName
-        every { tool.id } returns id
-        every { tool.name } returns AppFunctionName(packageName, id)
-        every { tool.packageMetadata } returns pkgMetadata
-        return tool
-    }
 
-    private fun mockAppFunctions(tools: List<AppFunctionMetadata>) {
-        coEvery { appFunctionManager.searchAppFunctions(any()) } returns tools
-    }
+            agentOrchestrator.observeAndProcessMessages(threadId)
 
-    private fun setupDefaultMocks(
-        threadId: String,
-        message: MessageEntity,
-        thread: ThreadEntity,
-        apiKey: String? = "dummy_key",
-        disconnectedApps: Set<String> = emptySet(),
-        llmProvider: LlmProvider = mockk(),
-    ) {
-        coEvery { observePendingMessagesUseCase(threadId) } returns
-            flow {
-                delay(10)
-                emit(message)
+            coVerify(exactly = 1) {
+                resolveRemoteFileToLocalUriUseCase(any(), any(), rawArgs)
             }
-        coEvery { manageThreadsUseCase.getThread(threadId) } returns flowOf(thread)
-        coEvery { settingsRepository.geminiApiKey } returns flowOf(apiKey)
-        coEvery { settingsRepository.disconnectedApps } returns flowOf(disconnectedApps)
-        coEvery { settingsRepository.serviceTier } returns flowOf(ServiceTier.STANDARD)
-        coEvery { llmProviderFactory.getProvider(LlmProviderName.GEMINI) } returns llmProvider
-    }
+            verify(exactly = 1) {
+                convertInputToAppFunctionDataUseCase(any(), any(), resolvedArgs)
+            }
+        }
 
     @Test
     fun `observeAndProcessMessages extracts attachments when tool returns imageUri and mimeType`() {
@@ -488,114 +447,73 @@ class AgentOrchestratorTest {
         }
     }
 
-    @Test
-    fun `observeAndProcessMessages grants URI read permission when tool is called with content URI argument`() {
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "set wallpaper")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
+    private fun createUserMessage(
+        threadId: String,
+        textContent: String,
+        messageId: String = "message_1",
+        targetPackageName: String? = null,
+    ) = MessageEntity(
+        messageId = messageId,
+        threadId = threadId,
+        role = MessageRole.USER,
+        textContent = textContent,
+        timestamp = System.currentTimeMillis(),
+        processingStatus = MessageProcessingStatus.PENDING_AGENT_RESPONSE,
+        targetPackageName = targetPackageName,
+    )
 
-            val components = AppFunctionComponentsMetadata()
-            val targetTool =
-                AppFunctionMetadata(
-                    name = AppFunctionName("com.example.targetapp", "setWallpaper"),
-                    schema = null,
-                    parameters =
-                        listOf(
-                            AppFunctionParameterMetadata(
-                                name = "uri",
-                                isRequired = true,
-                                dataType = AppFunctionStringTypeMetadata(false),
-                            ),
-                        ),
-                    response =
-                        AppFunctionResponseMetadata(
-                            valueType = AppFunctionStringTypeMetadata(false),
-                            description = "",
-                        ),
-                    description = "Set wallpaper",
-                    deprecation = null,
-                    packageMetadata =
-                        AppFunctionPackageMetadata(
-                            packageName = "com.example.targetapp",
-                            components = components,
-                        ),
-                )
-            mockAppFunctions(listOf(targetTool))
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+    private fun createThread(
+        threadId: String,
+        llmModel: LlmModel = LlmModel.GEMINI_3_FLASH_PREVIEW,
+        latestInteractionId: String? = null,
+    ) = ThreadEntity(
+        threadId = threadId,
+        createdAt = System.currentTimeMillis(),
+        llmModel = llmModel,
+        latestInteractionId = latestInteractionId,
+    )
 
-            val realConverter =
-                ConvertInputToAppFunctionDataUseCase(ApplicationProvider.getApplicationContext())
-            val convertToJson = mockk<ConvertAppFunctionDataToJsonUseCase>()
-            every { convertToJson(any(), any(), any(), any()) } returns """{"success":true}"""
-            coEvery { appFunctionManager.executeAppFunction(any()) } returns
-                ExecuteAppFunctionResponse.Success(AppFunctionData.EMPTY)
-            val realExecutor =
-                ExecuteAppFunctionUseCase(
-                    context = context,
-                    appFunctionManager = appFunctionManager,
-                    convertAppFunctionDataToJsonUseCase = convertToJson,
-                    agentInternalTools = agentInternalTools,
-                )
+    private fun createMockTool(
+        packageName: String,
+        id: String,
+    ): AppFunctionMetadata {
+        val components = AppFunctionComponentsMetadata()
+        val pkgMetadata =
+            AppFunctionPackageMetadata(
+                packageName = packageName,
+                components = components,
+            )
+        val tool = mockk<AppFunctionMetadata>(relaxed = true)
+        every { tool.packageName } returns packageName
+        every { tool.id } returns id
+        every { tool.name } returns AppFunctionName(packageName, id)
+        every { tool.parameters } returns emptyList()
+        every { tool.components } returns components
+        every { tool.packageMetadata } returns pkgMetadata
+        return tool
+    }
 
-            val orchestratorWithRealPipeline =
-                AgentOrchestrator(
-                    manageThreadsUseCase = manageThreadsUseCase,
-                    observePendingMessagesUseCase = observePendingMessagesUseCase,
-                    sendMessageUseCase = sendMessageUseCase,
-                    updateMessageUseCase = updateMessageUseCase,
-                    updateThreadUseCase = updateThreadUseCase,
-                    llmProviderFactory = llmProviderFactory,
-                    settingsRepository = settingsRepository,
-                    getAppFunctionsUseCase = getAppFunctionsUseCase,
-                    convertInputToAppFunctionDataUseCase = realConverter,
-                    executeAppFunctionUseCase = realExecutor,
-                    savePendingIntentUseCase = savePendingIntentUseCase,
-                )
+    private fun mockAppFunctions(tools: List<AppFunctionMetadata>) {
+        every { getAppFunctionsUseCase(any()) } returns
+            flowOf(tools.groupBy(AppFunctionMetadata::packageMetadata))
+    }
 
-            val contentUri = "content://com.example.appfunctions.agent.fileprovider/cache/img.jpg"
-            val toolCall =
-                LlmResponsePart.ToolCall(
-                    packageName = "com.example.targetapp",
-                    functionId = "setWallpaper",
-                    arguments = mapOf("uri" to contentUri),
-                    callId = "call_2",
-                )
-            coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns LlmResponse.Success(interactionId = "interaction_1", parts = listOf(toolCall))
-
-            coEvery {
-                llmProvider.generateResponse(
-                    previousInteractionId = "interaction_1",
-                    input = any(),
-                    tools = any(),
-                    apiKey = any(),
-                    modelName = any(),
-                )
-            } returns
-                LlmResponse.Success(
-                    interactionId = "interaction_2",
-                    parts = listOf(LlmResponsePart.Text("Wallpaper set")),
-                )
-
-            orchestratorWithRealPipeline.observeAndProcessMessages(threadId)
-
-            coVerify {
-                context.grantUriPermission(
-                    eq("com.example.targetapp"),
-                    match { it.toString() == contentUri },
-                    eq(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-                )
+    private fun setupDefaultMocks(
+        threadId: String,
+        message: MessageEntity,
+        thread: ThreadEntity,
+        apiKey: String? = "dummy_key",
+        llmProvider: LlmProvider = mockk(),
+    ) {
+        coEvery { observePendingMessagesUseCase(threadId) } returns
+            flow {
+                delay(10)
+                emit(message)
             }
-        }
+        coEvery { manageThreadsUseCase.getThread(threadId) } returns flowOf(thread)
+        coEvery { settingsRepository.geminiApiKey } returns flowOf(apiKey)
+        coEvery { settingsRepository.serviceTier } returns flowOf(ServiceTier.STANDARD)
+        coEvery { llmProviderFactory.getProvider(LlmProviderName.GEMINI) } returns llmProvider
     }
 
     private fun setupTwoStepToolCallAndExecution(
@@ -635,7 +553,7 @@ class AgentOrchestratorTest {
             )
         } returns secondResponse
 
-        coEvery {
+        every {
             convertInputToAppFunctionDataUseCase(any(), any(), any())
         } returns Result.success(AppFunctionData.EMPTY)
 
@@ -647,47 +565,4 @@ class AgentOrchestratorTest {
                 formattedJson = toolResultJson,
             )
     }
-
-    @Test
-    fun `observeAndProcessMessages filters out disabled tools`() =
-        runTest {
-            val threadId = "thread_1"
-            val message = createUserMessage(threadId, "run geo code address for n1c4ag")
-            val thread = createThread(threadId)
-            val llmProvider = mockk<LlmProvider>()
-
-            val enabledTool =
-                createMockTool("com.google.android.appfunctiontestingagent", "enabled_tool")
-            val disabledTool =
-                createMockTool("com.google.android.appfunctiontestingagent", "disabled_tool")
-            mockAppFunctions(listOf(enabledTool, disabledTool))
-
-            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-
-            coEvery { getAppFunctionStatesUseCase(any()) } answers {
-                val names = firstArg<List<AppFunctionName>>()
-                names.map { name ->
-                    val state = mockk<AppFunctionState>()
-                    every { state.functionName } returns name
-                    every { state.isEnabled } returns (name.toString().contains("enabled_tool"))
-                    state
-                }
-            }
-
-            coEvery {
-                llmProvider.generateResponse(any(), any(), any(), any(), any(), any())
-            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Success")))
-
-            agentOrchestrator.observeAndProcessMessages(threadId)
-
-            coVerify {
-                llmProvider.generateResponse(
-                    previousInteractionId = null,
-                    input = eq(LlmInput.UserMessage("run geo code address for n1c4ag")),
-                    tools = listOf(enabledTool),
-                    apiKey = "dummy_key",
-                    modelName = any(),
-                )
-            }
-        }
 }

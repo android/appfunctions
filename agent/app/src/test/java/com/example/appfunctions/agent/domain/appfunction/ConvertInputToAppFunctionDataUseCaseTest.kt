@@ -27,231 +27,208 @@ import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
-import androidx.test.core.app.ApplicationProvider
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ConvertInputToAppFunctionDataUseCaseTest {
-    private val useCase =
-        ConvertInputToAppFunctionDataUseCase(ApplicationProvider.getApplicationContext())
+    private val useCase = ConvertInputToAppFunctionDataUseCase()
     private val components = AppFunctionComponentsMetadata(emptyMap())
 
     @Test
-    fun invoke_allPrimitiveTypes_convertsCorrectly() =
-        runTest {
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata("str", true, AppFunctionStringTypeMetadata(false)),
-                    AppFunctionParameterMetadata("int", true, AppFunctionIntTypeMetadata(false)),
-                    AppFunctionParameterMetadata("long", true, AppFunctionLongTypeMetadata(false)),
-                    AppFunctionParameterMetadata(
-                        "bool",
-                        true,
-                        AppFunctionBooleanTypeMetadata(false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "double",
-                        true,
-                        AppFunctionDoubleTypeMetadata(false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "float",
-                        true,
-                        AppFunctionFloatTypeMetadata(false),
-                    ),
-                )
-            val inputs =
-                mapOf(
-                    "str" to "value",
-                    "int" to "123",
-                    "long" to "456",
-                    "bool" to true,
-                    "double" to "1.23",
-                    "float" to "4.56",
-                )
+    fun invoke_allPrimitiveTypes_convertsCorrectly() {
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata("str", true, AppFunctionStringTypeMetadata(false)),
+                AppFunctionParameterMetadata("int", true, AppFunctionIntTypeMetadata(false)),
+                AppFunctionParameterMetadata("long", true, AppFunctionLongTypeMetadata(false)),
+                AppFunctionParameterMetadata("bool", true, AppFunctionBooleanTypeMetadata(false)),
+                AppFunctionParameterMetadata(
+                    "double",
+                    true,
+                    AppFunctionDoubleTypeMetadata(false),
+                ),
+                AppFunctionParameterMetadata("float", true, AppFunctionFloatTypeMetadata(false)),
+            )
+        val inputs =
+            mapOf(
+                "str" to "value",
+                "int" to "123",
+                "long" to "456",
+                "bool" to true,
+                "double" to "1.23",
+                "float" to "4.56",
+            )
 
-            val result = useCase(parameters, components, inputs).getOrThrow()
+        val result = useCase(parameters, components, inputs).getOrThrow()
 
-            assertEquals("value", result.getString("str"))
-            assertEquals(123, result.getInt("int"))
-            assertEquals(456L, result.getLong("long"))
-            assertEquals(true, result.getBoolean("bool"))
-            assertEquals(1.23, result.getDouble("double"), 0.001)
-            assertEquals(4.56f, result.getFloat("float"), 0.001f)
-        }
+        assertEquals("value", result.getString("str"))
+        assertEquals(123, result.getInt("int"))
+        assertEquals(456L, result.getLong("long"))
+        assertEquals(true, result.getBoolean("bool"))
+        assertEquals(1.23, result.getDouble("double"), 0.001)
+        assertEquals(4.56f, result.getFloat("float"), 0.001f)
+    }
 
     @Test
-    fun invoke_allPrimitiveArrays_convertsCorrectly() =
-        runTest {
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata(
-                        "strArray",
-                        true,
-                        AppFunctionArrayTypeMetadata(AppFunctionStringTypeMetadata(false), false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "intArray",
-                        true,
-                        AppFunctionArrayTypeMetadata(AppFunctionIntTypeMetadata(false), false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "longArray",
-                        true,
-                        AppFunctionArrayTypeMetadata(AppFunctionLongTypeMetadata(false), false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "boolArray",
-                        true,
-                        AppFunctionArrayTypeMetadata(AppFunctionBooleanTypeMetadata(false), false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "doubleArray",
-                        true,
-                        AppFunctionArrayTypeMetadata(AppFunctionDoubleTypeMetadata(false), false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        "floatArray",
-                        true,
-                        AppFunctionArrayTypeMetadata(AppFunctionFloatTypeMetadata(false), false),
-                    ),
-                )
-            val inputs =
-                mapOf(
-                    "strArray" to listOf("v1", "v2"),
-                    "intArray" to listOf("1", "2"),
-                    "longArray" to listOf("3", "4"),
-                    "boolArray" to listOf(true, false),
-                    "doubleArray" to listOf("1.1", "2.2"),
-                    "floatArray" to listOf("3.3", "4.4"),
-                )
+    fun invoke_allPrimitiveArrays_convertsCorrectly() {
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    "strArray",
+                    true,
+                    AppFunctionArrayTypeMetadata(AppFunctionStringTypeMetadata(false), false),
+                ),
+                AppFunctionParameterMetadata(
+                    "intArray",
+                    true,
+                    AppFunctionArrayTypeMetadata(AppFunctionIntTypeMetadata(false), false),
+                ),
+                AppFunctionParameterMetadata(
+                    "longArray",
+                    true,
+                    AppFunctionArrayTypeMetadata(AppFunctionLongTypeMetadata(false), false),
+                ),
+                AppFunctionParameterMetadata(
+                    "boolArray",
+                    true,
+                    AppFunctionArrayTypeMetadata(AppFunctionBooleanTypeMetadata(false), false),
+                ),
+                AppFunctionParameterMetadata(
+                    "doubleArray",
+                    true,
+                    AppFunctionArrayTypeMetadata(AppFunctionDoubleTypeMetadata(false), false),
+                ),
+                AppFunctionParameterMetadata(
+                    "floatArray",
+                    true,
+                    AppFunctionArrayTypeMetadata(AppFunctionFloatTypeMetadata(false), false),
+                ),
+            )
+        val inputs =
+            mapOf(
+                "strArray" to listOf("v1", "v2"),
+                "intArray" to listOf("1", 2),
+                "longArray" to listOf("3", 4L),
+                "boolArray" to listOf(true, false),
+                "doubleArray" to listOf("1.1", 2.2),
+                "floatArray" to listOf("3.3", 4.4f),
+            )
 
-            val result = useCase(parameters, components, inputs).getOrThrow()
+        val result = useCase(parameters, components, inputs).getOrThrow()
 
-            assertEquals(listOf("v1", "v2"), result.getStringList("strArray"))
-            assertEquals(listOf(1, 2), result.getIntArray("intArray")?.toList())
-            assertEquals(listOf(3L, 4L), result.getLongArray("longArray")?.toList())
-            assertEquals(listOf(true, false), result.getBooleanArray("boolArray")?.toList())
-            assertEquals(listOf(1.1, 2.2), result.getDoubleArray("doubleArray")?.toList())
-            assertEquals(listOf(3.3f, 4.4f), result.getFloatArray("floatArray")?.toList())
-        }
-
-    @Test
-    fun invoke_objectParameter_convertsCorrectly() =
-        runTest {
-            val objectType =
-                AppFunctionObjectTypeMetadata(
-                    properties =
-                        mapOf(
-                            "prop1" to AppFunctionStringTypeMetadata(false),
-                            "prop2" to AppFunctionIntTypeMetadata(false),
-                        ),
-                    required = listOf("prop1", "prop2"),
-                    qualifiedName = null,
-                    isNullable = false,
-                )
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata("obj", true, objectType),
-                )
-            val inputs =
-                mapOf(
-                    "obj" to mapOf("prop1" to "val1", "prop2" to "123"),
-                )
-
-            val result = useCase(parameters, components, inputs).getOrThrow()
-
-            val objResult = result.getAppFunctionData("obj")
-            assertEquals("val1", objResult?.getString("prop1"))
-            assertEquals(123, objResult?.getInt("prop2"))
-        }
+        assertEquals(listOf("v1", "v2"), result.getStringList("strArray"))
+        assertEquals(listOf(1, 2), result.getIntArray("intArray")?.toList())
+        assertEquals(listOf(3L, 4L), result.getLongArray("longArray")?.toList())
+        assertEquals(listOf(true, false), result.getBooleanArray("boolArray")?.toList())
+        assertEquals(listOf(1.1, 2.2), result.getDoubleArray("doubleArray")?.toList())
+        assertEquals(listOf(3.3f, 4.4f), result.getFloatArray("floatArray")?.toList())
+    }
 
     @Test
-    fun invoke_referenceParameter_convertsCorrectly() =
-        runTest {
-            val objectType =
-                AppFunctionObjectTypeMetadata(
-                    properties =
-                        mapOf(
-                            "prop1" to AppFunctionStringTypeMetadata(false),
-                        ),
-                    required = listOf("prop1"),
-                    qualifiedName = null,
-                    isNullable = false,
-                )
-            val componentsWithTypes =
-                AppFunctionComponentsMetadata(
-                    dataTypes = mapOf("RefType" to objectType),
-                )
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata(
-                        "ref",
-                        true,
-                        AppFunctionReferenceTypeMetadata("RefType", false),
+    fun invoke_objectParameter_convertsCorrectly() {
+        val objectType =
+            AppFunctionObjectTypeMetadata(
+                properties =
+                    mapOf(
+                        "prop1" to AppFunctionStringTypeMetadata(false),
+                        "prop2" to AppFunctionIntTypeMetadata(false),
                     ),
-                )
-            val inputs =
-                mapOf(
-                    "ref" to mapOf("prop1" to "val1"),
-                )
+                required = listOf("prop1", "prop2"),
+                qualifiedName = null,
+                isNullable = false,
+            )
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata("obj", true, objectType),
+            )
+        val inputs =
+            mapOf(
+                "obj" to mapOf("prop1" to "val1", "prop2" to "123"),
+            )
 
-            val result = useCase(parameters, componentsWithTypes, inputs).getOrThrow()
+        val result = useCase(parameters, components, inputs).getOrThrow()
 
-            val refResult = result.getAppFunctionData("ref")
-            assertEquals("val1", refResult?.getString("prop1"))
-        }
+        val objResult = result.getAppFunctionData("obj")
+        assertEquals("val1", objResult?.getString("prop1"))
+        assertEquals(123, objResult?.getInt("prop2"))
+    }
 
     @Test
-    fun invoke_emptyStringNumericParameters_areSkipped() =
-        runTest {
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata("int", false, AppFunctionIntTypeMetadata(false)),
-                    AppFunctionParameterMetadata("long", false, AppFunctionLongTypeMetadata(false)),
-                    AppFunctionParameterMetadata(
-                        "double",
-                        false,
-                        AppFunctionDoubleTypeMetadata(false),
+    fun invoke_referenceParameter_convertsCorrectly() {
+        val objectType =
+            AppFunctionObjectTypeMetadata(
+                properties =
+                    mapOf(
+                        "prop1" to AppFunctionStringTypeMetadata(false),
                     ),
-                    AppFunctionParameterMetadata(
-                        "float",
-                        false,
-                        AppFunctionFloatTypeMetadata(false),
-                    ),
-                )
-            val inputs =
-                mapOf(
-                    "int" to "",
-                    "long" to "",
-                    "double" to "",
-                    "float" to "",
-                )
+                required = listOf("prop1"),
+                qualifiedName = null,
+                isNullable = false,
+            )
+        val componentsWithTypes =
+            AppFunctionComponentsMetadata(
+                dataTypes = mapOf("RefType" to objectType),
+            )
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    "ref",
+                    true,
+                    AppFunctionReferenceTypeMetadata("RefType", false),
+                ),
+            )
+        val inputs =
+            mapOf(
+                "ref" to mapOf("prop1" to "val1"),
+            )
 
-            val result = useCase(parameters, components, inputs)
+        val result = useCase(parameters, componentsWithTypes, inputs).getOrThrow()
 
-            // Verify that it doesn't throw NumberFormatException during conversion
-            assertEquals(true, result.isSuccess)
-        }
+        val refResult = result.getAppFunctionData("ref")
+        assertEquals("val1", refResult?.getString("prop1"))
+    }
 
     @Test
-    fun invoke_invalidNumericInputs_returnsFailure() =
-        runTest {
-            assertFailureForInput(AppFunctionIntTypeMetadata(false), "not_an_int")
-            assertFailureForInput(AppFunctionLongTypeMetadata(false), "not_a_long")
-            assertFailureForInput(AppFunctionDoubleTypeMetadata(false), "not_a_double")
-            assertFailureForInput(AppFunctionFloatTypeMetadata(false), "not_a_float")
-        }
+    fun invoke_emptyStringNumericParameters_areSkipped() {
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata("int", false, AppFunctionIntTypeMetadata(false)),
+                AppFunctionParameterMetadata("long", false, AppFunctionLongTypeMetadata(false)),
+                AppFunctionParameterMetadata(
+                    "double",
+                    false,
+                    AppFunctionDoubleTypeMetadata(false),
+                ),
+                AppFunctionParameterMetadata("float", false, AppFunctionFloatTypeMetadata(false)),
+            )
+        val inputs =
+            mapOf(
+                "int" to "",
+                "long" to "",
+                "double" to "",
+                "float" to "",
+            )
 
-    private suspend fun assertFailureForInput(
+        val result = useCase(parameters, components, inputs)
+
+        // Verify that it doesn't throw NumberFormatException during conversion
+        assertEquals(true, result.isSuccess)
+    }
+
+    @Test
+    fun invoke_invalidNumericInputs_returnsFailure() {
+        assertFailureForInput(AppFunctionIntTypeMetadata(false), "not_an_int")
+        assertFailureForInput(AppFunctionLongTypeMetadata(false), "not_a_long")
+        assertFailureForInput(AppFunctionDoubleTypeMetadata(false), "not_a_double")
+        assertFailureForInput(AppFunctionFloatTypeMetadata(false), "not_a_float")
+    }
+
+    private fun assertFailureForInput(
         dataType: AppFunctionDataTypeMetadata,
         value: Any,
     ) {
@@ -271,160 +248,62 @@ class ConvertInputToAppFunctionDataUseCaseTest {
     }
 
     @Test
-    fun convert_uriObjectTypeWithStringInput_buildsUriAppFunctionData() =
-        runTest {
-            val uriObjectType =
-                AppFunctionObjectTypeMetadata(
-                    properties =
-                        mapOf(
-                            "uri" to AppFunctionStringTypeMetadata(false),
-                        ),
-                    required = listOf("uri"),
-                    qualifiedName = "android.net.Uri",
-                    isNullable = false,
-                )
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata(
-                        name = "wallpaperUri",
-                        isRequired = true,
-                        dataType = uriObjectType,
+    fun convert_uriObjectTypeWithStringInput_buildsUriAppFunctionData() {
+        val uriObjectType =
+            AppFunctionObjectTypeMetadata(
+                properties =
+                    mapOf(
+                        "uri" to AppFunctionStringTypeMetadata(false),
                     ),
-                )
-            val inputs = mapOf("wallpaperUri" to "content://com.example/file.jpg")
+                required = listOf("uri"),
+                qualifiedName = "android.net.Uri",
+                isNullable = false,
+            )
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    name = "wallpaperUri",
+                    isRequired = true,
+                    dataType = uriObjectType,
+                ),
+            )
+        val inputs = mapOf("wallpaperUri" to "content://com.example/file.jpg")
 
-            val result = useCase(parameters, components, inputs).getOrThrow()
+        val result = useCase(parameters, components, inputs).getOrThrow()
 
-            val uriData = result.getAppFunctionData("wallpaperUri")
-            assertEquals("content://com.example/file.jpg", uriData?.getString("uri"))
-        }
+        val uriData = result.getAppFunctionData("wallpaperUri")
+        assertEquals("content://com.example/file.jpg", uriData?.getString("uri"))
+    }
 
     @Test
-    fun convert_uriObjectTypeArrayWithStringInput_buildsUriObjectTypeArray() =
-        runTest {
-            val uriObjectType =
-                AppFunctionObjectTypeMetadata(
-                    properties = mapOf("uri" to AppFunctionStringTypeMetadata(false)),
-                    required = listOf("uri"),
-                    qualifiedName = "android.net.Uri",
-                    isNullable = false,
-                )
-            val arrayType =
-                AppFunctionArrayTypeMetadata(
-                    itemType = uriObjectType,
-                    isNullable = false,
-                )
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata(
-                        name = "attachments",
-                        isRequired = true,
-                        dataType = arrayType,
-                    ),
-                )
-            val inputs = mapOf("attachments" to listOf("content://com.example/file.jpg"))
-
-            val result = useCase(parameters, components, inputs).getOrThrow()
-
-            val dataList = result.getAppFunctionDataList("attachments")
-            assertEquals(1, dataList?.size)
-            val uriData = dataList?.first()
-            assertEquals("content://com.example/file.jpg", uriData?.getString("uri"))
-        }
-
-    @Test
-    fun invoke_resolvesRemoteFileReferencesWhileLeavingRegularUrlParametersUntouched() =
-        runTest {
-            val downloadedUrls = mutableListOf<String>()
-            val testUseCase =
-                ConvertInputToAppFunctionDataUseCase(ApplicationProvider.getApplicationContext())
-                    .apply {
-                        remoteFileDownloader = { _, url ->
-                            downloadedUrls.add(url)
-                            "content://com.example.appfunctions.agent.fileprovider/cache/resolved.png"
-                        }
-                    }
-
-            val uriObjectType =
-                AppFunctionObjectTypeMetadata(
-                    properties = mapOf("uri" to AppFunctionStringTypeMetadata(false)),
-                    required = listOf("uri"),
-                    qualifiedName = "android.net.Uri",
-                    isNullable = false,
-                )
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata(
-                        name = "imageUri",
-                        isRequired = true,
-                        dataType = AppFunctionStringTypeMetadata(false),
-                    ),
-                    AppFunctionParameterMetadata(
-                        name = "attachment",
-                        isRequired = true,
-                        dataType = uriObjectType,
-                    ),
-                    AppFunctionParameterMetadata(
-                        name = "websiteUrl",
-                        isRequired = true,
-                        dataType = AppFunctionStringTypeMetadata(false),
-                    ),
-                )
-            val inputs =
-                mapOf(
-                    "imageUri" to "https://example.com/cat.png",
-                    "attachment" to "https://example.com/doc.png",
-                    "websiteUrl" to "https://example.com/home",
-                )
-
-            val result = testUseCase(parameters, components, inputs).getOrThrow()
-
-            assertEquals(
-                listOf("https://example.com/cat.png", "https://example.com/doc.png"),
-                downloadedUrls,
+    fun convert_uriObjectTypeArrayWithStringInput_buildsUriObjectTypeArray() {
+        val uriObjectType =
+            AppFunctionObjectTypeMetadata(
+                properties = mapOf("uri" to AppFunctionStringTypeMetadata(false)),
+                required = listOf("uri"),
+                qualifiedName = "android.net.Uri",
+                isNullable = false,
             )
-            assertEquals(
-                "content://com.example.appfunctions.agent.fileprovider/cache/resolved.png",
-                result.getString("imageUri"),
+        val arrayType =
+            AppFunctionArrayTypeMetadata(
+                itemType = uriObjectType,
+                isNullable = false,
             )
-            assertEquals(
-                "content://com.example.appfunctions.agent.fileprovider/cache/resolved.png",
-                result.getAppFunctionData("attachment")?.getString("uri"),
+        val parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    name = "attachments",
+                    isRequired = true,
+                    dataType = arrayType,
+                ),
             )
-            assertEquals("https://example.com/home", result.getString("websiteUrl"))
-        }
+        val inputs = mapOf("attachments" to listOf("content://com.example/file.jpg"))
 
-    @Test
-    fun invoke_returnsFailureWhenRemoteFileDownloadFails() =
-        runTest {
-            val testUseCase =
-                ConvertInputToAppFunctionDataUseCase(ApplicationProvider.getApplicationContext())
-                    .apply {
-                        remoteFileDownloader = { _, _ ->
-                            throw IOException("HTTP 404")
-                        }
-                    }
+        val result = useCase(parameters, components, inputs).getOrThrow()
 
-            val parameters =
-                listOf(
-                    AppFunctionParameterMetadata(
-                        name = "wallpaperUri",
-                        isRequired = true,
-                        dataType = AppFunctionStringTypeMetadata(false),
-                    ),
-                )
-            val result =
-                testUseCase(
-                    parameters,
-                    components,
-                    mapOf("wallpaperUri" to "https://example.com/missing.png"),
-                )
-
-            assertTrue(result.isFailure)
-            assertTrue(
-                result.exceptionOrNull()?.message?.contains(
-                    "Failed to download remote file reference: HTTP 404",
-                ) == true,
-            )
-        }
+        val dataList = result.getAppFunctionDataList("attachments")
+        assertEquals(1, dataList?.size)
+        val uriData = dataList?.first()
+        assertEquals("content://com.example/file.jpg", uriData?.getString("uri"))
+    }
 }

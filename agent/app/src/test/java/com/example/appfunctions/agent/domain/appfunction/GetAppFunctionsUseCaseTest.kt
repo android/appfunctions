@@ -170,8 +170,11 @@ class GetAppFunctionsUseCaseTest {
             val calendarTool = createTool(calendarPkg, "createEvent")
             val internalTool = createTool(internalPkg, "geocodeAddress")
 
-            coEvery { appFunctionManager.searchAppFunctions(any()) } returns
-                listOf(notesTool, calendarTool)
+            coEvery {
+                appFunctionManager.searchAppFunctions(
+                    match { it.packageNames == setOf("com.example.calendar") },
+                )
+            } returns listOf(calendarTool)
             every { agentInternalTools.getInternalToolsMetadata() } returns
                 listOf(internalTool to createState(internalTool.name, isEnabled = true))
 
