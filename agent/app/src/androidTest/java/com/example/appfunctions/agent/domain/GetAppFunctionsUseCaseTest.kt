@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.domain
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import androidx.appfunctions.AppFunctionManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -28,6 +29,7 @@ import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,6 +57,27 @@ class GetAppFunctionsUseCaseTest {
         InstrumentationRegistry.getInstrumentation()
             .uiAutomation
             .adoptShellPermissionIdentity("android.permission.EXECUTE_APP_FUNCTIONS")
+
+        waitForFakeFunctionIndexed()
+    }
+
+    private fun waitForFakeFunctionIndexed() {
+        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val command = "cmd app_function list-app-functions --package ${context.packageName}"
+        var output = ""
+        val timeoutMs = 10_000L
+        val startTime = System.currentTimeMillis()
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            output =
+                ParcelFileDescriptor.AutoCloseInputStream(
+                    uiAutomation.executeShellCommand(command),
+                ).bufferedReader().use { it.readText() }
+            if (output.contains("fakeFunction")) {
+                return
+            }
+            Thread.sleep(500)
+        }
+        fail("Timed out waiting for fakeFunction to be indexed. Output of '$command': $output")
     }
 
     @Test
