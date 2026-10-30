@@ -91,10 +91,10 @@ android {
         }
         managedDevices {
             localDevices {
-                create("pixel7Api35") {
+                create("pixel7Api37") {
                     device = "Pixel 7"
-                    apiLevel = 35
-                    systemImageSource = "aosp-atd"
+                    apiLevel = 37
+                    systemImageSource = "google_apis"
                 }
             }
         }

@@ -22,7 +22,7 @@ concurrency:
 jobs:
   agent-build:
     name: "Agent build & test"
-    runs-on: macos-26
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
@@ -58,6 +58,27 @@ jobs:
         run: ./gradlew validateScreenshotTest -PGEMINI_API_KEY=dummy_key
         working-directory: agent
 
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Setup GMD
+        run: |
+          ./gradlew :app:pixel7Api37Setup \
+          --info \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: agent
+
+      - name: Run instrumentation tests
+        run: |
+          ./gradlew :app:pixel7Api37StandardDebugAndroidTest -PGEMINI_API_KEY=dummy_key \
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
+          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
+        working-directory: agent
+
       - name: Build Debug and Release APKs
         run: ./gradlew assembleDebug assembleRelease -PGEMINI_API_KEY=dummy_key
         working-directory: agent
@@ -67,18 +88,3 @@ jobs:
         with:
           name: agent-apks
           path: agent/app/build/outputs/apk/**/*.apk
-
-#      - name: Setup GMD
-#        run: |
-#          ./gradlew :app:pixel7Api35Setup \
-#          --info \
-#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-#        working-directory: agent
-#
-#      - name: Run instrumentation tests
-#        run: |
-#          ./gradlew :app:pixel7Api35Check -PGEMINI_API_KEY=dummy_key \
-#          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
-#          -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
-#        working-directory: agent
