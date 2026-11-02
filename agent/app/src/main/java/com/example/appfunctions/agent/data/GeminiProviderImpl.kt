@@ -21,6 +21,10 @@ import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
+import com.example.appfunctions.agent.domain.appfunction.findToolByName
+import com.example.appfunctions.agent.domain.appfunction.resolveToolName
+import com.example.appfunctions.agent.domain.appfunction.selectDistinctTools
+import com.example.appfunctions.agent.domain.toArgumentsMap
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header

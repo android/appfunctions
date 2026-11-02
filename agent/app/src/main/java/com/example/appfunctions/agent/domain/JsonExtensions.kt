@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.example.appfunctions.agent.data
+package com.example.appfunctions.agent.domain
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

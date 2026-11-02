@@ -115,9 +115,12 @@ abstract class DataModule {
                         },
                     )
                 }
-                install(HttpTimeout) { socketTimeoutMillis = 30000 }
-                install(WebSockets)
+                install(HttpTimeout) { socketTimeoutMillis = SOCKET_TIMEOUT_MS }
+                install(WebSockets) { pingIntervalMillis = WEBSOCKET_PING_INTERVAL_MS }
             }
         }
+
+        private const val SOCKET_TIMEOUT_MS = 30_000L
+        private const val WEBSOCKET_PING_INTERVAL_MS = 20_000L
     }
 }

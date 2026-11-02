@@ -23,17 +23,20 @@ import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.ToolOutput
+import com.example.appfunctions.agent.domain.withSession
 import io.ktor.client.HttpClient
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
+import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -47,92 +50,109 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 import java.util.Base64
+import kotlin.coroutines.CoroutineContext
 
 class GeminiLiveProviderImplTest {
-    private lateinit var settingsRepository: SettingsRepository
-    private lateinit var provider: GeminiLiveProviderImpl
+    private lateinit var httpClient: HttpClient
+    private lateinit var toolConverter: GeminiLiveToolConverter
 
     @Before
     fun setUp() {
         mockkStatic(Log::class)
         every { Log.d(any(), any()) } returns 0
         every { Log.w(any<String>(), any<String>()) } returns 0
+        every { Log.w(any<String>(), any<String>(), any()) } returns 0
         every { Log.e(any(), any(), any()) } returns 0
 
-        settingsRepository = mockk(relaxed = true)
-        every { settingsRepository.geminiLiveVoice } returns flowOf(GeminiLiveVoice.DEFAULT)
-
-        provider =
-            GeminiLiveProviderImpl(
-                httpClient = mockk<HttpClient>(relaxed = true),
-                toolConverter = GeminiToolConverter(),
-                settingsRepository = settingsRepository,
-            )
+        httpClient = mockk(relaxed = true)
+        toolConverter = GeminiLiveToolConverter(GeminiToolConverter())
     }
 
     @Test
-    fun `buildSetupMessage configures gemini-3_8-live model, audio modality, transcriptions, and tools`() {
-        val tool = createSampleNoteTool()
+    fun `connect sends setup message with model, audio modality, voice, transcriptions, and tools`() =
+        runTest {
+            val tool = createSampleNoteTool()
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFrames.close()
 
-        val setupEnvelope = provider.buildSetupMessage(listOf(tool))
-        val setup = setupEnvelope["setup"]!!.jsonObject
+            val sentFrames = mutableListOf<String>()
+            var capturedWsUrl: String? = null
+            val provider =
+                createProvider { wsUrl ->
+                    capturedWsUrl = wsUrl
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFrames,
+                        onSendText = { sentFrames.add(it) },
+                    )
+                }
 
-        assertEquals("models/gemini-3.8-live", setup["model"]!!.jsonPrimitive.content)
+            provider.withSession(
+                apiKey = "secret-key",
+                tools = listOf(tool),
+                voice = GeminiLiveVoice.AOEDE,
+            ) {}
 
-        val modalities =
-            setup["generationConfig"]!!
-                .jsonObject["responseModalities"]!!
-                .jsonArray
-                .map { it.jsonPrimitive.content }
-        assertEquals(listOf("AUDIO"), modalities)
+            assertTrue(capturedWsUrl!!.endsWith("?key=secret-key"))
+            val setup = Json.parseToJsonElement(sentFrames.first()).jsonObject["setup"]!!.jsonObject
+            assertEquals("models/gemini-3.8-live", setup["model"]!!.jsonPrimitive.content)
 
-        val voiceName =
-            setup["generationConfig"]!!
-                .jsonObject["speechConfig"]!!
-                .jsonObject["voiceConfig"]!!
-                .jsonObject["prebuiltVoiceConfig"]!!
-                .jsonObject["voiceName"]!!
-                .jsonPrimitive
-                .content
-        assertEquals("Zephyr", voiceName)
+            val modalities =
+                setup["generationConfig"]!!
+                    .jsonObject["responseModalities"]!!
+                    .jsonArray
+                    .map { it.jsonPrimitive.content }
+            assertEquals(listOf("AUDIO"), modalities)
 
-        assertTrue(setup.containsKey("inputAudioTranscription"))
-        assertTrue(setup.containsKey("outputAudioTranscription"))
-        val systemInstructionText =
-            setup["systemInstruction"]!!
-                .jsonObject["parts"]!!
-                .jsonArray
-                .first()
-                .jsonObject["text"]!!
-                .jsonPrimitive
-                .content
-        assertTrue(
-            systemInstructionText.contains(
-                "Default to English for understanding and replying unless the user clearly " +
-                    "speaks in or asks to switch to another language.",
-            ),
-        )
-        assertTrue(
-            systemInstructionText.contains(
-                "Execute user-requested actions directly without claiming an on-screen " +
-                    "confirmation card or button is shown",
-            ),
-        )
-        assertFalse(systemInstructionText.contains("confirmation_required"))
+            val voiceName =
+                setup["generationConfig"]!!
+                    .jsonObject["speechConfig"]!!
+                    .jsonObject["voiceConfig"]!!
+                    .jsonObject["prebuiltVoiceConfig"]!!
+                    .jsonObject["voiceName"]!!
+                    .jsonPrimitive
+                    .content
+            assertEquals("Aoede", voiceName)
 
-        val declarations =
-            setup["tools"]!!
-                .jsonArray
-                .first()
-                .jsonObject["functionDeclarations"]!!
-                .jsonArray
-        assertEquals(1, declarations.size)
-        assertEquals(
-            "com_example_notes_createNote",
-            declarations.first().jsonObject["name"]!!.jsonPrimitive.content,
-        )
-    }
+            assertTrue(setup.containsKey("inputAudioTranscription"))
+            assertTrue(setup.containsKey("outputAudioTranscription"))
+            val systemInstructionText =
+                setup["systemInstruction"]!!
+                    .jsonObject["parts"]!!
+                    .jsonArray
+                    .first()
+                    .jsonObject["text"]!!
+                    .jsonPrimitive
+                    .content
+            assertTrue(
+                systemInstructionText.contains(
+                    "Default to English for understanding and replying unless the user clearly " +
+                        "speaks in or asks to switch to another language.",
+                ),
+            )
+            assertTrue(
+                systemInstructionText.contains(
+                    "Execute user-requested actions directly without claiming an on-screen " +
+                        "confirmation card or button is shown",
+                ),
+            )
+            assertFalse(systemInstructionText.contains("confirmation_required"))
+
+            val declarations =
+                setup["tools"]!!
+                    .jsonArray
+                    .first()
+                    .jsonObject["functionDeclarations"]!!
+                    .jsonArray
+            assertEquals(1, declarations.size)
+            assertEquals(
+                "com_example_notes_createNote",
+                declarations.first().jsonObject["name"]!!.jsonPrimitive.content,
+            )
+        }
 
     @Test
     fun `connect throws IllegalStateException when WebSocket closes before setupComplete`() =
@@ -140,14 +160,13 @@ class GeminiLiveProviderImplTest {
             val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
             incomingFrames.close()
 
-            provider.webSocketConnector = { _, block ->
-                coroutineScope {
-                    createMockWebSocketSession(coroutineContext, incomingFrames).block()
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(coroutineContext, incomingFrames)
                 }
-            }
 
             try {
-                provider.connect(apiKey = "key-123", tools = emptyList()) {}
+                provider.connect(apiKey = "key-123", tools = emptyList())
                 fail("Expected IllegalStateException")
             } catch (e: IllegalStateException) {
                 assertTrue(e.message!!.contains("setupComplete"))
@@ -155,60 +174,201 @@ class GeminiLiveProviderImplTest {
         }
 
     @Test
-    fun `connect sends selected GeminiLiveVoice from SettingsRepository in setup message`() =
+    fun `connect throws IllegalStateException when first frame is missing setupComplete`() =
         runTest {
-            every { settingsRepository.geminiLiveVoice } returns flowOf(GeminiLiveVoice.AOEDE)
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"error":{"message":"Invalid argument"}}"""))
+            incomingFrames.close()
 
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(coroutineContext, incomingFrames)
+                }
+
+            try {
+                provider.connect(apiKey = "key-123", tools = emptyList())
+                fail("Expected IllegalStateException")
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message!!.startsWith("Unexpected setup response:"))
+            }
+        }
+
+    @Test
+    fun `connect rethrows CancellationException during handshake without wrapping as IllegalStateException`() =
+        runTest {
+            val wsSession = mockk<WebSocketSession>(relaxed = true)
+            every { wsSession.coroutineContext } returns coroutineContext
+            every { wsSession.incoming } returns
+                mockk {
+                    coEvery { receive() } throws CancellationException("Handshake cancelled")
+                }
+
+            val provider = createProvider { wsSession }
+
+            try {
+                provider.connect(apiKey = "key-123", tools = emptyList())
+                fail("Expected CancellationException")
+            } catch (e: CancellationException) {
+                assertEquals("Handshake cancelled", e.message)
+            }
+        }
+
+    @Test
+    fun `withSession closes WebSocket with NORMAL CloseReason when block completes normally or throws`() =
+        runTest {
+            val incomingFramesNormal = Channel<Frame>(Channel.UNLIMITED)
+            incomingFramesNormal.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFramesNormal.close()
+            val normalCloseReasons = mutableListOf<CloseReason?>()
+
+            val providerNormal =
+                createProvider {
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFramesNormal,
+                        onSendClose = { normalCloseReasons.add(it) },
+                    )
+                }
+
+            providerNormal.withSession(apiKey = "key-123", tools = emptyList()) {}
+
+            assertEquals(
+                listOf(CloseReason(CloseReason.Codes.NORMAL, "Session ended by client")),
+                normalCloseReasons,
+            )
+
+            val incomingFramesFailing = Channel<Frame>(Channel.UNLIMITED)
+            incomingFramesFailing.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFramesFailing.close()
+            val failingCloseReasons = mutableListOf<CloseReason?>()
+
+            val providerFailing =
+                createProvider {
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFramesFailing,
+                        onSendClose = { failingCloseReasons.add(it) },
+                    )
+                }
+
+            try {
+                providerFailing.withSession(apiKey = "key-123", tools = emptyList()) {
+                    throw IllegalStateException("Caller failed")
+                }
+                fail("Expected IllegalStateException")
+            } catch (e: IllegalStateException) {
+                assertEquals("Caller failed", e.message)
+            }
+
+            assertEquals(
+                listOf(CloseReason(CloseReason.Codes.NORMAL, "Session ended by client")),
+                failingCloseReasons,
+            )
+        }
+
+    @Test
+    fun `connect and events decode Frame_Binary server frames`() =
+        runTest {
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(
+                Frame.Binary(fin = true, data = """{"setupComplete":{}}""".encodeToByteArray()),
+            )
+            incomingFrames.trySend(
+                Frame.Binary(
+                    fin = true,
+                    data = """{"serverContent":{"turnComplete":true}}""".encodeToByteArray(),
+                ),
+            )
+            incomingFrames.close()
+
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(coroutineContext, incomingFrames)
+                }
+
+            val receivedEvents = mutableListOf<LiveLlmEvent>()
+            provider.withSession(apiKey = "key-123", tools = emptyList()) { session ->
+                receivedEvents.addAll(session.events.toList())
+            }
+
+            assertEquals(listOf(LiveLlmEvent.TurnComplete), receivedEvents)
+        }
+
+    @Test
+    fun `sendAudio encodes PCM bytes with specified sampleRateHz in realtimeInput frame`() =
+        runTest {
             val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
             incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
             incomingFrames.close()
 
             val sentFrames = mutableListOf<String>()
-            provider.webSocketConnector = { _, block ->
-                coroutineScope {
+            val provider =
+                createProvider {
                     createMockWebSocketSession(
                         context = coroutineContext,
                         incomingFrames = incomingFrames,
                         onSendText = { sentFrames.add(it) },
-                    ).block()
+                    )
                 }
+
+            provider.withSession(apiKey = "key-123", tools = emptyList()) { session ->
+                session.sendAudio(pcmBytes = byteArrayOf(1, 2, 3), sampleRateHz = 16_000)
             }
 
-            provider.connect(apiKey = "key-123", tools = emptyList()) {}
-
-            val setupVoiceName =
-                Json.parseToJsonElement(sentFrames.first())
-                    .jsonObject["setup"]!!
-                    .jsonObject["generationConfig"]!!
-                    .jsonObject["speechConfig"]!!
-                    .jsonObject["voiceConfig"]!!
-                    .jsonObject["prebuiltVoiceConfig"]!!
-                    .jsonObject["voiceName"]!!
-                    .jsonPrimitive
-                    .content
-            assertEquals("Aoede", setupVoiceName)
+            assertEquals(2, sentFrames.size)
+            val realtimeAudio =
+                Json.parseToJsonElement(sentFrames[1])
+                    .jsonObject["realtimeInput"]!!
+                    .jsonObject["audio"]!!
+                    .jsonObject
+            assertEquals("audio/pcm;rate=16000", realtimeAudio["mimeType"]!!.jsonPrimitive.content)
+            assertArrayEquals(
+                byteArrayOf(1, 2, 3),
+                Base64.getDecoder().decode(realtimeAudio["data"]!!.jsonPrimitive.content),
+            )
         }
 
     @Test
-    fun `connect exchanges realtimeInput audio, parses server events, and sends mapped toolResponse`() =
+    fun `events emits Interrupted when serverContent has interrupted true`() =
         runTest {
-            val tool = createSampleNoteTool()
+            val events =
+                collectSingleServerFrame(
+                    """{"serverContent":{"interrupted":true}}""",
+                )
+            assertEquals(listOf(LiveLlmEvent.Interrupted), events)
+        }
+
+    @Test
+    fun `events emits InputTranscription when serverContent has inputTranscription`() =
+        runTest {
+            val events =
+                collectSingleServerFrame(
+                    """{"serverContent":{"inputTranscription":{"text":"Create a note"}}}""",
+                )
+            assertEquals(listOf(LiveLlmEvent.InputTranscription("Create a note")), events)
+        }
+
+    @Test
+    fun `events emits OutputTranscription when serverContent has outputTranscription`() =
+        runTest {
+            val events =
+                collectSingleServerFrame(
+                    """{"serverContent":{"outputTranscription":{"text":"Creating note"}}}""",
+                )
+            assertEquals(listOf(LiveLlmEvent.OutputTranscription("Creating note")), events)
+        }
+
+    @Test
+    fun `events emits AudioChunk with sampleRateHz when serverContent has modelTurn inlineData`() =
+        runTest {
             val expectedPcm = byteArrayOf(10, 20, 30, 40)
             val encodedPcm = Base64.getEncoder().encodeToString(expectedPcm)
 
-            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
-            val sentFrames = mutableListOf<String>()
-            var capturedWsUrl: String? = null
-
-            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
-            incomingFrames.trySend(
-                Frame.Text(
+            val events =
+                collectSingleServerFrame(
                     """
                     {
                       "serverContent": {
-                        "interrupted": true,
-                        "inputTranscription": { "text": "Create a note" },
-                        "outputTranscription": { "text": "Creating note" },
                         "modelTurn": {
                           "parts": [
                             {
@@ -218,13 +378,34 @@ class GeminiLiveProviderImplTest {
                               }
                             }
                           ]
-                        },
-                        "turnComplete": true
+                        }
                       }
                     }
                     """.trimIndent(),
-                ),
+                )
+
+            assertEquals(
+                listOf(LiveLlmEvent.AudioChunk(pcmBytes = expectedPcm, sampleRateHz = 24_000)),
+                events,
             )
+        }
+
+    @Test
+    fun `events emits TurnComplete when serverContent has turnComplete true`() =
+        runTest {
+            val events =
+                collectSingleServerFrame(
+                    """{"serverContent":{"turnComplete":true}}""",
+                )
+            assertEquals(listOf(LiveLlmEvent.TurnComplete), events)
+        }
+
+    @Test
+    fun `events emits ToolCallRequest and sendToolResponses sends mapped functionResponses`() =
+        runTest {
+            val tool = createSampleNoteTool()
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
             incomingFrames.trySend(
                 Frame.Text(
                     """
@@ -238,11 +419,6 @@ class GeminiLiveProviderImplTest {
                               "title": "Shopping",
                               "meta": { "pinned": true, "priority": 2 }
                             }
-                          },
-                          {
-                            "id": "call-unknown",
-                            "name": "hallucinated_tool",
-                            "args": {}
                           }
                         ]
                       }
@@ -252,22 +428,18 @@ class GeminiLiveProviderImplTest {
             )
             incomingFrames.close()
 
-            provider.webSocketConnector = { wsUrl, block ->
-                capturedWsUrl = wsUrl
-                coroutineScope {
-                    val ws =
-                        createMockWebSocketSession(
-                            context = coroutineContext,
-                            incomingFrames = incomingFrames,
-                            onSendText = { sentFrames.add(it) },
-                        )
-                    ws.block()
+            val sentFrames = mutableListOf<String>()
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFrames,
+                        onSendText = { sentFrames.add(it) },
+                    )
                 }
-            }
 
             val receivedEvents = mutableListOf<LiveLlmEvent>()
-            provider.connect(apiKey = "secret-key", tools = listOf(tool)) { session ->
-                session.sendAudio(byteArrayOf(1, 2, 3))
+            provider.withSession(apiKey = "key-123", tools = listOf(tool)) { session ->
                 receivedEvents.addAll(session.events.toList())
                 session.sendToolResponses(
                     listOf(
@@ -276,61 +448,28 @@ class GeminiLiveProviderImplTest {
                             callId = "call-1",
                             result = """{"noteId":"n-1"}""",
                         ),
-                        ToolOutput(
-                            functionId = "hallucinated_tool",
-                            callId = "call-unknown",
-                            result = "Tool not found: hallucinated_tool",
-                        ),
                     ),
                 )
             }
 
-            assertTrue(capturedWsUrl!!.endsWith("?key=secret-key"))
-            assertEquals(3, sentFrames.size)
-
-            // Frame 0: setup
-            assertTrue(Json.parseToJsonElement(sentFrames[0]).jsonObject.containsKey("setup"))
-
-            // Frame 1: realtimeInput audio
-            val realtimeAudio =
-                Json.parseToJsonElement(sentFrames[1])
-                    .jsonObject["realtimeInput"]!!
-                    .jsonObject["audio"]!!
-                    .jsonObject
-            assertEquals("audio/pcm;rate=16000", realtimeAudio["mimeType"]!!.jsonPrimitive.content)
-            assertArrayEquals(
-                byteArrayOf(1, 2, 3),
-                Base64.getDecoder().decode(realtimeAudio["data"]!!.jsonPrimitive.content),
-            )
-
-            // Received events
-            assertEquals(6, receivedEvents.size)
-            assertEquals(LiveLlmEvent.Interrupted, receivedEvents[0])
-            assertEquals(LiveLlmEvent.InputTranscription("Create a note"), receivedEvents[1])
-            assertEquals(LiveLlmEvent.OutputTranscription("Creating note"), receivedEvents[2])
-            assertArrayEquals(expectedPcm, (receivedEvents[3] as LiveLlmEvent.AudioChunk).pcmBytes)
-            assertEquals(LiveLlmEvent.TurnComplete, receivedEvents[4])
-
-            val toolCallReq = receivedEvents[5] as LiveLlmEvent.ToolCallRequest
-            assertEquals(2, toolCallReq.calls.size)
+            assertEquals(1, receivedEvents.size)
+            val toolCallReq = receivedEvents.single() as LiveLlmEvent.ToolCallRequest
+            assertEquals(1, toolCallReq.calls.size)
             assertEquals("com.example.notes", toolCallReq.calls[0].packageName)
             assertEquals("com.example.notes.createNote", toolCallReq.calls[0].functionId)
+            assertEquals("call-1", toolCallReq.calls[0].callId)
             assertEquals("Shopping", toolCallReq.calls[0].arguments["title"])
             @Suppress("UNCHECKED_CAST")
             val meta = toolCallReq.calls[0].arguments["meta"] as Map<String, Any?>
             assertEquals(true, meta["pinned"])
             assertEquals(2L, meta["priority"])
 
-            assertEquals("", toolCallReq.calls[1].packageName)
-            assertEquals("hallucinated_tool", toolCallReq.calls[1].functionId)
-
-            // Frame 2: toolResponse
             val responses =
-                Json.parseToJsonElement(sentFrames[2])
+                Json.parseToJsonElement(sentFrames.last())
                     .jsonObject["toolResponse"]!!
                     .jsonObject["functionResponses"]!!
                     .jsonArray
-            assertEquals(2, responses.size)
+            assertEquals(1, responses.size)
             assertEquals(
                 "com_example_notes_createNote",
                 responses[0].jsonObject["name"]!!.jsonPrimitive.content,
@@ -344,16 +483,154 @@ class GeminiLiveProviderImplTest {
                     .jsonPrimitive
                     .content,
             )
-            assertEquals(
-                "hallucinated_tool",
-                responses[1].jsonObject["name"]!!.jsonPrimitive.content,
+        }
+
+    @Test
+    fun `events emits Error when toolCall references unknown function or is missing id or name`() =
+        runTest {
+            val tool = createSampleNoteTool()
+            val events =
+                collectSingleServerFrame(
+                    frameJson =
+                        """
+                        {
+                          "toolCall": {
+                            "functionCalls": [
+                              {
+                                "id": "call-unknown",
+                                "name": "hallucinated_tool",
+                                "args": {}
+                              },
+                              {
+                                "name": "com_example_notes_createNote",
+                                "args": {}
+                              },
+                              {
+                                "id": "call-no-name",
+                                "args": {}
+                              }
+                            ]
+                          }
+                        }
+                        """.trimIndent(),
+                    tools = listOf(tool),
+                )
+
+            assertEquals(3, events.size)
+            assertTrue((events[0] as LiveLlmEvent.Error).message.contains("hallucinated_tool"))
+            assertTrue((events[1] as LiveLlmEvent.Error).message.contains("id"))
+            assertTrue((events[2] as LiveLlmEvent.Error).message.contains("name"))
+        }
+
+    @Test
+    fun `events recovers from malformed JSON frame mid-session and emits subsequent valid events`() =
+        runTest {
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFrames.trySend(Frame.Text("not-valid-json"))
+            incomingFrames.trySend(Frame.Text("""{"serverContent":{"turnComplete":true}}"""))
+            incomingFrames.close()
+
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(coroutineContext, incomingFrames)
+                }
+
+            val receivedEvents = mutableListOf<LiveLlmEvent>()
+            provider.withSession(apiKey = "key-123", tools = emptyList()) { session ->
+                receivedEvents.addAll(session.events.toList())
+            }
+
+            assertEquals(2, receivedEvents.size)
+            assertTrue(receivedEvents[0] is LiveLlmEvent.Error)
+            assertEquals(LiveLlmEvent.TurnComplete, receivedEvents[1])
+        }
+
+    @Test
+    fun `events emits Error when server closes WebSocket with non-normal CloseReason or transport exception`() =
+        runTest {
+            val incomingCloseFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingCloseFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingCloseFrames.trySend(
+                Frame.Close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid API key")),
+            )
+            incomingCloseFrames.close()
+
+            val providerClose =
+                createProvider {
+                    createMockWebSocketSession(coroutineContext, incomingCloseFrames)
+                }
+
+            val closeEvents = mutableListOf<LiveLlmEvent>()
+            providerClose.withSession(apiKey = "bad-key", tools = emptyList()) { session ->
+                closeEvents.addAll(session.events.toList())
+            }
+
+            assertEquals(1, closeEvents.size)
+            assertTrue((closeEvents.single() as LiveLlmEvent.Error).message.contains("Invalid API key"))
+
+            var receiveCount = 0
+            val wsSession = mockk<WebSocketSession>(relaxed = true)
+            every { wsSession.coroutineContext } returns coroutineContext
+            every { wsSession.incoming } returns
+                mockk {
+                    coEvery { receive() } coAnswers {
+                        receiveCount++
+                        if (receiveCount == 1) {
+                            Frame.Text("""{"setupComplete":{}}""")
+                        } else {
+                            throw IOException("Connection reset by peer")
+                        }
+                    }
+                }
+
+            val providerError = createProvider { wsSession }
+            val transportEvents = mutableListOf<LiveLlmEvent>()
+            providerError.withSession(apiKey = "key-123", tools = emptyList()) { session ->
+                transportEvents.addAll(session.events.toList())
+            }
+
+            assertEquals(1, transportEvents.size)
+            assertTrue(
+                (transportEvents.single() as LiveLlmEvent.Error)
+                    .message
+                    .contains("Connection reset by peer"),
             )
         }
 
+    private suspend fun CoroutineScope.collectSingleServerFrame(
+        frameJson: String,
+        tools: List<AppFunctionMetadata> = emptyList(),
+    ): List<LiveLlmEvent> {
+        val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+        incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+        incomingFrames.trySend(Frame.Text(frameJson))
+        incomingFrames.close()
+
+        val provider =
+            createProvider {
+                createMockWebSocketSession(coroutineContext, incomingFrames)
+            }
+
+        val receivedEvents = mutableListOf<LiveLlmEvent>()
+        provider.withSession(apiKey = "key-123", tools = tools) { session ->
+            receivedEvents.addAll(session.events.toList())
+        }
+        return receivedEvents
+    }
+
+    private fun createProvider(connector: suspend (String) -> WebSocketSession): GeminiLiveProviderImpl =
+        GeminiLiveProviderImpl(
+            httpClient = httpClient,
+            toolConverter = toolConverter,
+            webSocketConnector = connector,
+        )
+
     private fun createMockWebSocketSession(
-        context: kotlin.coroutines.CoroutineContext,
+        context: CoroutineContext,
         incomingFrames: Channel<Frame>,
         onSendText: (String) -> Unit = {},
+        onSendClose: (CloseReason?) -> Unit = {},
     ): WebSocketSession {
         val outgoingFrames = Channel<Frame>(Channel.UNLIMITED)
         return mockk<WebSocketSession>(relaxed = true).apply {
@@ -361,9 +638,10 @@ class GeminiLiveProviderImplTest {
             every { incoming } returns incomingFrames
             every { outgoing } returns outgoingFrames
             coEvery { send(any<Frame>()) } coAnswers {
-                val frame = firstArg<Frame>()
-                if (frame is Frame.Text) {
-                    onSendText(frame.readText())
+                when (val frame = firstArg<Frame>()) {
+                    is Frame.Text -> onSendText(frame.readText())
+                    is Frame.Close -> onSendClose(frame.readReason())
+                    else -> {}
                 }
             }
         }

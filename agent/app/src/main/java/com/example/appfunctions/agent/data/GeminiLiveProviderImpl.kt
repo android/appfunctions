@@ -16,25 +16,35 @@
 package com.example.appfunctions.agent.data
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.domain.DEFAULT_LIVE_OUTPUT_SAMPLE_RATE_HZ
 import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.LiveLlmProvider
 import com.example.appfunctions.agent.domain.LiveLlmSession
 import com.example.appfunctions.agent.domain.LlmResponsePart
 import com.example.appfunctions.agent.domain.ToolOutput
+import com.example.appfunctions.agent.domain.appfunction.findToolByName
+import com.example.appfunctions.agent.domain.appfunction.resolveToolName
+import com.example.appfunctions.agent.domain.appfunction.selectDistinctTools
+import com.example.appfunctions.agent.domain.toArgumentsMap
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
+import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -61,55 +71,63 @@ class GeminiLiveProviderImpl
     @Inject
     constructor(
         private val httpClient: HttpClient,
-        private val toolConverter: GeminiToolConverter,
-        private val settingsRepository: SettingsRepository,
+        private val toolConverter: GeminiLiveToolConverter,
     ) : LiveLlmProvider {
-        internal var webSocketConnector:
-            suspend (wsUrl: String, block: suspend WebSocketSession.() -> Unit) -> Unit =
-            { wsUrl, block ->
-                httpClient.webSocket(urlString = wsUrl, block = block)
-            }
+        private var webSocketConnector: suspend (wsUrl: String) -> WebSocketSession = { wsUrl ->
+            httpClient.webSocketSession(urlString = wsUrl)
+        }
+
+        @VisibleForTesting
+        internal constructor(
+            httpClient: HttpClient,
+            toolConverter: GeminiLiveToolConverter,
+            webSocketConnector: suspend (wsUrl: String) -> WebSocketSession,
+        ) : this(
+            httpClient = httpClient,
+            toolConverter = toolConverter,
+        ) {
+            this.webSocketConnector = webSocketConnector
+        }
 
         override suspend fun connect(
             apiKey: String,
             tools: List<AppFunctionMetadata>,
-            block: suspend (LiveLlmSession) -> Unit,
-        ) {
-            val selectedVoice = settingsRepository.geminiLiveVoice.first()
+            voice: GeminiLiveVoice,
+        ): LiveLlmSession {
             val wsUrl = "$GEMINI_LIVE_WS_URL?key=$apiKey"
-            webSocketConnector(wsUrl) {
-                val setupMessage = buildSetupMessage(tools = tools, voice = selectedVoice)
+            val webSocketSession = webSocketConnector(wsUrl)
+            try {
+                val setupMessage = buildSetupMessage(tools = tools, voice = voice)
                 Log.d(
                     TAG,
-                    "Sending Gemini Live setup for model $LIVE_MODEL_NAME (voice=${selectedVoice.apiName})",
+                    "Sending Gemini Live setup for model $LIVE_MODEL_NAME (voice=${voice.apiName})",
                 )
-                send(Frame.Text(setupMessage.toString()))
+                webSocketSession.send(Frame.Text(setupMessage.toString()))
 
                 val firstFrameText =
-                    receiveNextJsonText()
-                        ?: throw IllegalStateException(
-                            "WebSocket closed before setupComplete was received",
-                        )
+                    when (val firstFrame = webSocketSession.receiveNextFrame()) {
+                        is FrameReadResult.JsonText -> firstFrame.text
+                        is FrameReadResult.NormalClose ->
+                            throw IllegalStateException(
+                                "WebSocket closed before $KEY_SETUP_COMPLETE was received",
+                            )
+                        is FrameReadResult.ErrorClose ->
+                            throw IllegalStateException(
+                                "WebSocket failed before $KEY_SETUP_COMPLETE was received: ${firstFrame.message}",
+                                firstFrame.cause,
+                            )
+                    }
                 val firstJson = Json.parseToJsonElement(firstFrameText).jsonObject
-                if (!firstJson.containsKey("setupComplete")) {
+                if (!firstJson.containsKey(KEY_SETUP_COMPLETE)) {
                     throw IllegalStateException("Unexpected setup response: $firstFrameText")
                 }
 
-                val session = createSession(webSocketSession = this, tools = tools)
-                try {
-                    block(session)
-                } finally {
-                    try {
-                        close(
-                            CloseReason(
-                                CloseReason.Codes.NORMAL,
-                                "Session ended by client",
-                            ),
-                        )
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to close Gemini Live WebSocket cleanly", e)
-                    }
+                return createSession(webSocketSession = webSocketSession, tools = tools)
+            } catch (t: Throwable) {
+                withContext(NonCancellable) {
+                    closeWebSocketQuietly(webSocketSession)
                 }
+                throw t
             }
         }
 
@@ -121,12 +139,31 @@ class GeminiLiveProviderImpl
                 override val events: Flow<LiveLlmEvent> =
                     flow {
                         while (currentCoroutineContext().isActive && webSocketSession.isActive) {
-                            val messageText = webSocketSession.receiveNextJsonText() ?: break
+                            val messageText =
+                                when (val frameResult = webSocketSession.receiveNextFrame()) {
+                                    is FrameReadResult.JsonText -> frameResult.text
+                                    is FrameReadResult.NormalClose -> break
+                                    is FrameReadResult.ErrorClose -> {
+                                        emit(
+                                            LiveLlmEvent.Error(
+                                                message = frameResult.message,
+                                                cause = frameResult.cause,
+                                            ),
+                                        )
+                                        break
+                                    }
+                                }
                             val serverJson =
                                 try {
                                     Json.parseToJsonElement(messageText).jsonObject
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Failed to parse Gemini Live server frame", e)
+                                    emit(
+                                        LiveLlmEvent.Error(
+                                            message = "Failed to parse Gemini Live server frame",
+                                            cause = e,
+                                        ),
+                                    )
                                     continue
                                 }
 
@@ -136,8 +173,15 @@ class GeminiLiveProviderImpl
                         }
                     }
 
-                override suspend fun sendAudio(pcmBytes: ByteArray) {
-                    val realtimeInput = buildRealtimeAudioMessage(pcmBytes)
+                override suspend fun sendAudio(
+                    pcmBytes: ByteArray,
+                    sampleRateHz: Int,
+                ) {
+                    val realtimeInput =
+                        buildRealtimeAudioMessage(
+                            pcmBytes = pcmBytes,
+                            sampleRateHz = sampleRateHz,
+                        )
                     webSocketSession.send(Frame.Text(realtimeInput.toString()))
                 }
 
@@ -146,111 +190,267 @@ class GeminiLiveProviderImpl
                     Log.d(TAG, "Sending Gemini Live toolResponse: $toolResponseMessage")
                     webSocketSession.send(Frame.Text(toolResponseMessage.toString()))
                 }
+
+                override suspend fun close() {
+                    closeWebSocketQuietly(webSocketSession)
+                }
             }
 
-        private suspend fun WebSocketSession.receiveNextJsonText(): String? {
+        private suspend fun closeWebSocketQuietly(webSocketSession: WebSocketSession) {
+            try {
+                webSocketSession.close(
+                    CloseReason(
+                        CloseReason.Codes.NORMAL,
+                        CLOSE_REASON_CLIENT_ENDED,
+                    ),
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to close Gemini Live WebSocket cleanly", e)
+            }
+        }
+
+        private suspend fun WebSocketSession.receiveNextFrame(): FrameReadResult {
             while (isActive) {
                 val frame =
                     try {
                         incoming.receive()
-                    } catch (_: Exception) {
-                        return null
+                    } catch (_: ClosedReceiveChannelException) {
+                        return FrameReadResult.NormalClose
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Gemini Live WebSocket transport error", e)
+                        return FrameReadResult.ErrorClose(
+                            message = "WebSocket transport error: ${e.message}",
+                            cause = e,
+                        )
                     }
                 when (frame) {
-                    is Frame.Text -> return frame.readText()
-                    is Frame.Binary -> return frame.readBytes().decodeToString()
-                    is Frame.Close -> return null
+                    is Frame.Text -> return FrameReadResult.JsonText(frame.readText())
+                    is Frame.Binary -> return FrameReadResult.JsonText(frame.readBytes().decodeToString())
+                    is Frame.Close -> {
+                        val reason = frame.readReason()
+                        return if (reason != null && reason.code != CloseReason.Codes.NORMAL.code) {
+                            Log.w(
+                                TAG,
+                                "Gemini Live WebSocket closed by server: code=${reason.code}, message=${reason.message}",
+                            )
+                            FrameReadResult.ErrorClose(
+                                message =
+                                    "WebSocket closed by server (code=${reason.code}): ${reason.message}",
+                            )
+                        } else {
+                            FrameReadResult.NormalClose
+                        }
+                    }
                     else -> continue
                 }
             }
-            return null
+            return FrameReadResult.NormalClose
         }
 
-        internal fun parseServerMessage(
+        private fun parseServerMessage(
             serverJson: JsonObject,
             tools: List<AppFunctionMetadata>,
         ): List<LiveLlmEvent> {
-            val events = mutableListOf<LiveLlmEvent>()
-
-            val serverContent = serverJson["serverContent"]?.jsonObject
-            if (serverContent != null) {
-                val interrupted =
-                    serverContent["interrupted"]?.jsonPrimitive?.booleanOrNull ?: false
-                if (interrupted) {
-                    events.add(LiveLlmEvent.Interrupted)
-                }
-
-                val inputTranscription =
-                    serverContent["inputTranscription"]
-                        ?.jsonObject
-                        ?.get("text")
-                        ?.jsonPrimitive
-                        ?.contentOrNull
-                if (!inputTranscription.isNullOrEmpty()) {
-                    events.add(LiveLlmEvent.InputTranscription(inputTranscription))
-                }
-
-                val outputTranscription =
-                    serverContent["outputTranscription"]
-                        ?.jsonObject
-                        ?.get("text")
-                        ?.jsonPrimitive
-                        ?.contentOrNull
-                if (!outputTranscription.isNullOrEmpty()) {
-                    events.add(LiveLlmEvent.OutputTranscription(outputTranscription))
-                }
-
-                val parts = serverContent["modelTurn"]?.jsonObject?.get("parts")?.jsonArray
-                if (parts != null) {
-                    for (part in parts) {
-                        val inlineData = part.jsonObject["inlineData"]?.jsonObject ?: continue
-                        val mimeType =
-                            inlineData["mimeType"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val base64Data =
-                            inlineData["data"]?.jsonPrimitive?.contentOrNull ?: continue
-                        if (mimeType.startsWith("audio/pcm")) {
-                            val pcmBytes = Base64.getMimeDecoder().decode(base64Data)
-                            events.add(LiveLlmEvent.AudioChunk(pcmBytes))
-                        }
-                    }
-                }
-
-                val turnComplete =
-                    serverContent["turnComplete"]?.jsonPrimitive?.booleanOrNull ?: false
-                if (turnComplete) {
-                    events.add(LiveLlmEvent.TurnComplete)
-                }
-            }
-
-            val toolCallObj = serverJson["toolCall"]?.jsonObject
-            if (toolCallObj != null) {
-                val functionCalls =
-                    toolCallObj["functionCalls"]?.jsonArray ?: JsonArray(emptyList())
-                val parsedCalls =
-                    functionCalls.mapNotNull { callElement ->
-                        val callObj = callElement.jsonObject
-                        val callId = callObj["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val name =
-                            callObj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                        val matchingTool = toolConverter.findToolByName(name, tools)
-                        val argumentsMap = callObj["args"]?.jsonObject.toArgumentsMap()
-
-                        LlmResponsePart.ToolCall(
-                            packageName = matchingTool?.packageName ?: "",
-                            functionId = matchingTool?.id ?: name,
-                            arguments = argumentsMap,
-                            callId = callId,
+            return when {
+                KEY_SERVER_CONTENT in serverJson -> {
+                    val serverContent = serverJson[KEY_SERVER_CONTENT]?.jsonObject
+                    if (serverContent != null) {
+                        parseServerContent(serverContent)
+                    } else {
+                        listOf(
+                            LiveLlmEvent.Error(
+                                "Invalid '$KEY_SERVER_CONTENT' payload in server message: $serverJson",
+                            ),
                         )
                     }
-                if (parsedCalls.isNotEmpty()) {
-                    events.add(LiveLlmEvent.ToolCallRequest(parsedCalls))
+                }
+                KEY_TOOL_CALL in serverJson -> {
+                    val toolCallObj = serverJson[KEY_TOOL_CALL]?.jsonObject
+                    if (toolCallObj != null) {
+                        parseToolCall(toolCallObj, tools)
+                    } else {
+                        listOf(
+                            LiveLlmEvent.Error(
+                                "Invalid '$KEY_TOOL_CALL' payload in server message: $serverJson",
+                            ),
+                        )
+                    }
+                }
+                else -> emptyList()
+            }
+        }
+
+        private fun parseServerContent(serverContent: JsonObject): List<LiveLlmEvent> {
+            return when {
+                serverContent[KEY_INTERRUPTED]?.jsonPrimitive?.booleanOrNull == true -> {
+                    listOf(LiveLlmEvent.Interrupted)
+                }
+                serverContent[KEY_TURN_COMPLETE]?.jsonPrimitive?.booleanOrNull == true -> {
+                    listOf(LiveLlmEvent.TurnComplete)
+                }
+                KEY_INPUT_TRANSCRIPTION in serverContent -> {
+                    val text =
+                        serverContent[KEY_INPUT_TRANSCRIPTION]
+                            ?.jsonObject
+                            ?.get(KEY_TEXT)
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                    if (!text.isNullOrEmpty()) {
+                        listOf(LiveLlmEvent.InputTranscription(text))
+                    } else {
+                        emptyList()
+                    }
+                }
+                KEY_OUTPUT_TRANSCRIPTION in serverContent -> {
+                    val text =
+                        serverContent[KEY_OUTPUT_TRANSCRIPTION]
+                            ?.jsonObject
+                            ?.get(KEY_TEXT)
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                    if (!text.isNullOrEmpty()) {
+                        listOf(LiveLlmEvent.OutputTranscription(text))
+                    } else {
+                        emptyList()
+                    }
+                }
+                KEY_MODEL_TURN in serverContent -> {
+                    val modelTurn = serverContent[KEY_MODEL_TURN]?.jsonObject
+                    if (modelTurn != null) {
+                        parseModelTurn(modelTurn)
+                    } else {
+                        listOf(
+                            LiveLlmEvent.Error(
+                                "Invalid '$KEY_MODEL_TURN' payload in serverContent: $serverContent",
+                            ),
+                        )
+                    }
+                }
+                else -> emptyList()
+            }
+        }
+
+        private fun parseModelTurn(modelTurn: JsonObject): List<LiveLlmEvent> {
+            val parts =
+                modelTurn[KEY_PARTS]?.jsonArray
+                    ?: return listOf(
+                        LiveLlmEvent.Error("modelTurn is missing '$KEY_PARTS' array: $modelTurn"),
+                    )
+            val events = mutableListOf<LiveLlmEvent>()
+            for (part in parts) {
+                val partObj = part.jsonObject
+                val inlineData = partObj[KEY_INLINE_DATA]?.jsonObject ?: continue
+                val mimeType = inlineData[KEY_MIME_TYPE]?.jsonPrimitive?.contentOrNull
+                if (mimeType == null || !mimeType.startsWith(MIME_TYPE_AUDIO_PCM_PREFIX)) {
+                    events.add(
+                        LiveLlmEvent.Error(
+                            "Unsupported inlineData mimeType in modelTurn: $mimeType",
+                        ),
+                    )
+                    continue
+                }
+                val base64Data = inlineData[KEY_DATA]?.jsonPrimitive?.contentOrNull
+                if (base64Data.isNullOrEmpty()) {
+                    events.add(
+                        LiveLlmEvent.Error("inlineData is missing audio '$KEY_DATA' in modelTurn"),
+                    )
+                    continue
+                }
+                try {
+                    val pcmBytes = Base64.getMimeDecoder().decode(base64Data)
+                    val sampleRateHz = extractSampleRateHz(mimeType)
+                    events.add(
+                        LiveLlmEvent.AudioChunk(
+                            pcmBytes = pcmBytes,
+                            sampleRateHz = sampleRateHz,
+                        ),
+                    )
+                } catch (e: IllegalArgumentException) {
+                    Log.w(TAG, "Failed to decode base64 PCM audio chunk", e)
+                    events.add(
+                        LiveLlmEvent.Error(
+                            message = "Failed to decode base64 PCM audio chunk",
+                            cause = e,
+                        ),
+                    )
                 }
             }
-
             return events
         }
 
-        internal fun buildSetupMessage(
+        private fun extractSampleRateHz(mimeType: String): Int {
+            val rateParam =
+                mimeType
+                    .split(';')
+                    .map { it.trim() }
+                    .firstOrNull { it.startsWith(MIME_TYPE_RATE_PARAM, ignoreCase = true) }
+            val parsedRate = rateParam?.substringAfter('=')?.toIntOrNull()
+            return parsedRate ?: DEFAULT_LIVE_OUTPUT_SAMPLE_RATE_HZ
+        }
+
+        private fun parseToolCall(
+            toolCallObj: JsonObject,
+            tools: List<AppFunctionMetadata>,
+        ): List<LiveLlmEvent> {
+            val functionCalls =
+                toolCallObj[KEY_FUNCTION_CALLS]?.jsonArray
+                    ?: return listOf(
+                        LiveLlmEvent.Error(
+                            "toolCall is missing '$KEY_FUNCTION_CALLS' array: $toolCallObj",
+                        ),
+                    )
+            if (functionCalls.isEmpty()) {
+                return listOf(
+                    LiveLlmEvent.Error("toolCall '$KEY_FUNCTION_CALLS' array is empty"),
+                )
+            }
+
+            val events = mutableListOf<LiveLlmEvent>()
+            val validCalls = mutableListOf<LlmResponsePart.ToolCall>()
+
+            for (callElement in functionCalls) {
+                val callObj = callElement.jsonObject
+                val callId = callObj[KEY_ID]?.jsonPrimitive?.contentOrNull
+                if (callId.isNullOrBlank()) {
+                    events.add(
+                        LiveLlmEvent.Error("Function call missing '$KEY_ID' in response: $callObj"),
+                    )
+                    continue
+                }
+                val name = callObj[KEY_NAME]?.jsonPrimitive?.contentOrNull
+                if (name.isNullOrBlank()) {
+                    events.add(
+                        LiveLlmEvent.Error("Called function without a '$KEY_NAME': $callObj"),
+                    )
+                    continue
+                }
+                val matchingTool = toolConverter.findToolByName(name, tools)
+                if (matchingTool == null) {
+                    events.add(
+                        LiveLlmEvent.Error("Called unknown function: $name"),
+                    )
+                    continue
+                }
+                val argumentsMap = callObj[KEY_ARGS]?.jsonObject.toArgumentsMap()
+                validCalls.add(
+                    LlmResponsePart.ToolCall(
+                        packageName = matchingTool.packageName,
+                        functionId = matchingTool.id,
+                        arguments = argumentsMap,
+                        callId = callId,
+                    ),
+                )
+            }
+
+            if (validCalls.isNotEmpty()) {
+                events.add(LiveLlmEvent.ToolCallRequest(validCalls))
+            }
+            return events
+        }
+
+        private fun buildSetupMessage(
             tools: List<AppFunctionMetadata>,
             voice: GeminiLiveVoice = GeminiLiveVoice.DEFAULT,
         ): JsonObject {
@@ -259,7 +459,7 @@ class GeminiLiveProviderImpl
                     .selectDistinctTools(tools)
                     .mapNotNull { tool ->
                         try {
-                            toolConverter.convertForLiveApi(tool)
+                            toolConverter.convert(tool)
                         } catch (e: IllegalArgumentException) {
                             Log.e(TAG, "Failed to convert tool ${tool.id}: ${e.message}", e)
                             null
@@ -268,26 +468,26 @@ class GeminiLiveProviderImpl
 
             return buildJsonObject {
                 put(
-                    "setup",
+                    KEY_SETUP,
                     buildJsonObject {
-                        put("model", LIVE_MODEL_NAME)
+                        put(KEY_MODEL, LIVE_MODEL_NAME)
                         put(
-                            "generationConfig",
+                            KEY_GENERATION_CONFIG,
                             buildJsonObject {
                                 put(
-                                    "responseModalities",
-                                    buildJsonArray { add(JsonPrimitive("AUDIO")) },
+                                    KEY_RESPONSE_MODALITIES,
+                                    buildJsonArray { add(JsonPrimitive(VALUE_MODALITY_AUDIO)) },
                                 )
                                 put(
-                                    "speechConfig",
+                                    KEY_SPEECH_CONFIG,
                                     buildJsonObject {
                                         put(
-                                            "voiceConfig",
+                                            KEY_VOICE_CONFIG,
                                             buildJsonObject {
                                                 put(
-                                                    "prebuiltVoiceConfig",
+                                                    KEY_PREBUILT_VOICE_CONFIG,
                                                     buildJsonObject {
-                                                        put("voiceName", voice.apiName)
+                                                        put(KEY_VOICE_NAME, voice.apiName)
                                                     },
                                                 )
                                             },
@@ -297,14 +497,14 @@ class GeminiLiveProviderImpl
                             },
                         )
                         put(
-                            "systemInstruction",
+                            KEY_SYSTEM_INSTRUCTION,
                             buildJsonObject {
                                 put(
-                                    "parts",
+                                    KEY_PARTS,
                                     buildJsonArray {
                                         add(
                                             buildJsonObject {
-                                                put("text", getSystemInstruction())
+                                                put(KEY_TEXT, getSystemInstruction())
                                             },
                                         )
                                     },
@@ -313,12 +513,12 @@ class GeminiLiveProviderImpl
                         )
                         if (functionDeclarations.isNotEmpty()) {
                             put(
-                                "tools",
+                                KEY_TOOLS,
                                 buildJsonArray {
                                     add(
                                         buildJsonObject {
                                             put(
-                                                "functionDeclarations",
+                                                KEY_FUNCTION_DECLARATIONS,
                                                 JsonArray(functionDeclarations),
                                             )
                                         },
@@ -326,24 +526,27 @@ class GeminiLiveProviderImpl
                                 },
                             )
                         }
-                        put("inputAudioTranscription", buildJsonObject {})
-                        put("outputAudioTranscription", buildJsonObject {})
+                        put(KEY_INPUT_AUDIO_TRANSCRIPTION, buildJsonObject {})
+                        put(KEY_OUTPUT_AUDIO_TRANSCRIPTION, buildJsonObject {})
                     },
                 )
             }
         }
 
-        internal fun buildRealtimeAudioMessage(pcmBytes: ByteArray): JsonObject {
+        private fun buildRealtimeAudioMessage(
+            pcmBytes: ByteArray,
+            sampleRateHz: Int,
+        ): JsonObject {
             val base64Audio = Base64.getEncoder().encodeToString(pcmBytes)
             return buildJsonObject {
                 put(
-                    "realtimeInput",
+                    KEY_REALTIME_INPUT,
                     buildJsonObject {
                         put(
-                            "audio",
+                            KEY_AUDIO,
                             buildJsonObject {
-                                put("mimeType", INPUT_AUDIO_MIME_TYPE)
-                                put("data", base64Audio)
+                                put(KEY_MIME_TYPE, "$MIME_TYPE_AUDIO_PCM_PREFIX;$MIME_TYPE_RATE_PARAM$sampleRateHz")
+                                put(KEY_DATA, base64Audio)
                             },
                         )
                     },
@@ -351,16 +554,16 @@ class GeminiLiveProviderImpl
             }
         }
 
-        internal fun buildToolResponseMessage(
+        private fun buildToolResponseMessage(
             toolOutputs: List<ToolOutput>,
             tools: List<AppFunctionMetadata>,
         ): JsonObject {
             return buildJsonObject {
                 put(
-                    "toolResponse",
+                    KEY_TOOL_RESPONSE,
                     buildJsonObject {
                         put(
-                            "functionResponses",
+                            KEY_FUNCTION_RESPONSES,
                             buildJsonArray {
                                 for (output in toolOutputs) {
                                     val mappedName =
@@ -374,13 +577,13 @@ class GeminiLiveProviderImpl
                                     add(
                                         buildJsonObject {
                                             if (output.callId.isNotEmpty()) {
-                                                put("id", output.callId)
+                                                put(KEY_ID, output.callId)
                                             }
-                                            put("name", mappedName)
+                                            put(KEY_NAME, mappedName)
                                             put(
-                                                "response",
+                                                KEY_RESPONSE,
                                                 buildJsonObject {
-                                                    put("result", parsedResult)
+                                                    put(KEY_RESULT, parsedResult)
                                                 },
                                             )
                                         },
@@ -405,11 +608,67 @@ class GeminiLiveProviderImpl
                 """.trimIndent()
         }
 
+        private sealed class FrameReadResult {
+            data class JsonText(val text: String) : FrameReadResult()
+
+            object NormalClose : FrameReadResult()
+
+            data class ErrorClose(
+                val message: String,
+                val cause: Throwable? = null,
+            ) : FrameReadResult()
+        }
+
         companion object {
             private const val TAG = "GeminiLiveProvider"
             const val LIVE_MODEL_NAME = "models/gemini-3.8-live"
-            private const val INPUT_AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
             private const val GEMINI_LIVE_WS_URL =
                 "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+            private const val CLOSE_REASON_CLIENT_ENDED = "Session ended by client"
+
+            private const val KEY_SETUP = "setup"
+            private const val KEY_SETUP_COMPLETE = "setupComplete"
+            private const val KEY_MODEL = "model"
+            private const val KEY_GENERATION_CONFIG = "generationConfig"
+            private const val KEY_RESPONSE_MODALITIES = "responseModalities"
+            private const val VALUE_MODALITY_AUDIO = "AUDIO"
+            private const val KEY_SPEECH_CONFIG = "speechConfig"
+            private const val KEY_VOICE_CONFIG = "voiceConfig"
+            private const val KEY_PREBUILT_VOICE_CONFIG = "prebuiltVoiceConfig"
+            private const val KEY_VOICE_NAME = "voiceName"
+            private const val KEY_SYSTEM_INSTRUCTION = "systemInstruction"
+            private const val KEY_PARTS = "parts"
+            private const val KEY_TEXT = "text"
+            private const val KEY_TOOLS = "tools"
+            private const val KEY_FUNCTION_DECLARATIONS = "functionDeclarations"
+            private const val KEY_INPUT_AUDIO_TRANSCRIPTION = "inputAudioTranscription"
+            private const val KEY_OUTPUT_AUDIO_TRANSCRIPTION = "outputAudioTranscription"
+
+            private const val KEY_SERVER_CONTENT = "serverContent"
+            private const val KEY_INTERRUPTED = "interrupted"
+            private const val KEY_INPUT_TRANSCRIPTION = "inputTranscription"
+            private const val KEY_OUTPUT_TRANSCRIPTION = "outputTranscription"
+            private const val KEY_MODEL_TURN = "modelTurn"
+            private const val KEY_INLINE_DATA = "inlineData"
+            private const val KEY_MIME_TYPE = "mimeType"
+            private const val KEY_DATA = "data"
+            private const val KEY_TURN_COMPLETE = "turnComplete"
+
+            private const val KEY_TOOL_CALL = "toolCall"
+            private const val KEY_FUNCTION_CALLS = "functionCalls"
+            private const val KEY_ID = "id"
+            private const val KEY_NAME = "name"
+            private const val KEY_ARGS = "args"
+
+            private const val KEY_REALTIME_INPUT = "realtimeInput"
+            private const val KEY_AUDIO = "audio"
+
+            private const val KEY_TOOL_RESPONSE = "toolResponse"
+            private const val KEY_FUNCTION_RESPONSES = "functionResponses"
+            private const val KEY_RESPONSE = "response"
+            private const val KEY_RESULT = "result"
+
+            private const val MIME_TYPE_AUDIO_PCM_PREFIX = "audio/pcm"
+            private const val MIME_TYPE_RATE_PARAM = "rate="
         }
     }
