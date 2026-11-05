@@ -18,7 +18,6 @@ package com.example.appfunctions.agent.data
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import com.example.appfunctions.agent.domain.DEFAULT_LIVE_OUTPUT_SAMPLE_RATE_HZ
 import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.LiveLlmProvider
 import com.example.appfunctions.agent.domain.LiveLlmSession
@@ -68,39 +67,34 @@ import javax.inject.Singleton
  */
 @Singleton
 class GeminiLiveProviderImpl
-    @Inject
-    constructor(
-        private val httpClient: HttpClient,
+    @VisibleForTesting
+    internal constructor(
         private val toolConverter: GeminiLiveToolConverter,
+        private val webSocketConnector: suspend (wsUrl: String) -> WebSocketSession,
     ) : LiveLlmProvider {
-        private var webSocketConnector: suspend (wsUrl: String) -> WebSocketSession = { wsUrl ->
-            httpClient.webSocketSession(urlString = wsUrl)
-        }
-
-        @VisibleForTesting
-        internal constructor(
+        @Inject
+        constructor(
             httpClient: HttpClient,
             toolConverter: GeminiLiveToolConverter,
-            webSocketConnector: suspend (wsUrl: String) -> WebSocketSession,
         ) : this(
-            httpClient = httpClient,
             toolConverter = toolConverter,
-        ) {
-            this.webSocketConnector = webSocketConnector
-        }
+            webSocketConnector = { wsUrl -> httpClient.webSocketSession(urlString = wsUrl) },
+        )
 
         override suspend fun connect(
             apiKey: String,
             tools: List<AppFunctionMetadata>,
-            voice: GeminiLiveVoice,
+            voiceName: String?,
         ): LiveLlmSession {
+            val resolvedVoiceName =
+                voiceName?.takeIf { it.isNotBlank() } ?: GeminiLiveVoice.DEFAULT.apiName
             val wsUrl = "$GEMINI_LIVE_WS_URL?key=$apiKey"
             val webSocketSession = webSocketConnector(wsUrl)
             try {
-                val setupMessage = buildSetupMessage(tools = tools, voice = voice)
+                val setupMessage = buildSetupMessage(tools = tools, voiceName = resolvedVoiceName)
                 Log.d(
                     TAG,
-                    "Sending Gemini Live setup for model $LIVE_MODEL_NAME (voice=${voice.apiName})",
+                    "Sending Gemini Live setup for model $LIVE_MODEL_NAME (voice=$resolvedVoiceName)",
                 )
                 webSocketSession.send(Frame.Text(setupMessage.toString()))
 
@@ -387,7 +381,7 @@ class GeminiLiveProviderImpl
                     .map { it.trim() }
                     .firstOrNull { it.startsWith(MIME_TYPE_RATE_PARAM, ignoreCase = true) }
             val parsedRate = rateParam?.substringAfter('=')?.toIntOrNull()
-            return parsedRate ?: DEFAULT_LIVE_OUTPUT_SAMPLE_RATE_HZ
+            return parsedRate ?: DEFAULT_OUTPUT_SAMPLE_RATE_HZ
         }
 
         private fun parseToolCall(
@@ -452,7 +446,7 @@ class GeminiLiveProviderImpl
 
         private fun buildSetupMessage(
             tools: List<AppFunctionMetadata>,
-            voice: GeminiLiveVoice = GeminiLiveVoice.DEFAULT,
+            voiceName: String,
         ): JsonObject {
             val functionDeclarations =
                 toolConverter
@@ -487,7 +481,7 @@ class GeminiLiveProviderImpl
                                                 put(
                                                     KEY_PREBUILT_VOICE_CONFIG,
                                                     buildJsonObject {
-                                                        put(KEY_VOICE_NAME, voice.apiName)
+                                                        put(KEY_VOICE_NAME, voiceName)
                                                     },
                                                 )
                                             },
@@ -622,6 +616,8 @@ class GeminiLiveProviderImpl
         companion object {
             private const val TAG = "GeminiLiveProvider"
             const val LIVE_MODEL_NAME = "models/gemini-3.8-live"
+            const val DEFAULT_INPUT_SAMPLE_RATE_HZ = 16_000
+            const val DEFAULT_OUTPUT_SAMPLE_RATE_HZ = 24_000
             private const val GEMINI_LIVE_WS_URL =
                 "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
             private const val CLOSE_REASON_CLIENT_ENDED = "Session ended by client"

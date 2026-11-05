@@ -24,7 +24,6 @@ import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.withSession
-import io.ktor.client.HttpClient
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
@@ -55,7 +54,6 @@ import java.util.Base64
 import kotlin.coroutines.CoroutineContext
 
 class GeminiLiveProviderImplTest {
-    private lateinit var httpClient: HttpClient
     private lateinit var toolConverter: GeminiLiveToolConverter
 
     @Before
@@ -66,7 +64,6 @@ class GeminiLiveProviderImplTest {
         every { Log.w(any<String>(), any<String>(), any()) } returns 0
         every { Log.e(any(), any(), any()) } returns 0
 
-        httpClient = mockk(relaxed = true)
         toolConverter = GeminiLiveToolConverter(GeminiToolConverter())
     }
 
@@ -93,7 +90,7 @@ class GeminiLiveProviderImplTest {
             provider.withSession(
                 apiKey = "secret-key",
                 tools = listOf(tool),
-                voice = GeminiLiveVoice.AOEDE,
+                voiceName = GeminiLiveVoice.AOEDE.apiName,
             ) {}
 
             assertTrue(capturedWsUrl!!.endsWith("?key=secret-key"))
@@ -621,7 +618,6 @@ class GeminiLiveProviderImplTest {
 
     private fun createProvider(connector: suspend (String) -> WebSocketSession): GeminiLiveProviderImpl =
         GeminiLiveProviderImpl(
-            httpClient = httpClient,
             toolConverter = toolConverter,
             webSocketConnector = connector,
         )

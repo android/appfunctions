@@ -15,193 +15,179 @@
  */
 package com.example.appfunctions.agent.data
 
-import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
-import androidx.appfunctions.metadata.AppFunctionIntTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
-import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
-import androidx.appfunctions.metadata.AppFunctionParameterMetadata
-import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
-import androidx.appfunctions.metadata.AppFunctionResponseMetadata
-import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class GeminiLiveToolConverterTest {
+    private lateinit var geminiToolConverter: GeminiToolConverter
     private lateinit var converter: GeminiLiveToolConverter
+    private lateinit var tool: AppFunctionMetadata
 
     @Before
     fun setUp() {
-        converter = GeminiLiveToolConverter(GeminiToolConverter())
+        geminiToolConverter = mockk()
+        converter = GeminiLiveToolConverter(geminiToolConverter)
+        tool = mockk()
     }
 
     @Test
-    fun convert_normalizesStringEnumsAndStripsFileReferenceFormat() {
-        val enumParam =
-            AppFunctionParameterMetadata(
-                name = "mode",
-                isRequired = true,
-                dataType =
-                    AppFunctionStringTypeMetadata(isNullable = false, enumValues = setOf("A", "B")),
-                description = "Mode parameter",
-            )
-        val uriParam =
-            AppFunctionParameterMetadata(
-                name = "wallpaperUri",
-                isRequired = false,
-                dataType = AppFunctionStringTypeMetadata(isNullable = true),
-                description = "Wallpaper URI",
-            )
-        val tool = createTool(listOf(enumParam, uriParam))
-
-        val liveSchema = converter.convert(tool)
-
-        val expectedJson =
+    fun convert_stringEnum_replacesEnumsKeyWithEnum() {
+        every { geminiToolConverter.convert(tool) } returns
             Json.parseToJsonElement(
                 """
-            {
-                "name": "com_example_my_function",
-                "description": "Test function",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "mode": {
-                            "type": "string",
-                            "enum": ["A", "B"],
-                            "description": "Mode parameter"
-                        },
-                        "wallpaperUri": {
-                            "type": "string",
-                            "description": "Wallpaper URI"
+                {
+                    "name": "com_example_fn",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enums": ["A", "B"]
+                            }
                         }
-                    },
-                    "required": ["mode"]
+                    }
                 }
-            }
-        """,
-            )
+                """.trimIndent(),
+            ).jsonObject
 
-        assertEquals(expectedJson, liveSchema)
+        val expected =
+            Json.parseToJsonElement(
+                """
+                {
+                    "name": "com_example_fn",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enum": ["A", "B"]
+                            }
+                        }
+                    }
+                }
+                """.trimIndent(),
+            ).jsonObject
+
+        assertEquals(expected, converter.convert(tool))
     }
 
     @Test
-    fun convert_omitsEnumForIntParameterWithEnumValues() {
-        val intEnumParam =
-            AppFunctionParameterMetadata(
-                name = "priority",
-                isRequired = true,
-                dataType =
-                    AppFunctionIntTypeMetadata(isNullable = false, enumValues = setOf(1, 2, 3)),
-                description = "Priority level",
-            )
-        val tool = createTool(listOf(intEnumParam))
-
-        val liveSchema = converter.convert(tool)
-
-        val expectedJson =
+    fun convert_nonStringEnum_omitsEnumsKey() {
+        every { geminiToolConverter.convert(tool) } returns
             Json.parseToJsonElement(
                 """
-            {
-                "name": "com_example_my_function",
-                "description": "Test function",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "priority": {
-                            "type": "integer",
-                            "description": "Priority level"
+                {
+                    "name": "com_example_fn",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "priority": {
+                                "type": "integer",
+                                "enums": [1, 2, 3]
+                            }
                         }
-                    },
-                    "required": ["priority"]
+                    }
                 }
-            }
-        """,
-            )
+                """.trimIndent(),
+            ).jsonObject
 
-        assertEquals(expectedJson, liveSchema)
+        val expected =
+            Json.parseToJsonElement(
+                """
+                {
+                    "name": "com_example_fn",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "priority": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+                """.trimIndent(),
+            ).jsonObject
+
+        assertEquals(expected, converter.convert(tool))
     }
 
     @Test
-    fun convert_omitsFileReferenceFormatForUriObjectAndReferenceParameters() {
-        val uriObjectParam =
-            AppFunctionParameterMetadata(
-                name = "directUri",
-                isRequired = true,
-                dataType =
-                    AppFunctionObjectTypeMetadata(
-                        properties = emptyMap(),
-                        required = emptyList(),
-                        qualifiedName = "android.net.Uri",
-                        isNullable = false,
-                    ),
-                description = "Direct Uri object parameter",
-            )
-        val uriRefParam =
-            AppFunctionParameterMetadata(
-                name = "refUri",
-                isRequired = false,
-                dataType =
-                    AppFunctionReferenceTypeMetadata(
-                        referenceDataType = "android.net.Uri",
-                        isNullable = true,
-                    ),
-                description = "Reference Uri parameter",
-            )
-        val tool = createTool(listOf(uriObjectParam, uriRefParam))
-
-        val liveSchema = converter.convert(tool)
-
-        val expectedJson =
+    fun convert_fileReferenceFormat_stripsFileReferenceRecursivelyAndKeepsOtherFormats() {
+        every { geminiToolConverter.convert(tool) } returns
             Json.parseToJsonElement(
                 """
-            {
-                "name": "com_example_my_function",
-                "description": "Test function",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "directUri": {
-                            "type": "string",
-                            "description": "Direct Uri object parameter"
-                        },
-                        "refUri": {
-                            "type": "string",
-                            "description": "Reference Uri parameter"
+                {
+                    "name": "com_example_fn",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "wallpaperUri": {
+                                "type": "string",
+                                "format": "file_reference"
+                            },
+                            "nested": {
+                                "type": "object",
+                                "properties": {
+                                    "attachmentUri": {
+                                        "type": "string",
+                                        "format": "file_reference"
+                                    },
+                                    "createdAt": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
                         }
-                    },
-                    "required": ["directUri"]
+                    }
                 }
-            }
-        """,
-            )
+                """.trimIndent(),
+            ).jsonObject
 
-        assertEquals(expectedJson, liveSchema)
+        val expected =
+            Json.parseToJsonElement(
+                """
+                {
+                    "name": "com_example_fn",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "wallpaperUri": {
+                                "type": "string"
+                            },
+                            "nested": {
+                                "type": "object",
+                                "properties": {
+                                    "attachmentUri": {
+                                        "type": "string"
+                                    },
+                                    "createdAt": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                """.trimIndent(),
+            ).jsonObject
+
+        assertEquals(expected, converter.convert(tool))
     }
 
     @Test
     fun getToolName_delegatesToGeminiToolConverter() {
-        val tool = createTool(emptyList())
-        assertEquals("com_example_my_function", converter.getToolName(tool))
-    }
+        every { geminiToolConverter.getToolName(tool) } returns "delegated_tool_name"
 
-    private fun createTool(parameters: List<AppFunctionParameterMetadata>): AppFunctionMetadata =
-        AppFunctionMetadata(
-            id = "com.example.my_function",
-            packageName = "com.example",
-            isEnabled = true,
-            schema = null,
-            parameters = parameters,
-            response =
-                AppFunctionResponseMetadata(
-                    valueType = AppFunctionStringTypeMetadata(isNullable = false),
-                    description = "",
-                ),
-            components = AppFunctionComponentsMetadata(emptyMap()),
-            description = "Test function",
-            deprecation = null,
-        )
+        assertEquals("delegated_tool_name", converter.getToolName(tool))
+        verify(exactly = 1) { geminiToolConverter.getToolName(tool) }
+    }
 }
