@@ -37,6 +37,15 @@ interface SettingsRepository {
     /** Sets the service tier requested for LLM API calls. */
     suspend fun setServiceTier(tier: ServiceTier)
 
+    /**
+     * Flow of whether progressive disclosure is enabled for tool selection. When enabled, the model
+     * first sees one-line app descriptions and expands app and function details on demand.
+     */
+    val progressiveToolDisclosure: Flow<Boolean>
+
+    /** Sets whether progressive disclosure is enabled for tool selection. */
+    suspend fun setProgressiveToolDisclosure(enabled: Boolean)
+
     /** Flow of the prebuilt voice selected for Gemini Live sessions. */
     val geminiLiveVoice: Flow<GeminiLiveVoice>
 

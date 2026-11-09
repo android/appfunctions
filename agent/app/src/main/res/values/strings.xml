@@ -86,6 +86,8 @@
     <string name="settings_gemini_api_key">Gemini API Key</string>
     <string name="settings_service_tier">Service tier</string>
     <string name="settings_service_tier_description">Priority lowers response latency but requires Tier 2+ billing and costs more.</string>
+    <string name="settings_progressive_tool_disclosure">Progressive tool disclosure</string>
+    <string name="settings_progressive_tool_disclosure_description">Show the model one-line app descriptions first and let it expand app and function details on demand.</string>
     <string name="settings_service_tier_standard">Standard</string>
     <string name="settings_service_tier_priority">Priority</string>
     <string name="settings_provider_title">Preferred Provider</string>

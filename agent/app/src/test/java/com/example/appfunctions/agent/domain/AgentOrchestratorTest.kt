@@ -34,7 +34,9 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResul
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.ResolveAppInstructionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
+import com.example.appfunctions.agent.domain.appfunction.ToolSelectionManager
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -53,6 +55,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,6 +78,8 @@ class AgentOrchestratorTest {
     private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase = mockk()
     private val sendMessageUseCase: SendMessageUseCase = mockk(relaxed = true)
     private val savePendingIntentUseCase: SavePendingIntentUseCase = mockk(relaxed = true)
+    private val resolveAppInstructionsUseCase: ResolveAppInstructionsUseCase = mockk()
+    private lateinit var toolSelectionManager: ToolSelectionManager
 
     private lateinit var agentOrchestrator: AgentOrchestrator
 
@@ -81,6 +87,10 @@ class AgentOrchestratorTest {
     fun setUp() {
         every { getAppFunctionsUseCase(any()) } returns flowOf(emptyMap())
         coEvery { resolveRemoteFileToLocalUriUseCase(any(), any(), any()) } answers { thirdArg() }
+        coEvery { resolveAppInstructionsUseCase(any()) } answers {
+            "Instructions for ${firstArg<AppFunctionPackageMetadata>().packageName}. More details."
+        }
+        toolSelectionManager = ToolSelectionManager()
 
         agentOrchestrator =
             AgentOrchestrator(
@@ -96,6 +106,8 @@ class AgentOrchestratorTest {
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
                 savePendingIntentUseCase = savePendingIntentUseCase,
+                resolveAppInstructionsUseCase = resolveAppInstructionsUseCase,
+                toolSelectionManager = toolSelectionManager,
             )
     }
 
@@ -447,6 +459,186 @@ class AgentOrchestratorTest {
         }
     }
 
+    @Test
+    fun `progressive disclosure expands app then functions before executing`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "Create a note")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            val notesPkg = "com.example.notes"
+            val createNote = createMockTool(notesPkg, "createNote")
+            val deleteNote = createMockTool(notesPkg, "deleteNote")
+            mockAppFunctions(listOf(createNote, deleteNote))
+            setupDefaultMocks(
+                threadId,
+                message,
+                thread,
+                llmProvider = llmProvider,
+                progressiveToolDisclosure = true,
+            )
+
+            val capturedTools = mutableListOf<List<AppFunctionMetadata>>()
+            val capturedInputs = mutableListOf<LlmInput>()
+            coEvery {
+                llmProvider.generateResponse(
+                    any(),
+                    capture(capturedInputs),
+                    capture(capturedTools),
+                    any(),
+                    any(),
+                    any(),
+                )
+            } returnsMany
+                listOf(
+                    LlmResponse.Success(
+                        "interaction_1",
+                        listOf(
+                            LlmResponsePart.ToolCall(
+                                packageName = ToolSelectionManager.META_TOOL_PACKAGE,
+                                functionId = ToolSelectionManager.EXPAND_TOOL_DESCRIPTION,
+                                arguments = mapOf("package_name" to notesPkg),
+                                callId = "call_1",
+                            ),
+                        ),
+                    ),
+                    LlmResponse.Success(
+                        "interaction_2",
+                        listOf(
+                            LlmResponsePart.ToolCall(
+                                packageName = ToolSelectionManager.META_TOOL_PACKAGE,
+                                functionId = ToolSelectionManager.EXPAND_FUNCTION_DECLARATIONS,
+                                arguments = mapOf("function_ids" to listOf("createNote")),
+                                callId = "call_2",
+                            ),
+                        ),
+                    ),
+                    LlmResponse.Success(
+                        "interaction_3",
+                        listOf(
+                            LlmResponsePart.ToolCall(
+                                packageName = notesPkg,
+                                functionId = "createNote",
+                                arguments = emptyMap(),
+                                callId = "call_3",
+                            ),
+                        ),
+                    ),
+                    LlmResponse.Success("interaction_4", listOf(LlmResponsePart.Text("Done"))),
+                )
+            every {
+                convertInputToAppFunctionDataUseCase(any(), any(), any())
+            } returns Result.success(AppFunctionData.EMPTY)
+            coEvery {
+                executeAppFunctionUseCase(function = createNote, parameters = any(), threadId = threadId)
+            } returns ExecuteAppFunctionResult.Data(AppFunctionData.EMPTY, "{\"ok\":true}")
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            assertEquals(4, capturedTools.size)
+            val metaToolIds =
+                listOf(
+                    ToolSelectionManager.EXPAND_TOOL_DESCRIPTION,
+                    ToolSelectionManager.EXPAND_FUNCTION_DECLARATIONS,
+                )
+            // No app function declarations until the model expands them.
+            assertEquals(metaToolIds, capturedTools[0].map { it.id })
+            assertEquals(metaToolIds, capturedTools[1].map { it.id })
+            assertEquals(metaToolIds + "createNote", capturedTools[2].map { it.id })
+            assertEquals(metaToolIds + "createNote", capturedTools[3].map { it.id })
+
+            // The app instructions are truncated in the first turn and complete after expansion.
+            val catalogDescription = capturedTools[0][0].description
+            assertTrue(catalogDescription.contains("- $notesPkg: Instructions for $notesPkg."))
+            assertFalse(catalogDescription.contains("More details."))
+            val expandResult = (capturedInputs[1] as LlmInput.ToolResponse).outputs.single()
+            assertTrue(expandResult.result.contains("More details."))
+            assertTrue(expandResult.result.contains("deleteNote"))
+
+            coVerify(exactly = 1) { executeAppFunctionUseCase(any(), any(), any()) }
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Done",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    attachments = any(),
+                )
+            }
+        }
+
+    @Test
+    fun `progressive disclosure is skipped when targetPackageName is set`() =
+        runTest {
+            val threadId = "thread_1"
+            val targetPkg = "com.example.notes"
+            val message =
+                createUserMessage(threadId, "Create a note", targetPackageName = targetPkg)
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            val tool = createMockTool(targetPkg, "createNote")
+            mockAppFunctions(listOf(tool))
+            setupDefaultMocks(
+                threadId,
+                message,
+                thread,
+                llmProvider = llmProvider,
+                progressiveToolDisclosure = true,
+            )
+            coEvery {
+                llmProvider.generateResponse(any(), any(), any(), any(), any(), any())
+            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Ok")))
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = null,
+                    input = any(),
+                    tools = listOf(tool),
+                    apiKey = any(),
+                    modelName = any(),
+                )
+            }
+        }
+
+    @Test
+    fun `progressive disclosure disabled sends all tools`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "Create a note")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            val tools =
+                listOf(
+                    createMockTool("com.example.notes", "createNote"),
+                    createMockTool("com.example.chat", "sendMessage"),
+                )
+            mockAppFunctions(tools)
+            setupDefaultMocks(
+                threadId,
+                message,
+                thread,
+                llmProvider = llmProvider,
+                progressiveToolDisclosure = false,
+            )
+            coEvery {
+                llmProvider.generateResponse(any(), any(), any(), any(), any(), any())
+            } returns LlmResponse.Success("interaction_id", listOf(LlmResponsePart.Text("Ok")))
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = null,
+                    input = any(),
+                    tools = tools,
+                    apiKey = any(),
+                    modelName = any(),
+                )
+            }
+        }
+
     private fun createUserMessage(
         threadId: String,
         textContent: String,
@@ -504,6 +696,7 @@ class AgentOrchestratorTest {
         thread: ThreadEntity,
         apiKey: String? = "dummy_key",
         llmProvider: LlmProvider = mockk(),
+        progressiveToolDisclosure: Boolean = false,
     ) {
         coEvery { observePendingMessagesUseCase(threadId) } returns
             flow {
@@ -513,6 +706,8 @@ class AgentOrchestratorTest {
         coEvery { manageThreadsUseCase.getThread(threadId) } returns flowOf(thread)
         coEvery { settingsRepository.geminiApiKey } returns flowOf(apiKey)
         coEvery { settingsRepository.serviceTier } returns flowOf(ServiceTier.STANDARD)
+        coEvery { settingsRepository.progressiveToolDisclosure } returns
+            flowOf(progressiveToolDisclosure)
         coEvery { llmProviderFactory.getProvider(LlmProviderName.GEMINI) } returns llmProvider
     }
 

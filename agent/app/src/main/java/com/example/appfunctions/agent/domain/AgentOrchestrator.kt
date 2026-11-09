@@ -18,6 +18,8 @@ package com.example.appfunctions.agent.domain
 import android.app.PendingIntent
 import android.util.Log
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionPackageMetadata
+import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
@@ -26,12 +28,16 @@ import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.appfunction.AppFunctionExceptionFormatter
+import com.example.appfunctions.agent.domain.appfunction.AppToolGroup
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.ResolveAppInstructionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
+import com.example.appfunctions.agent.domain.appfunction.ToolCatalog
+import com.example.appfunctions.agent.domain.appfunction.ToolSelectionManager
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -74,6 +80,8 @@ class AgentOrchestrator
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val savePendingIntentUseCase: SavePendingIntentUseCase,
+        private val resolveAppInstructionsUseCase: ResolveAppInstructionsUseCase,
+        private val toolSelectionManager: ToolSelectionManager,
     ) {
         private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
 
@@ -126,7 +134,7 @@ class AgentOrchestrator
                         null
                     }
 
-                val tools =
+                val groupedTools =
                     getAppFunctionsUseCase(
                         GetAppFunctionsParams(
                             targetPackageNames = targetPackageNames,
@@ -134,13 +142,26 @@ class AgentOrchestrator
                             isConnected = true,
                             includeInternalTools = true,
                         ),
-                    ).first().values.flatten()
+                    ).first()
+                val tools = groupedTools.values.flatten()
+
+                // Messages targeting a single app skip progressive disclosure to avoid extra
+                // round trips; the target app's functions are sent in full.
+                val toolCatalog =
+                    if (targetPackage == null &&
+                        settingsRepository.progressiveToolDisclosure.first()
+                    ) {
+                        buildToolCatalog(groupedTools)
+                    } else {
+                        null
+                    }
 
                 runInteractionLoop(
                     message = message,
                     thread = thread,
                     apiKey = apiKey,
                     tools = tools,
+                    toolCatalog = toolCatalog,
                     initialInput = message.textContent,
                 )
 
@@ -159,11 +180,35 @@ class AgentOrchestrator
             }
         }
 
+        private suspend fun buildToolCatalog(groupedTools: Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>>): ToolCatalog {
+            val (internal, external) =
+                groupedTools.entries.partition { (packageMetadata, _) ->
+                    packageMetadata.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE
+                }
+            val apps =
+                external
+                    .groupBy { (packageMetadata, _) -> packageMetadata.packageName }
+                    .map { (packageName, entries) ->
+                        AppToolGroup(
+                            packageName = packageName,
+                            instructions =
+                                resolveAppInstructionsUseCase(entries.first().key)
+                                    ?: NO_APP_INSTRUCTIONS,
+                            functions = entries.flatMap { it.value },
+                        )
+                    }
+            return ToolCatalog(
+                apps = apps,
+                alwaysAvailableTools = internal.flatMap { it.value },
+            )
+        }
+
         private suspend fun runInteractionLoop(
             message: MessageEntity,
             thread: ThreadEntity,
             apiKey: String,
             tools: List<AppFunctionMetadata>,
+            toolCatalog: ToolCatalog?,
             initialInput: String,
         ) {
             val provider = thread.llmModel.providerName
@@ -179,13 +224,17 @@ class AgentOrchestrator
 
             while (continueLoop) {
                 val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
+                // Recomputed every turn so that functions expanded by the model become callable.
+                val activeTools =
+                    toolCatalog?.let { toolSelectionManager.getActiveTools(thread.threadId, it) }
+                        ?: tools
 
                 currentToolOutputs = emptyList()
                 val response =
                     llmProvider.generateResponse(
                         previousInteractionId = previousInteractionId,
                         input = llmInput,
-                        tools = tools,
+                        tools = activeTools,
                         apiKey = apiKey,
                         modelName = modelName,
                         serviceTier = serviceTier,
@@ -193,7 +242,7 @@ class AgentOrchestrator
 
                 when (
                     val handleResult =
-                        handleLlmResponse(response, message, tools, capturedAttachments)
+                        handleLlmResponse(response, message, tools, toolCatalog, capturedAttachments)
                 ) {
                     is HandleResult.Continue -> {
                         currentToolOutputs = handleResult.toolOutputs
@@ -246,6 +295,7 @@ class AgentOrchestrator
             response: LlmResponse,
             message: MessageEntity,
             tools: List<AppFunctionMetadata>,
+            toolCatalog: ToolCatalog?,
             capturedAttachments: MutableList<MessageAttachment>,
         ): HandleResult {
             return when (response) {
@@ -267,7 +317,13 @@ class AgentOrchestrator
                     if (toolCalls.isNotEmpty()) {
                         when (
                             val toolResult =
-                                executeToolCalls(toolCalls, tools, message, capturedAttachments)
+                                executeToolCalls(
+                                    toolCalls,
+                                    tools,
+                                    toolCatalog,
+                                    message,
+                                    capturedAttachments,
+                                )
                         ) {
                             is ExecuteToolCallsResult.Success -> {
                                 if (textContent.isNotEmpty()) {
@@ -333,11 +389,29 @@ class AgentOrchestrator
         private suspend fun executeToolCalls(
             toolCalls: List<LlmResponsePart.ToolCall>,
             tools: List<AppFunctionMetadata>,
+            toolCatalog: ToolCatalog?,
             message: MessageEntity,
             capturedAttachments: MutableList<MessageAttachment>,
         ): ExecuteToolCallsResult {
             val results = mutableListOf<ToolOutput>()
             for (toolCall in toolCalls) {
+                if (toolCatalog != null && toolSelectionManager.isMetaTool(toolCall.packageName)) {
+                    results.add(
+                        ToolOutput(
+                            functionId = toolCall.functionId,
+                            callId = toolCall.callId,
+                            result =
+                                toolSelectionManager.handleMetaToolCall(
+                                    threadId = message.threadId,
+                                    functionId = toolCall.functionId,
+                                    arguments = toolCall.arguments,
+                                    catalog = toolCatalog,
+                                ),
+                        ),
+                    )
+                    continue
+                }
+
                 _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
 
                 val matchingTool =
@@ -494,5 +568,6 @@ class AgentOrchestrator
 
         private companion object {
             const val TAG = "AgentOrchestrator"
+            const val NO_APP_INSTRUCTIONS = "No instructions provided."
         }
     }
