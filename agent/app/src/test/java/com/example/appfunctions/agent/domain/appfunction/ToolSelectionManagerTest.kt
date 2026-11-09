@@ -33,6 +33,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -214,6 +215,44 @@ class ToolSelectionManagerTest {
                 "function_ids",
             ]!!.jsonObject
         assertEquals("array", functionIdsSchema["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `resolveMetaToolActivity describes app exploration`() {
+        assertEquals(
+            MetaToolActivity.ExploreApp(NOTES_PKG),
+            manager.resolveMetaToolActivity(
+                EXPAND_TOOL_DESCRIPTION,
+                mapOf("package_name" to NOTES_PKG),
+                catalog,
+            ),
+        )
+        assertNull(
+            manager.resolveMetaToolActivity(
+                EXPAND_TOOL_DESCRIPTION,
+                mapOf("package_name" to "com.unknown"),
+                catalog,
+            ),
+        )
+    }
+
+    @Test
+    fun `resolveMetaToolActivity describes function loading across apps`() {
+        assertEquals(
+            MetaToolActivity.LoadFunctions(listOf(createNote, sendMessage)),
+            manager.resolveMetaToolActivity(
+                EXPAND_FUNCTION_DECLARATIONS,
+                mapOf("function_ids" to listOf("createNote", "sendMessage", "missing")),
+                catalog,
+            ),
+        )
+        assertNull(
+            manager.resolveMetaToolActivity(
+                EXPAND_FUNCTION_DECLARATIONS,
+                mapOf("function_ids" to listOf("missing")),
+                catalog,
+            ),
+        )
     }
 
     @Test

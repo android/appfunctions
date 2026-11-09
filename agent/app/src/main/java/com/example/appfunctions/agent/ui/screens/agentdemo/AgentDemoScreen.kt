@@ -93,6 +93,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
@@ -864,75 +865,120 @@ fun StatusIndicator(
 ) {
     when (status) {
         AgentStatus.Thinking -> {
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.agent_demo_thinking),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+            ProgressStatusRow(stringResource(R.string.agent_demo_thinking))
+        }
+
+        AgentStatus.CheckingCapabilities -> {
+            ProgressStatusRow(stringResource(R.string.agent_demo_checking_capabilities))
+        }
+
+        is AgentStatus.ExploringApps -> {
+            AppStatusCard(
+                packageNames = status.packageNames,
+                statusText =
+                    pluralStringResource(
+                        R.plurals.agent_demo_exploring_apps,
+                        status.packageNames.size,
+                    ),
+                packageManager = packageManager,
+            )
+        }
+
+        is AgentStatus.PlanningWithFunctions -> {
+            AppStatusCard(
+                packageNames = status.packageNames,
+                statusText =
+                    stringResource(
+                        R.string.agent_demo_planning_with_functions,
+                        status.functionNames.joinToString(),
+                    ),
+                packageManager = packageManager,
+            )
         }
 
         is AgentStatus.InvokingTool -> {
-            val appName =
-                try {
-                    val appInfo = packageManager.getApplicationInfo(status.packageName, 0)
-                    packageManager.getApplicationLabel(appInfo).toString()
-                } catch (e: Exception) {
-                    status.packageName
-                }
-            val appIcon =
-                try {
-                    packageManager.getApplicationIcon(status.packageName)
-                } catch (e: Exception) {
-                    null
-                }
-
-            Surface(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceBright,
-                shadowElevation = 2.dp,
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    appIcon?.let {
-                        Image(
-                            bitmap = it.toBitmap().asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                    }
-                    Column {
-                        Text(appName, style = MaterialTheme.typography.titleMedium)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                stringResource(R.string.agent_demo_connecting),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
-            }
+            AppStatusCard(
+                packageNames = listOf(status.packageName),
+                statusText = stringResource(R.string.agent_demo_connecting),
+                packageManager = packageManager,
+            )
         }
 
         AgentStatus.Idle -> {
             // Nothing to show
+        }
+    }
+}
+
+@Composable
+private fun ProgressStatusRow(text: String) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** A card showing the icons and names of [packageNames] with a progress [statusText]. */
+@Composable
+private fun AppStatusCard(
+    packageNames: List<String>,
+    statusText: String,
+    packageManager: PackageManager,
+) {
+    val appNames =
+        packageNames.map { packageName ->
+            try {
+                val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                packageManager.getApplicationLabel(appInfo).toString()
+            } catch (e: Exception) {
+                packageName
+            }
+        }
+    val appIcons =
+        packageNames.mapNotNull { packageName ->
+            try {
+                packageManager.getApplicationIcon(packageName)
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceBright,
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            appIcons.forEach { icon ->
+                Image(
+                    bitmap = icon.toBitmap().asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            Column {
+                Text(appNames.joinToString(), style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(statusText, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
     }
 }

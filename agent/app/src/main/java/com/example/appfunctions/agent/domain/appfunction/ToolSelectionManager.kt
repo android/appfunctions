@@ -53,6 +53,15 @@ data class ToolCatalog(
     val alwaysAvailableTools: List<AppFunctionMetadata>,
 )
 
+/** What a tool selection meta-tool call is doing, used for user-facing status updates. */
+sealed interface MetaToolActivity {
+    /** The model is reading the details of the app [packageName] (L1). */
+    data class ExploreApp(val packageName: String) : MetaToolActivity
+
+    /** The model is loading the full declarations of [functions] (L2). */
+    data class LoadFunctions(val functions: List<AppFunctionMetadata>) : MetaToolActivity
+}
+
 /**
  * Implements progressive disclosure for tool selection.
  *
@@ -86,6 +95,42 @@ class ToolSelectionManager
 
         /** Returns whether the given tool call targets one of the tool selection meta-tools. */
         fun isMetaTool(packageName: String): Boolean = packageName == META_TOOL_PACKAGE
+
+        /**
+         * Describes what a meta-tool call is doing, for user-facing status updates.
+         *
+         * @return The apps being explored or functions being loaded, or null if the call does not
+         *   refer to anything in [catalog].
+         */
+        fun resolveMetaToolActivity(
+            functionId: String,
+            arguments: Map<String, Any?>,
+            catalog: ToolCatalog,
+        ): MetaToolActivity? =
+            when (functionId) {
+                EXPAND_TOOL_DESCRIPTION -> {
+                    val packageName = arguments[PARAM_PACKAGE_NAME] as? String
+                    catalog.apps
+                        .find { it.packageName == packageName }
+                        ?.let { MetaToolActivity.ExploreApp(it.packageName) }
+                }
+                EXPAND_FUNCTION_DECLARATIONS -> {
+                    val ids = parseFunctionIds(arguments).toSet()
+                    catalog.apps
+                        .flatMap { it.functions }
+                        .filter { it.id in ids }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { MetaToolActivity.LoadFunctions(it) }
+                }
+                else -> null
+            }
+
+        private fun parseFunctionIds(arguments: Map<String, Any?>): List<String> =
+            when (val rawIds = arguments[PARAM_FUNCTION_IDS]) {
+                is List<*> -> rawIds.filterIsInstance<String>()
+                is String -> listOf(rawIds)
+                else -> emptyList()
+            }.distinct()
 
         /**
          * Handles a call to one of the tool selection meta-tools.
@@ -145,12 +190,7 @@ class ToolSelectionManager
             arguments: Map<String, Any?>,
             catalog: ToolCatalog,
         ): String {
-            val requestedIds =
-                when (val rawIds = arguments[PARAM_FUNCTION_IDS]) {
-                    is List<*> -> rawIds.filterIsInstance<String>()
-                    is String -> listOf(rawIds)
-                    else -> emptyList()
-                }.distinct()
+            val requestedIds = parseFunctionIds(arguments)
             val allFunctions = catalog.apps.flatMap { it.functions }
             val loaded = mutableListOf<String>()
             val notFound = mutableListOf<String>()

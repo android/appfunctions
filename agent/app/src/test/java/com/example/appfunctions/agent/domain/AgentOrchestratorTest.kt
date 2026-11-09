@@ -480,6 +480,46 @@ class AgentOrchestratorTest {
 
             val capturedTools = mutableListOf<List<AppFunctionMetadata>>()
             val capturedInputs = mutableListOf<LlmInput>()
+            val statusesAtCall = mutableListOf<AgentStatus>()
+            val responses =
+                ArrayDeque(
+                    listOf(
+                        LlmResponse.Success(
+                            "interaction_1",
+                            listOf(
+                                LlmResponsePart.ToolCall(
+                                    packageName = ToolSelectionManager.META_TOOL_PACKAGE,
+                                    functionId = ToolSelectionManager.EXPAND_TOOL_DESCRIPTION,
+                                    arguments = mapOf("package_name" to notesPkg),
+                                    callId = "call_1",
+                                ),
+                            ),
+                        ),
+                        LlmResponse.Success(
+                            "interaction_2",
+                            listOf(
+                                LlmResponsePart.ToolCall(
+                                    packageName = ToolSelectionManager.META_TOOL_PACKAGE,
+                                    functionId = ToolSelectionManager.EXPAND_FUNCTION_DECLARATIONS,
+                                    arguments = mapOf("function_ids" to listOf("createNote")),
+                                    callId = "call_2",
+                                ),
+                            ),
+                        ),
+                        LlmResponse.Success(
+                            "interaction_3",
+                            listOf(
+                                LlmResponsePart.ToolCall(
+                                    packageName = notesPkg,
+                                    functionId = "createNote",
+                                    arguments = emptyMap(),
+                                    callId = "call_3",
+                                ),
+                            ),
+                        ),
+                        LlmResponse.Success("interaction_4", listOf(LlmResponsePart.Text("Done"))),
+                    ),
+                )
             coEvery {
                 llmProvider.generateResponse(
                     any(),
@@ -489,43 +529,10 @@ class AgentOrchestratorTest {
                     any(),
                     any(),
                 )
-            } returnsMany
-                listOf(
-                    LlmResponse.Success(
-                        "interaction_1",
-                        listOf(
-                            LlmResponsePart.ToolCall(
-                                packageName = ToolSelectionManager.META_TOOL_PACKAGE,
-                                functionId = ToolSelectionManager.EXPAND_TOOL_DESCRIPTION,
-                                arguments = mapOf("package_name" to notesPkg),
-                                callId = "call_1",
-                            ),
-                        ),
-                    ),
-                    LlmResponse.Success(
-                        "interaction_2",
-                        listOf(
-                            LlmResponsePart.ToolCall(
-                                packageName = ToolSelectionManager.META_TOOL_PACKAGE,
-                                functionId = ToolSelectionManager.EXPAND_FUNCTION_DECLARATIONS,
-                                arguments = mapOf("function_ids" to listOf("createNote")),
-                                callId = "call_2",
-                            ),
-                        ),
-                    ),
-                    LlmResponse.Success(
-                        "interaction_3",
-                        listOf(
-                            LlmResponsePart.ToolCall(
-                                packageName = notesPkg,
-                                functionId = "createNote",
-                                arguments = emptyMap(),
-                                callId = "call_3",
-                            ),
-                        ),
-                    ),
-                    LlmResponse.Success("interaction_4", listOf(LlmResponsePart.Text("Done"))),
-                )
+            } answers {
+                statusesAtCall.add(agentOrchestrator.status.value)
+                responses.removeFirst()
+            }
             every {
                 convertInputToAppFunctionDataUseCase(any(), any(), any())
             } returns Result.success(AppFunctionData.EMPTY)
@@ -536,6 +543,17 @@ class AgentOrchestratorTest {
             agentOrchestrator.observeAndProcessMessages(threadId)
 
             assertEquals(4, capturedTools.size)
+            // The status shown while each model call is in flight reflects the disclosure level.
+            assertEquals(
+                listOf(
+                    AgentStatus.CheckingCapabilities,
+                    AgentStatus.ExploringApps(listOf(notesPkg)),
+                    AgentStatus.PlanningWithFunctions(listOf(notesPkg), listOf("createNote")),
+                    AgentStatus.InvokingTool("createNote", notesPkg),
+                ),
+                statusesAtCall,
+            )
+            assertEquals(AgentStatus.Idle, agentOrchestrator.status.value)
             val metaToolIds =
                 listOf(
                     ToolSelectionManager.EXPAND_TOOL_DESCRIPTION,

@@ -34,6 +34,7 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResul
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.MetaToolActivity
 import com.example.appfunctions.agent.domain.appfunction.ResolveAppInstructionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
 import com.example.appfunctions.agent.domain.appfunction.ToolCatalog
@@ -222,6 +223,10 @@ class AgentOrchestrator
             val currentInput = initialInput
             val capturedAttachments = mutableListOf<MessageAttachment>()
 
+            if (toolCatalog != null && toolCatalog.apps.isNotEmpty()) {
+                _status.value = AgentStatus.CheckingCapabilities
+            }
+
             while (continueLoop) {
                 val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
                 // Recomputed every turn so that functions expanded by the model become callable.
@@ -394,8 +399,16 @@ class AgentOrchestrator
             capturedAttachments: MutableList<MessageAttachment>,
         ): ExecuteToolCallsResult {
             val results = mutableListOf<ToolOutput>()
+            val metaToolActivities = mutableListOf<MetaToolActivity>()
+            var invokedAppFunction = false
             for (toolCall in toolCalls) {
                 if (toolCatalog != null && toolSelectionManager.isMetaTool(toolCall.packageName)) {
+                    toolSelectionManager
+                        .resolveMetaToolActivity(
+                            toolCall.functionId,
+                            toolCall.arguments,
+                            toolCatalog,
+                        )?.let(metaToolActivities::add)
                     results.add(
                         ToolOutput(
                             functionId = toolCall.functionId,
@@ -412,6 +425,7 @@ class AgentOrchestrator
                     continue
                 }
 
+                invokedAppFunction = true
                 _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
 
                 val matchingTool =
@@ -520,8 +534,32 @@ class AgentOrchestrator
                     }
                 }
             }
+            if (!invokedAppFunction) {
+                metaToolActivities.toAgentStatus()?.let { _status.value = it }
+            }
             return ExecuteToolCallsResult.Success(results)
         }
+
+        /**
+         * Summarizes the meta-tool calls of one model turn into a status. Loading functions (L2)
+         * takes precedence over exploring apps (L1) when both happen in the same turn.
+         */
+        private fun List<MetaToolActivity>.toAgentStatus(): AgentStatus? {
+            val loadedFunctions =
+                filterIsInstance<MetaToolActivity.LoadFunctions>().flatMap { it.functions }
+            if (loadedFunctions.isNotEmpty()) {
+                return AgentStatus.PlanningWithFunctions(
+                    packageNames = loadedFunctions.map { it.packageName }.distinct(),
+                    functionNames = loadedFunctions.map { it.id.toShortFunctionName() }.distinct(),
+                )
+            }
+            val exploredApps =
+                filterIsInstance<MetaToolActivity.ExploreApp>().map { it.packageName }.distinct()
+            return if (exploredApps.isNotEmpty()) AgentStatus.ExploringApps(exploredApps) else null
+        }
+
+        /** Turns e.g. "com.example.notes.NoteFunctions#createNote" into "createNote". */
+        private fun String.toShortFunctionName(): String = substringAfterLast('#').substringAfterLast('.')
 
         private suspend fun completeMessageWithError(
             messageId: String,

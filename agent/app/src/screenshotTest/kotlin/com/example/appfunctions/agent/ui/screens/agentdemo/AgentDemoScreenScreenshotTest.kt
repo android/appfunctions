@@ -144,6 +144,60 @@ fun AgentDemoScreenInvokingToolPreview() {
     )
 }
 
+@Composable
+private fun ProgressiveDisclosureStatusPreview(status: AgentStatus) {
+    val thread =
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
+    val messages =
+        listOf(
+            MessageEntity(
+                "1",
+                "thread-1",
+                MessageRole.USER,
+                "Add a task to buy concert tickets and send it to Alice",
+                System.currentTimeMillis(),
+                MessageProcessingStatus.PROCESSED,
+            ),
+        )
+    AgentDemoContent(
+        uiState =
+            AgentUiState.Loaded(
+                messages = messages,
+                status = status,
+                currentThread = thread,
+            ),
+        onEvent = {},
+    )
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun AgentDemoScreenCheckingCapabilitiesPreview() {
+    ProgressiveDisclosureStatusPreview(AgentStatus.CheckingCapabilities)
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun AgentDemoScreenExploringAppsPreview() {
+    ProgressiveDisclosureStatusPreview(
+        AgentStatus.ExploringApps(listOf("com.example.notes", "com.example.chat")),
+    )
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun AgentDemoScreenPlanningWithFunctionsPreview() {
+    ProgressiveDisclosureStatusPreview(
+        AgentStatus.PlanningWithFunctions(
+            packageNames = listOf("com.example.notes", "com.example.chat"),
+            functionNames = listOf("createTask", "searchContacts", "sendMessage"),
+        ),
+    )
+}
+
 @PreviewTest
 @Preview(showBackground = true)
 @Composable

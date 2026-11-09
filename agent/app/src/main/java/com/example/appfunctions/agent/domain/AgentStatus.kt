@@ -21,5 +21,20 @@ sealed class AgentStatus {
 
     object Thinking : AgentStatus()
 
+    /** Progressive tool disclosure L0: the model is reviewing the one-line app catalog. */
+    object CheckingCapabilities : AgentStatus()
+
+    /** Progressive tool disclosure L1: the model is reading the details of [packageNames]. */
+    data class ExploringApps(val packageNames: List<String>) : AgentStatus()
+
+    /**
+     * Progressive tool disclosure L2: the model loaded [functionNames] from [packageNames] and is
+     * planning how to call them.
+     */
+    data class PlanningWithFunctions(
+        val packageNames: List<String>,
+        val functionNames: List<String>,
+    ) : AgentStatus()
+
     data class InvokingTool(val functionId: String, val packageName: String) : AgentStatus()
 }
