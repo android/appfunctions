@@ -56,7 +56,14 @@ data class MessageEntity(
 data class MessageAttachment(
     val uri: String,
     val mimeType: String,
-)
+    /** Inline content of an attachment that isn't backed by a [uri], e.g. an A2UI payload. */
+    val content: String? = null,
+) {
+    companion object {
+        /** MIME type of A2UI payloads returned by AppFunctions as `AppFunctionTextResource`s. */
+        const val A2UI_MIME_TYPE = "application/a2ui+json"
+    }
+}
 
 class MessageAttachmentConverter {
     private val dbJson =

@@ -21,6 +21,7 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
+import com.example.appfunctions.agent.data.db.entities.MessageAttachment.Companion.A2UI_MIME_TYPE
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
@@ -52,6 +53,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 import javax.inject.Inject
@@ -404,6 +407,7 @@ class AgentOrchestrator
                         if (attachment != null) {
                             capturedAttachments.add(attachment)
                         }
+                        capturedAttachments += extractA2uiAttachments(executionResult.formattedJson)
                     }
 
                     is ExecuteAppFunctionResult.PendingIntentAction -> {
@@ -491,6 +495,16 @@ class AgentOrchestrator
                 null
             }
         }
+
+        /** Extracts the A2UI payloads of an `AppFunctionResourceContainer` result's `resources`. */
+        private fun extractA2uiAttachments(jsonString: String): List<MessageAttachment> =
+            runCatching {
+                Json.parseToJsonElement(jsonString).jsonObject["resources"]?.jsonArray.orEmpty()
+                    .map { it.jsonObject }
+                    .filter { it["mimeType"]?.jsonPrimitive?.contentOrNull == A2UI_MIME_TYPE }
+                    .mapNotNull { it["content"]?.jsonPrimitive?.contentOrNull }
+                    .map { MessageAttachment(uri = "", mimeType = A2UI_MIME_TYPE, content = it) }
+            }.getOrDefault(emptyList())
 
         private companion object {
             const val TAG = "AgentOrchestrator"

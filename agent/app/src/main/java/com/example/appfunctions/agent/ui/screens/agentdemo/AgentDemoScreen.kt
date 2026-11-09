@@ -122,12 +122,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.data.LlmModel
+import com.example.appfunctions.agent.data.db.entities.MessageAttachment.Companion.A2UI_MIME_TYPE
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
+import com.example.appfunctions.agent.ui.a2ui.A2uiSurfaces
 import com.example.appfunctions.agent.ui.screens.debugging.LazyExposedDropdownMenu
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.CoroutineScope
@@ -850,6 +852,12 @@ fun MessageBubble(
                                 .height(240.dp)
                                 .clip(RoundedCornerShape(16.dp)),
                         contentScale = ContentScale.Crop,
+                    )
+                } else if (attachment.mimeType == A2UI_MIME_TYPE && attachment.content != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    A2uiSurfaces(
+                        payload = attachment.content,
+                        modifier = Modifier.fillMaxWidth(0.85f),
                     )
                 }
             }

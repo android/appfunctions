@@ -110,6 +110,50 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
     }
 
     /**
+     * List all contacts and chat groups.
+     * Use this when the user wants to see, browse or list their contacts or groups.
+     * Pass the endpointValue of a result to "sendMessage", or to "makeCall" for an individual contact.
+     *
+     * @return A [ContactList] with all contacts and groups, and a visual list of them.
+     */
+    @OptIn(ExperimentalAppFunctionsApi::class)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
+    suspend fun listContacts(): ContactList {
+        val recipients = recipientsRepository.getAllRecipients()
+        val groups = recipientsRepository.getAllGroups()
+        val contacts =
+            recipients.map {
+                ContactSearchResult(
+                    contactDisplayName = it.name,
+                    contactType = "INDIVIDUAL",
+                    endpointValue = it.id,
+                    endpointDisplayName = it.email,
+                )
+            } +
+                groups.map {
+                    ContactSearchResult(
+                        contactDisplayName = it.name,
+                        contactType = "GROUP",
+                        endpointValue = it.id,
+                        endpointDisplayName = it.name,
+                    )
+                }
+
+        // The same contacts as an A2UI Basic Catalog surface, so agents that render A2UI can show them
+        // alongside the data above.
+        return ContactList(
+            contacts = contacts,
+            resources =
+                listOf(
+                    AppFunctionTextResource(
+                        mimeType = "application/a2ui+json",
+                        content = buildContactListA2ui(recipients, groups),
+                    ),
+                ),
+        )
+    }
+
+    /**
      * Fetch details for sending a message before execution.
      * Required workflow: Call "searchContacts" first to obtain a valid endpointValue.
      *

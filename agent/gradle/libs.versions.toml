@@ -21,6 +21,7 @@ ksp = "2.3.10"
 hilt = "2.60.1"
 androidxHiltNavigationCompose = "1.4.0"
 appfunctions = "1.0.0-beta01"
+a2ui = "1.0.0-alpha02"
 datastore = "1.2.1"
 screenshot = "0.0.1-alpha15"
 coil = "2.7.0"
@@ -64,6 +65,7 @@ hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.r
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "androidxHiltNavigationCompose" }
 androidx-appfunctions = { group = "androidx.appfunctions", name = "appfunctions", version.ref = "appfunctions" }
 androidx-appfunctions-compiler = { group = "androidx.appfunctions", name = "appfunctions-compiler", version.ref = "appfunctions" }
+androidx-compose-material3-a2ui = { group = "androidx.compose.material3", name = "material3-a2ui", version.ref = "a2ui" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 screenshot-validation-api = { group = "com.android.tools.screenshot", name = "screenshot-validation-api", version.ref = "screenshot" }
