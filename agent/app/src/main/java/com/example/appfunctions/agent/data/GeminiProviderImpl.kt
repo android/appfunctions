@@ -21,6 +21,10 @@ import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
+import com.example.appfunctions.agent.domain.appfunction.findToolByName
+import com.example.appfunctions.agent.domain.appfunction.resolveToolName
+import com.example.appfunctions.agent.domain.appfunction.selectDistinctTools
+import com.example.appfunctions.agent.domain.toArgumentsMap
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -32,9 +36,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -119,9 +122,8 @@ class GeminiProviderImpl
             serviceTier: ServiceTier,
         ): LlmResponse {
             val convertedTools =
-                tools
-                    .sortedByDescending { it.id.startsWith(it.packageName) }
-                    .distinctBy { toolConverter.getToolName(it) }
+                toolConverter
+                    .selectDistinctTools(tools)
                     .mapNotNull { tool ->
                         try {
                             buildJsonObject {
@@ -148,15 +150,10 @@ class GeminiProviderImpl
                     when (input) {
                         is LlmInput.ToolResponse -> {
                             val inputElement =
-                                kotlinx.serialization.json.buildJsonArray {
+                                buildJsonArray {
                                     input.outputs.forEach { output ->
-                                        val matchingTool = tools.find { it.id == output.functionId }
                                         val mappedName =
-                                            if (matchingTool != null) {
-                                                toolConverter.getToolName(matchingTool)
-                                            } else {
-                                                output.functionId
-                                            }
+                                            toolConverter.resolveToolName(output.functionId, tools)
 
                                         add(
                                             buildJsonObject {
@@ -178,7 +175,7 @@ class GeminiProviderImpl
                     }
 
                     if (convertedTools.isNotEmpty()) {
-                        put(KEY_TOOLS, kotlinx.serialization.json.JsonArray(convertedTools))
+                        put(KEY_TOOLS, JsonArray(convertedTools))
                     }
 
                     if (previousInteractionId != null) {
@@ -259,19 +256,13 @@ class GeminiProviderImpl
                             stepObj[KEY_NAME]?.jsonPrimitive?.content
                                 ?: return LlmResponse.Error("Called function without a name")
                         val matchingTool =
-                            tools.find { tool -> toolConverter.getToolName(tool) == name }
+                            toolConverter.findToolByName(name, tools)
                                 ?: return LlmResponse.Error("Called unknown function: $name")
 
                         val packageName = matchingTool.packageName
                         val functionId = matchingTool.id
 
-                        val args = stepObj[KEY_ARGUMENTS]?.jsonObject
-                        val argumentsMap = mutableMapOf<String, Any?>()
-                        if (args != null) {
-                            for ((key, value) in args) {
-                                argumentsMap[key] = value.toPrimitive()
-                            }
-                        }
+                        val argumentsMap = stepObj[KEY_ARGUMENTS]?.jsonObject.toArgumentsMap()
                         val callId =
                             stepObj["id"]?.jsonPrimitive?.content
                                 ?: return LlmResponse.Error(
@@ -295,19 +286,6 @@ class GeminiProviderImpl
                 interactionId = newInteractionId,
                 parts = parts,
             )
-        }
-
-        private fun JsonElement.toPrimitive(): Any? {
-            return when (this) {
-                is JsonPrimitive -> {
-                    if (this.isString) return this.content
-                    return this.content.toBooleanStrictOrNull()
-                        ?: this.content.toLongOrNull()
-                        ?: this.content.toDoubleOrNull()
-                }
-                is JsonObject -> this.mapValues { it.value.toPrimitive() }
-                is JsonArray -> this.map { it.toPrimitive() }
-            }
         }
 
         private fun getSystemInstruction(): String {

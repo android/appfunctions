@@ -25,11 +25,13 @@ import com.example.appfunctions.agent.data.DataStoreSettingsRepository
 import com.example.appfunctions.agent.data.FileDownloadHelper
 import com.example.appfunctions.agent.data.FileDownloadHelperImpl
 import com.example.appfunctions.agent.data.InMemoryPendingIntentRepository
+import com.example.appfunctions.agent.data.LlmProviderFactoryImpl
 import com.example.appfunctions.agent.data.PendingIntentRepository
 import com.example.appfunctions.agent.data.RoomChatRepository
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.AppDatabase
 import com.example.appfunctions.agent.data.db.dao.ChatDao
+import com.example.appfunctions.agent.domain.LlmProviderFactory
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -40,6 +42,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import javax.inject.Singleton
@@ -64,9 +67,7 @@ abstract class DataModule {
 
     @Binds
     @Singleton
-    abstract fun bindLlmProviderFactory(
-        impl: com.example.appfunctions.agent.data.LlmProviderFactoryImpl,
-    ): com.example.appfunctions.agent.domain.LlmProviderFactory
+    abstract fun bindLlmProviderFactory(impl: LlmProviderFactoryImpl): LlmProviderFactory
 
     @Binds
     @Singleton
@@ -114,8 +115,12 @@ abstract class DataModule {
                         },
                     )
                 }
-                install(HttpTimeout) { socketTimeoutMillis = 30000 }
+                install(HttpTimeout) { socketTimeoutMillis = SOCKET_TIMEOUT_MS }
+                install(WebSockets) { pingIntervalMillis = WEBSOCKET_PING_INTERVAL_MS }
             }
         }
+
+        private const val SOCKET_TIMEOUT_MS = 30_000L
+        private const val WEBSOCKET_PING_INTERVAL_MS = 20_000L
     }
 }

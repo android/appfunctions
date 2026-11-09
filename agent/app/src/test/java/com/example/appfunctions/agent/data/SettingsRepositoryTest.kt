@@ -18,6 +18,8 @@ package com.example.appfunctions.agent.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.appfunctions.agent.BuildConfig
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -76,5 +78,31 @@ class SettingsRepositoryTest {
             repository.setServiceTier(ServiceTier.PRIORITY)
             val value = repository.serviceTier.first()
             assertEquals(ServiceTier.PRIORITY, value)
+        }
+
+    @Test
+    fun geminiLiveVoice_defaultsToZephyr() =
+        runTest {
+            val value = repository.geminiLiveVoice.first()
+            assertEquals(GeminiLiveVoice.ZEPHYR, value)
+        }
+
+    @Test
+    fun setGeminiLiveVoice_persistsValue() =
+        runTest {
+            repository.setGeminiLiveVoice(GeminiLiveVoice.AOEDE)
+            val value = repository.geminiLiveVoice.first()
+            assertEquals(GeminiLiveVoice.AOEDE, value)
+        }
+
+    @Test
+    fun geminiLiveVoice_unrecognizedStoredValue_fallsBackToDefault() =
+        runTest {
+            dataStore.edit { preferences ->
+                preferences[stringPreferencesKey("gemini_live_voice")] = "UNRECOGNIZED_VOICE"
+            }
+
+            val value = repository.geminiLiveVoice.first()
+            assertEquals(GeminiLiveVoice.DEFAULT, value)
         }
 }

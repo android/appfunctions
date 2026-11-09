@@ -25,3 +25,30 @@ interface ToolConverter<T> {
     /** Returns the name of the tool as it should be represented in the LLM schema. */
     fun getToolName(tool: AppFunctionMetadata): String
 }
+
+/**
+ * Deduplicates [tools] by their converted tool name, prioritizing functions whose ID starts with
+ * their package name.
+ */
+fun ToolConverter<*>.selectDistinctTools(tools: List<AppFunctionMetadata>): List<AppFunctionMetadata> =
+    tools
+        .sortedByDescending { it.id.startsWith(it.packageName) }
+        .distinctBy { getToolName(it) }
+
+/** Finds the [AppFunctionMetadata] in [tools] matching a converted tool [name]. */
+fun ToolConverter<*>.findToolByName(
+    name: String,
+    tools: List<AppFunctionMetadata>,
+): AppFunctionMetadata? = tools.find { getToolName(it) == name }
+
+/**
+ * Resolves the converted tool name for [functionId] from [tools], falling back to [functionId] if
+ * no matching tool metadata is present.
+ */
+fun ToolConverter<*>.resolveToolName(
+    functionId: String,
+    tools: List<AppFunctionMetadata>,
+): String {
+    val matchingTool = tools.find { it.id == functionId } ?: return functionId
+    return getToolName(matchingTool)
+}
