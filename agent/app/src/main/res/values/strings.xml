@@ -110,6 +110,8 @@
     <string name="agent_demo_confirm_action">Yes, go ahead</string>
     <string name="agent_demo_action_expired">Done</string>
     <string name="agent_demo_action_confirmation_needed">I can perform this action for you. Should I proceed?</string>
+    <!-- Toast shown when the user taps an A2UI button whose action is an event, which the agent doesn't handle yet. %1$s is the event name from the AppFunction's payload, e.g. "call". -->
+    <string name="agent_demo_a2ui_event_not_supported">A2UI events aren\'t supported yet (%1$s)</string>
 
     <string name="debugging_copied_value">Copied value of %1$s</string>
     <string name="debugging_copy_value">Copy value</string>

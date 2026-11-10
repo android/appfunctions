@@ -52,6 +52,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -442,6 +444,62 @@ class AgentOrchestratorTest {
                     pendingIntentId = null,
                     targetPackageName = null,
                     attachments = listOf(MessageAttachment(uri = testUri, mimeType = "image/jpeg")),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `observeAndProcessMessages extracts A2UI attachments when tool returns A2UI resources`() {
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "text Alice that I'm late")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+
+            val previewTool = createMockTool("com.example.chatapp", "fetchSendMessageDetails")
+            mockAppFunctions(listOf(previewTool))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+
+            val a2uiPayload = """[{"version":"v0.9","deleteSurface":{"surfaceId":"preview"}}]"""
+            val a2uiResource =
+                JSONObject().put("mimeType", MessageAttachment.A2UI_MIME_TYPE).put("content", a2uiPayload)
+            val textResource = JSONObject().put("mimeType", "text/plain").put("content", "ignored")
+            val toolCall =
+                LlmResponsePart.ToolCall(
+                    packageName = "com.example.chatapp",
+                    functionId = "fetchSendMessageDetails",
+                    arguments = mapOf("endpointValue" to "alice", "messageBody" to "I'm late"),
+                    callId = "call_1",
+                )
+            setupTwoStepToolCallAndExecution(
+                llmProvider = llmProvider,
+                toolCall = toolCall,
+                secondResponseText = "Here is a preview.",
+                toolResultJson =
+                    JSONObject()
+                        .put("resources", JSONArray().put(textResource).put(a2uiResource))
+                        .toString(),
+            )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Here is a preview.",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = null,
+                    targetPackageName = null,
+                    attachments =
+                        listOf(
+                            MessageAttachment(
+                                uri = "",
+                                mimeType = MessageAttachment.A2UI_MIME_TYPE,
+                                content = a2uiPayload,
+                            ),
+                        ),
                 )
             }
         }
