@@ -41,6 +41,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -180,7 +181,7 @@ class GeminiProviderImplTest {
         }
 
     @Test
-    fun generateResponse_unknownFunction_returnsError() =
+    fun generateResponse_unknownFunction_returnsUnknownToolCall() =
         runBlocking {
             val responseJson =
                 buildJsonObject {
@@ -212,9 +213,35 @@ class GeminiProviderImplTest {
                     modelName = "test_model",
                 )
 
-            assertTrue(response is LlmResponse.Error)
-            val error = response as LlmResponse.Error
-            assertTrue(error.errorMessage.contains("Called unknown function"))
+            assertTrue(response is LlmResponse.Success)
+            assertEquals(
+                listOf(LlmResponsePart.UnknownToolCall(name = "unknown_function", callId = "call_456")),
+                (response as LlmResponse.Success).parts,
+            )
+        }
+
+    @Test
+    fun generateResponse_systemInstruction_hasNoToolDiscoveryGuidance() =
+        runBlocking {
+            val responseJson = buildJsonObject { put("id", "interaction_123") }.toString()
+            val capturedRequestBodies = mutableListOf<String>()
+            val httpClient =
+                createCapturingHttpClient(HttpStatusCode.OK, responseJson, capturedRequestBodies)
+            val provider = GeminiProviderImpl(httpClient, toolConverter)
+
+            provider.generateResponse(
+                previousInteractionId = null,
+                input = LlmInput.UserMessage("Hi"),
+                tools = emptyList(),
+                apiKey = "test_key",
+                modelName = "test_model",
+            )
+
+            // Tool discovery guidance lives in the discovery tools' descriptions, not in the
+            // provider, so every LlmProvider stays agnostic of progressive disclosure.
+            val requestBody = Json.parseToJsonElement(capturedRequestBodies.first()).jsonObject
+            val systemInstruction = requestBody["system_instruction"]!!.jsonPrimitive.content
+            assertFalse(systemInstruction.contains("expand_tool_description"))
         }
 
     @Test

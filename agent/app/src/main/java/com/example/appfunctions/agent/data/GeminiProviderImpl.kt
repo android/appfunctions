@@ -21,7 +21,6 @@ import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
-import com.example.appfunctions.agent.domain.appfunction.ToolSelectionManager
 import com.example.appfunctions.agent.domain.appfunction.findToolByName
 import com.example.appfunctions.agent.domain.appfunction.resolveToolName
 import com.example.appfunctions.agent.domain.appfunction.selectDistinctTools
@@ -146,7 +145,7 @@ class GeminiProviderImpl
                         put(KEY_SERVICE_TIER, JsonPrimitive(tierValue))
                     }
 
-                    put(KEY_SYSTEM_INSTRUCTION, JsonPrimitive(getSystemInstruction(tools)))
+                    put(KEY_SYSTEM_INSTRUCTION, JsonPrimitive(getSystemInstruction()))
 
                     when (input) {
                         is LlmInput.ToolResponse -> {
@@ -256,19 +255,24 @@ class GeminiProviderImpl
                         val name =
                             stepObj[KEY_NAME]?.jsonPrimitive?.content
                                 ?: return LlmResponse.Error("Called function without a name")
-                        val matchingTool =
-                            toolConverter.findToolByName(name, tools)
-                                ?: return LlmResponse.Error("Called unknown function: $name")
-
-                        val packageName = matchingTool.packageName
-                        val functionId = matchingTool.id
-
-                        val argumentsMap = stepObj[KEY_ARGUMENTS]?.jsonObject.toArgumentsMap()
                         val callId =
                             stepObj["id"]?.jsonPrimitive?.content
                                 ?: return LlmResponse.Error(
                                     "Function call missing call_id in response",
                                 )
+                        val matchingTool = toolConverter.findToolByName(name, tools)
+                        if (matchingTool == null) {
+                            // Let the caller answer with a recoverable error instead of failing the
+                            // whole turn (e.g. the model called a function it saw earlier in the
+                            // conversation that is not declared in this request).
+                            parts.add(LlmResponsePart.UnknownToolCall(name = name, callId = callId))
+                            continue
+                        }
+
+                        val packageName = matchingTool.packageName
+                        val functionId = matchingTool.id
+
+                        val argumentsMap = stepObj[KEY_ARGUMENTS]?.jsonObject.toArgumentsMap()
                         parts.add(
                             LlmResponsePart.ToolCall(
                                 packageName = packageName,
@@ -289,31 +293,17 @@ class GeminiProviderImpl
             )
         }
 
-        private fun getSystemInstruction(tools: List<AppFunctionMetadata>): String {
+        private fun getSystemInstruction(): String {
             val currentDate = LocalDate.now().toString()
-            val baseInstruction =
-                """
+            return """
                 You are an AI assistant running on Android. Today's date is $currentDate.
                 Always reply to the user using concise, friendly, natural human language. Never respond to the user with raw JSON or structured code blocks unless explicitly asked to write code.
                 When a user asks you to generate an image, call the generateImage tool. After generateImage completes, confirm to the user in a natural sentence (for example: "I have generated that image for you.").
                 When a user asks you to generate an image and use it in an app (for example, setting a chat wallpaper or attaching an image to a note), first call generateImage, then call the target app function passing the returned imageUri.
                 """.trimIndent()
-            val usesProgressiveToolDisclosure =
-                tools.any { it.packageName == ToolSelectionManager.META_TOOL_PACKAGE }
-            return if (usesProgressiveToolDisclosure) {
-                baseInstruction + "\n" + PROGRESSIVE_TOOL_DISCLOSURE_INSTRUCTION
-            } else {
-                baseInstruction
-            }
         }
 
         companion object {
-            private const val PROGRESSIVE_TOOL_DISCLOSURE_INSTRUCTION =
-                "App functions are discovered progressively: call " +
-                    "${ToolSelectionManager.EXPAND_TOOL_DESCRIPTION} to learn what an app can do, " +
-                    "then call ${ToolSelectionManager.EXPAND_FUNCTION_DECLARATIONS} to load the " +
-                    "functions you need before calling them. Functions you already loaded stay " +
-                    "available as tools."
             private const val GEMINI_INTERACTIONS_URL =
                 "https://generativelanguage.googleapis.com/v1beta/interactions"
             private const val GEMINI_MODELS_URL =

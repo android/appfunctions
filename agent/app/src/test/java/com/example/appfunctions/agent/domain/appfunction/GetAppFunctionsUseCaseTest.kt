@@ -93,6 +93,41 @@ class GetAppFunctionsUseCaseTest {
         }
 
     @Test
+    fun `progressiveToolDisclosure returns internal and discovery tools instead of app functions`() =
+        runTest {
+            val notesPkg = createPackage("com.example.notes")
+            val internalPkg = createPackage(AgentInternalTools.INTERNAL_TOOL_PACKAGE)
+            val notesTool = createTool(notesPkg, "createNote")
+            val internalTool = createTool(internalPkg, "generateImage")
+            val discoveryTool = createTool(internalPkg, AgentInternalTools.EXPAND_TOOL_DESCRIPTION)
+
+            coEvery { appFunctionManager.searchAppFunctions(any()) } returns listOf(notesTool)
+            every { agentInternalTools.getInternalToolsMetadata() } returns
+                listOf(internalTool to createState(internalTool.name, isEnabled = true))
+            coEvery {
+                agentInternalTools.buildToolDiscoveryTools(mapOf(notesPkg to listOf(notesTool)))
+            } returns listOf(discoveryTool)
+
+            val result =
+                useCase(GetAppFunctionsParams(progressiveToolDisclosure = true)).first()
+
+            assertEquals(mapOf(internalPkg to listOf(internalTool, discoveryTool)), result)
+        }
+
+    @Test
+    fun `discovery tools are not built without progressiveToolDisclosure`() =
+        runTest {
+            val notesPkg = createPackage("com.example.notes")
+            val notesTool = createTool(notesPkg, "createNote")
+            coEvery { appFunctionManager.searchAppFunctions(any()) } returns listOf(notesTool)
+
+            val result = useCase(GetAppFunctionsParams()).first()
+
+            assertEquals(mapOf(notesPkg to listOf(notesTool)), result)
+            coVerify(exactly = 0) { agentInternalTools.buildToolDiscoveryTools(any()) }
+        }
+
+    @Test
     fun `includeInternalTools false excludes internal tools`() =
         runTest {
             val notesPkg = createPackage("com.example.notes")

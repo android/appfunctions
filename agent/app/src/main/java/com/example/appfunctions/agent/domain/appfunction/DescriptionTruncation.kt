@@ -15,19 +15,53 @@
  */
 package com.example.appfunctions.agent.domain.appfunction
 
-private val SENTENCE_END = Regex("""\.(\s|$)""")
+/** Default maximum length of a summary produced by [toSummary]. */
+const val DEFAULT_SUMMARY_MAX_LENGTH = 160
+
+private const val ELLIPSIS = "…"
+private val WHITESPACE = Regex("""\s+""")
+private val SENTENCE_END = Regex("""\.(?=\s|$)""")
+private val ABBREVIATIONS = setOf("e.g", "i.e", "etc", "vs", "approx", "incl", "mr", "mrs", "ms", "dr")
 
 /**
- * Returns a one-line summary of this description.
+ * Returns a short summary of this description for tool catalogs.
  *
- * The text is cut at the first line break or at the first period that is followed by whitespace
- * (or the end of the text), whichever comes first. The period is kept. Periods that are not
- * followed by whitespace (e.g. "v1.2" or "example.com") do not end the summary.
+ * - If the whole text fits in [maxLength] characters, it is returned with whitespace collapsed.
+ * - Otherwise it is cut at the first line break or sentence end, whichever comes first. A period
+ *   only ends a sentence when followed by whitespace (or the end of the text) and not preceded by a
+ *   common abbreviation such as "e.g.".
+ * - The result is capped at [maxLength] characters on a word boundary, ending with "…".
  */
-fun String.toOneLineDescription(): String {
+fun String.toSummary(maxLength: Int = DEFAULT_SUMMARY_MAX_LENGTH): String {
     val trimmed = trim()
+    if (trimmed.length <= maxLength) {
+        return trimmed.replace(WHITESPACE, " ")
+    }
     val newlineIndex = trimmed.indexOf('\n').takeIf { it >= 0 } ?: trimmed.length
     val sentenceEndIndex =
-        SENTENCE_END.find(trimmed)?.range?.first?.plus(1) ?: trimmed.length
-    return trimmed.substring(0, minOf(newlineIndex, sentenceEndIndex)).trim()
+        SENTENCE_END
+            .findAll(trimmed)
+            .firstOrNull { !trimmed.endsWithAbbreviationAt(it.range.first) }
+            ?.range
+            ?.first
+            ?.plus(1) ?: trimmed.length
+    val firstSentence =
+        trimmed.substring(0, minOf(newlineIndex, sentenceEndIndex)).trim().replace(WHITESPACE, " ")
+    return firstSentence.capAtWordBoundary(maxLength)
+}
+
+/** Returns whether the word ending right before [periodIndex] is a known abbreviation. */
+private fun String.endsWithAbbreviationAt(periodIndex: Int): Boolean {
+    val wordStart = lastIndexOfAny(charArrayOf(' ', '\n', '\t', '('), periodIndex - 1) + 1
+    return substring(wordStart, periodIndex).lowercase() in ABBREVIATIONS
+}
+
+private fun String.capAtWordBoundary(maxLength: Int): String {
+    if (length <= maxLength) {
+        return this
+    }
+    val limit = maxLength - ELLIPSIS.length
+    val lastSpace = lastIndexOf(' ', limit)
+    val cut = if (lastSpace > 0) lastSpace else limit
+    return substring(0, cut).trimEnd(' ', ',', ';', ':') + ELLIPSIS
 }

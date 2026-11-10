@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import android.content.pm.PackageManager
+import android.icu.text.ListFormatter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
@@ -890,7 +891,7 @@ fun StatusIndicator(
                 statusText =
                     stringResource(
                         R.string.agent_demo_planning_with_functions,
-                        status.functionNames.joinToString(),
+                        ListFormatter.getInstance().format(status.functionNames),
                     ),
                 packageManager = packageManager,
             )
@@ -933,20 +934,24 @@ private fun AppStatusCard(
     packageManager: PackageManager,
 ) {
     val appNames =
-        packageNames.map { packageName ->
-            try {
-                val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                packageManager.getApplicationLabel(appInfo).toString()
-            } catch (e: Exception) {
-                packageName
+        remember(packageNames, packageManager) {
+            packageNames.map { packageName ->
+                try {
+                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                    packageManager.getApplicationLabel(appInfo).toString()
+                } catch (e: Exception) {
+                    packageName
+                }
             }
         }
     val appIcons =
-        packageNames.mapNotNull { packageName ->
-            try {
-                packageManager.getApplicationIcon(packageName)
-            } catch (e: Exception) {
-                null
+        remember(packageNames, packageManager) {
+            packageNames.mapNotNull { packageName ->
+                try {
+                    packageManager.getApplicationIcon(packageName).toBitmap().asImageBitmap()
+                } catch (e: Exception) {
+                    null
+                }
             }
         }
 
@@ -965,14 +970,17 @@ private fun AppStatusCard(
         ) {
             appIcons.forEach { icon ->
                 Image(
-                    bitmap = icon.toBitmap().asImageBitmap(),
+                    bitmap = icon,
                     contentDescription = null,
                     modifier = Modifier.size(40.dp),
                 )
                 Spacer(modifier = Modifier.width(12.dp))
             }
             Column {
-                Text(appNames.joinToString(), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    ListFormatter.getInstance().format(appNames),
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(8.dp))

@@ -37,12 +37,18 @@ import kotlin.time.Duration.Companion.milliseconds
  * Filter parameters for [GetAppFunctionsUseCase].
  *
  * Nullable filter fields (`null`) indicate that the corresponding filter should not be applied.
+ *
+ * @property progressiveToolDisclosure If true, app functions are not returned directly. Instead,
+ *   the internal tools are returned together with the tool discovery tools
+ *   ([AgentInternalTools.EXPAND_TOOL_DESCRIPTION], [AgentInternalTools.EXPAND_FUNCTION_DECLARATIONS])
+ *   built for the matching apps, so the model can load app functions on demand.
  */
 data class GetAppFunctionsParams(
     val targetPackageNames: Set<String>? = null,
     val isEnabled: Boolean? = null,
     val isConnected: Boolean? = null,
     val includeInternalTools: Boolean = true,
+    val progressiveToolDisclosure: Boolean = false,
 )
 
 /** Use case to observe available AppFunctions grouped by package metadata with optional filters. */
@@ -69,10 +75,19 @@ class GetAppFunctionsUseCase
                 .filterByConnection(params.isConnected)
                 .filterByEnabledState(params.isEnabled)
                 .map { externalFunctions ->
-                    (externalFunctions + internalFunctions)
-                        .sortedByDescending { it.id.startsWith(it.packageName) }
-                        .distinctBy { it.packageName to it.id }
-                        .groupBy(AppFunctionMetadata::packageMetadata)
+                    val external =
+                        externalFunctions
+                            .sortedByDescending { it.id.startsWith(it.packageName) }
+                            .distinctBy { it.packageName to it.id }
+                    if (params.progressiveToolDisclosure) {
+                        val discoveryTools =
+                            agentInternalTools.buildToolDiscoveryTools(
+                                external.groupBy(AppFunctionMetadata::packageMetadata),
+                            )
+                        (internalFunctions + discoveryTools).groupBy(AppFunctionMetadata::packageMetadata)
+                    } else {
+                        (external + internalFunctions).groupBy(AppFunctionMetadata::packageMetadata)
+                    }
                 }
         }
 

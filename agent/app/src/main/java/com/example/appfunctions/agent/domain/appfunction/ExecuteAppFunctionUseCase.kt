@@ -144,5 +144,17 @@ sealed class ExecuteAppFunctionResult {
 
     data class PendingIntentAction(val pendingIntent: PendingIntent) : ExecuteAppFunctionResult()
 
+    /**
+     * A tool-discovery call (see [AgentInternalTools.EXPAND_FUNCTION_DECLARATIONS]) that loaded
+     * [tools] so the model can call them for the rest of the current agent turn.
+     *
+     * @property formattedJson The result to send back to the model.
+     * @property tools The discovered functions to make available as tools.
+     */
+    data class ToolsDiscovered(
+        val formattedJson: String,
+        val tools: List<AppFunctionMetadata>,
+    ) : ExecuteAppFunctionResult()
+
     data class Error(val exception: Exception) : ExecuteAppFunctionResult()
 }

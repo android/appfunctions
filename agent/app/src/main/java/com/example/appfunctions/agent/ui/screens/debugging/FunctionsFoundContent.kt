@@ -224,6 +224,12 @@ fun FunctionsFoundContent(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
+                        is ExecuteAppFunctionResult.ToolsDiscovered -> {
+                            ExecutionResultDataView(
+                                formattedJson = result.formattedJson,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         is ExecuteAppFunctionResult.PendingIntentAction -> {
                             Text(
                                 text = stringResource(R.string.debugging_pending_intent_disclaimer),

@@ -16,40 +16,47 @@
 package com.example.appfunctions.agent.domain.appfunction
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DescriptionTruncationTest {
     @Test
-    fun `cuts at first sentence`() {
-        assertEquals("Create notes.", "Create notes. Supports tags.".toOneLineDescription())
-    }
-
-    @Test
-    fun `cuts at first newline`() {
-        assertEquals("Create notes", "Create notes\nSupports tags.".toOneLineDescription())
-    }
-
-    @Test
-    fun `cuts at whichever delimiter comes first`() {
-        assertEquals("First line", "First line\nSecond. Third.".toOneLineDescription())
-        assertEquals("First.", "First. Second\nThird".toOneLineDescription())
-    }
-
-    @Test
-    fun `does not cut at periods inside words or versions`() {
+    fun `short text is returned in full with whitespace collapsed`() {
         assertEquals(
-            "Supports v1.2 notes from example.com.",
-            "Supports v1.2 notes from example.com. More text.".toOneLineDescription(),
+            "Create notes. Supports tags.",
+            "  Create notes.\n  Supports tags.  ".toSummary(),
         )
     }
 
     @Test
-    fun `returns whole trimmed text when there is no delimiter`() {
-        assertEquals("Create notes", "  Create notes  ".toOneLineDescription())
+    fun `long text is cut at the first sentence end`() {
+        val text = "Create and manage notes. " + "More details. ".repeat(20)
+        assertEquals("Create and manage notes.", text.toSummary())
     }
 
     @Test
-    fun `returns empty string for blank text`() {
-        assertEquals("", "   ".toOneLineDescription())
+    fun `long text is cut at the first line break when it comes first`() {
+        val text = "Create notes\n" + "More details. ".repeat(20)
+        assertEquals("Create notes", text.toSummary())
+    }
+
+    @Test
+    fun `abbreviations and periods inside words do not end the sentence`() {
+        val text = "Manage notes, e.g. lists from v1.2 or example.com, i.e. anything. " + "x ".repeat(100)
+        assertEquals("Manage notes, e.g. lists from v1.2 or example.com, i.e. anything.", text.toSummary())
+    }
+
+    @Test
+    fun `long first sentence is capped on a word boundary with an ellipsis`() {
+        val text = "word ".repeat(100)
+        val summary = text.toSummary(maxLength = 40)
+        assertTrue(summary.length <= 40)
+        assertTrue(summary.endsWith("…"))
+        assertEquals("word word word word word word word word…", summary)
+    }
+
+    @Test
+    fun `blank text returns an empty string`() {
+        assertEquals("", "   ".toSummary())
     }
 }
