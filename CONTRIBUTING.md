@@ -31,3 +31,10 @@ All submissions, including submissions by project members, require review. We
 use GitHub pull requests for this purpose. Consult
 [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
 information on using pull requests.
+
+### AI-assisted reviews
+
+This repo includes a review skill at
+[`.agents/skills/appfunctions-review`](.agents/skills/appfunctions-review/SKILL.md).
+To use it, ask a compatible agent to review your PR (for example,
+"review PR #123").
