@@ -1,2 +1,3 @@
-# Global code owners for the repository
-* @android/devrel-ai @android/af-eng
+# Global code owners for the repository.
+# Requesting @android/eng-appfunctions notifies the whole team.
+* @android/devrel-ai @android/eng-appfunctions
