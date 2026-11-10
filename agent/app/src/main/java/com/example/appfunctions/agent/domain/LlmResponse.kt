@@ -46,4 +46,16 @@ sealed class LlmResponsePart {
     ) : LlmResponsePart()
 
     data class Thought(val thought: String) : LlmResponsePart()
+
+    /**
+     * The model called a function that was not declared in the request's tools (for example a
+     * function it saw earlier in the conversation but that is not loaded in this turn).
+     *
+     * @property name The function name as reported by the model.
+     * @property callId The ID of the call, used to send back a result.
+     */
+    data class UnknownToolCall(
+        val name: String,
+        val callId: String,
+    ) : LlmResponsePart()
 }

@@ -18,8 +18,10 @@ package com.example.appfunctions.agent.domain
 import android.app.PendingIntent
 import android.util.Log
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
+import com.example.appfunctions.agent.data.ToolDiscoveryTools
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
@@ -51,8 +53,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -126,6 +130,11 @@ class AgentOrchestrator
                         null
                     }
 
+                // Messages targeting a single app skip progressive disclosure to avoid extra
+                // round trips; the target app's functions are sent in full.
+                val progressiveToolDisclosure =
+                    targetPackage == null && settingsRepository.progressiveToolDisclosure.first()
+
                 val tools =
                     getAppFunctionsUseCase(
                         GetAppFunctionsParams(
@@ -133,6 +142,7 @@ class AgentOrchestrator
                             isEnabled = true,
                             isConnected = true,
                             includeInternalTools = true,
+                            progressiveToolDisclosure = progressiveToolDisclosure,
                         ),
                     ).first().values.flatten()
 
@@ -141,6 +151,7 @@ class AgentOrchestrator
                     thread = thread,
                     apiKey = apiKey,
                     tools = tools,
+                    progressiveToolDisclosure = progressiveToolDisclosure,
                     initialInput = message.textContent,
                 )
 
@@ -164,6 +175,7 @@ class AgentOrchestrator
             thread: ThreadEntity,
             apiKey: String,
             tools: List<AppFunctionMetadata>,
+            progressiveToolDisclosure: Boolean,
             initialInput: String,
         ) {
             val provider = thread.llmModel.providerName
@@ -176,6 +188,13 @@ class AgentOrchestrator
             var continueLoop = true
             val currentInput = initialInput
             val capturedAttachments = mutableListOf<MessageAttachment>()
+            // Tools declared to the model. Functions loaded through tool discovery are appended for
+            // the rest of this agent turn only; nothing is kept across messages.
+            val activeTools = tools.toMutableList()
+
+            if (progressiveToolDisclosure && activeTools.any { it.isToolDiscoveryTool() }) {
+                _status.value = AgentStatus.CheckingCapabilities
+            }
 
             while (continueLoop) {
                 val llmInput = prepareLlmInput(currentToolOutputs, currentInput)
@@ -185,7 +204,7 @@ class AgentOrchestrator
                     llmProvider.generateResponse(
                         previousInteractionId = previousInteractionId,
                         input = llmInput,
-                        tools = tools,
+                        tools = activeTools.toList(),
                         apiKey = apiKey,
                         modelName = modelName,
                         serviceTier = serviceTier,
@@ -193,7 +212,13 @@ class AgentOrchestrator
 
                 when (
                     val handleResult =
-                        handleLlmResponse(response, message, tools, capturedAttachments)
+                        handleLlmResponse(
+                            response,
+                            message,
+                            activeTools,
+                            progressiveToolDisclosure,
+                            capturedAttachments,
+                        )
                 ) {
                     is HandleResult.Continue -> {
                         currentToolOutputs = handleResult.toolOutputs
@@ -245,7 +270,8 @@ class AgentOrchestrator
         private suspend fun handleLlmResponse(
             response: LlmResponse,
             message: MessageEntity,
-            tools: List<AppFunctionMetadata>,
+            activeTools: MutableList<AppFunctionMetadata>,
+            progressiveToolDisclosure: Boolean,
             capturedAttachments: MutableList<MessageAttachment>,
         ): HandleResult {
             return when (response) {
@@ -259,7 +285,10 @@ class AgentOrchestrator
                         UpdateMessageParams(status = MessageProcessingStatus.PROCESSED),
                     )
 
-                    val toolCalls = response.parts.filterIsInstance<LlmResponsePart.ToolCall>()
+                    val toolCalls =
+                        response.parts.filter {
+                            it is LlmResponsePart.ToolCall || it is LlmResponsePart.UnknownToolCall
+                        }
                     val textParts = response.parts.filterIsInstance<LlmResponsePart.Text>()
 
                     val textContent = textParts.joinToString("\n") { it.text }
@@ -267,7 +296,13 @@ class AgentOrchestrator
                     if (toolCalls.isNotEmpty()) {
                         when (
                             val toolResult =
-                                executeToolCalls(toolCalls, tools, message, capturedAttachments)
+                                executeToolCalls(
+                                    toolCalls,
+                                    activeTools,
+                                    progressiveToolDisclosure,
+                                    message,
+                                    capturedAttachments,
+                                )
                         ) {
                             is ExecuteToolCallsResult.Success -> {
                                 if (textContent.isNotEmpty()) {
@@ -331,26 +366,60 @@ class AgentOrchestrator
         }
 
         private suspend fun executeToolCalls(
-            toolCalls: List<LlmResponsePart.ToolCall>,
-            tools: List<AppFunctionMetadata>,
+            toolCalls: List<LlmResponsePart>,
+            activeTools: MutableList<AppFunctionMetadata>,
+            progressiveToolDisclosure: Boolean,
             message: MessageEntity,
             capturedAttachments: MutableList<MessageAttachment>,
         ): ExecuteToolCallsResult {
             val results = mutableListOf<ToolOutput>()
-            for (toolCall in toolCalls) {
-                _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
+            val exploredApps = mutableListOf<String>()
+            val discoveredTools = mutableListOf<AppFunctionMetadata>()
+            var invokedAppFunction = false
+            for (part in toolCalls) {
+                val toolCall =
+                    when (part) {
+                        is LlmResponsePart.ToolCall -> part
+                        is LlmResponsePart.UnknownToolCall -> {
+                            results.add(
+                                ToolOutput(
+                                    functionId = part.name,
+                                    callId = part.callId,
+                                    result = unavailableFunctionResult(part.name, progressiveToolDisclosure),
+                                ),
+                            )
+                            continue
+                        }
+                        else -> continue
+                    }
 
                 val matchingTool =
-                    tools.find {
+                    activeTools.find {
                         it.packageName == toolCall.packageName && it.id == toolCall.functionId
                     }
                 if (matchingTool == null) {
-                    completeMessageWithError(
-                        message.messageId,
-                        message.threadId,
-                        "Tool not found: ${toolCall.functionId}",
+                    results.add(
+                        ToolOutput(
+                            functionId = toolCall.functionId,
+                            callId = toolCall.callId,
+                            result =
+                                unavailableFunctionResult(
+                                    toolCall.functionId,
+                                    progressiveToolDisclosure,
+                                ),
+                        ),
                     )
-                    return ExecuteToolCallsResult.Error
+                    continue
+                }
+
+                if (matchingTool.isToolDiscoveryTool()) {
+                    if (matchingTool.id == AgentInternalTools.EXPAND_TOOL_DESCRIPTION) {
+                        (toolCall.arguments[ToolDiscoveryTools.PARAM_PACKAGE_NAME] as? String)
+                            ?.let(exploredApps::add)
+                    }
+                } else {
+                    invokedAppFunction = true
+                    _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
                 }
 
                 val inputs = nonNullArguments(toolCall.arguments)
@@ -406,6 +475,22 @@ class AgentOrchestrator
                         }
                     }
 
+                    is ExecuteAppFunctionResult.ToolsDiscovered -> {
+                        results.add(
+                            ToolOutput(
+                                functionId = toolCall.functionId,
+                                callId = toolCall.callId,
+                                result = executionResult.formattedJson,
+                            ),
+                        )
+                        discoveredTools.addAll(executionResult.tools)
+                        val newTools =
+                            executionResult.tools.filter { tool ->
+                                activeTools.none { it.name == tool.name }
+                            }
+                        activeTools.addAll(newTools)
+                    }
+
                     is ExecuteAppFunctionResult.PendingIntentAction -> {
                         return ExecuteToolCallsResult.PendingIntentAction(
                             pendingIntentId = UUID.randomUUID().toString(),
@@ -446,8 +531,53 @@ class AgentOrchestrator
                     }
                 }
             }
+            if (!invokedAppFunction) {
+                toolDiscoveryStatus(exploredApps, discoveredTools)?.let { _status.value = it }
+            }
             return ExecuteToolCallsResult.Success(results)
         }
+
+        /**
+         * Summarizes the tool discovery calls of one model turn into a status. Loading functions
+         * (L2) takes precedence over exploring apps (L1) when both happen in the same turn.
+         */
+        private fun toolDiscoveryStatus(
+            exploredApps: List<String>,
+            discoveredTools: List<AppFunctionMetadata>,
+        ): AgentStatus? {
+            if (discoveredTools.isNotEmpty()) {
+                return AgentStatus.PlanningWithFunctions(
+                    packageNames = discoveredTools.map { it.packageName }.distinct(),
+                    functionNames = discoveredTools.map { it.id.toShortFunctionName() }.distinct(),
+                )
+            }
+            return exploredApps.distinct().takeIf { it.isNotEmpty() }?.let {
+                AgentStatus.ExploringApps(it)
+            }
+        }
+
+        /** A recoverable result for a call to a function that is not declared in this turn. */
+        private fun unavailableFunctionResult(
+            name: String,
+            progressiveToolDisclosure: Boolean,
+        ): String {
+            val hint =
+                if (progressiveToolDisclosure) {
+                    " Call ${AgentInternalTools.EXPAND_TOOL_DESCRIPTION} and then " +
+                        "${AgentInternalTools.EXPAND_FUNCTION_DECLARATIONS}(package_name, " +
+                        "function_ids) to load it before calling it."
+                } else {
+                    " Only call the functions declared in this request."
+                }
+            return buildJsonObject {
+                put("error", "Function '$name' is not loaded.$hint")
+            }.toString()
+        }
+
+        private fun AppFunctionMetadata.isToolDiscoveryTool(): Boolean = AgentInternalTools.isToolDiscoveryTool(this)
+
+        /** Turns e.g. "com.example.notes.NoteFunctions#createNote" into "createNote". */
+        private fun String.toShortFunctionName(): String = substringAfterLast('#').substringAfterLast('.')
 
         private suspend fun completeMessageWithError(
             messageId: String,

@@ -67,6 +67,7 @@ class AgentInternalTools
     constructor(
         @ApplicationContext private val context: Context,
         private val settingsDataStore: DataStore<Preferences>,
+        private val toolDiscoveryTools: ToolDiscoveryTools,
     ) {
         /**
          * Geocode a physical address string into its latitude and longitude coordinates.
@@ -461,15 +462,28 @@ class AgentInternalTools
         }
 
         /**
+         * Builds the progressive tool disclosure tools ([EXPAND_TOOL_DESCRIPTION] and
+         * [EXPAND_FUNCTION_DECLARATIONS]) for the given external [apps].
+         */
+        suspend fun buildToolDiscoveryTools(apps: Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>>): List<AppFunctionMetadata> =
+            toolDiscoveryTools.buildTools(apps)
+
+        /**
          * Executes an internal agent tool identified by [function] using [parameters] and maps the
          * output into an [ExecuteAppFunctionResult].
+         *
+         * @param availableApps Currently connected and enabled external apps, required when
+         *   executing tool discovery tools.
          */
         suspend fun executeInternalTool(
             function: AppFunctionMetadata,
             parameters: AppFunctionData,
+            availableApps: Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>> = emptyMap(),
         ): ExecuteAppFunctionResult {
             return try {
                 when (function.id) {
+                    EXPAND_TOOL_DESCRIPTION, EXPAND_FUNCTION_DECLARATIONS ->
+                        toolDiscoveryTools.execute(function, parameters, availableApps)
                     "getCurrentLocation" -> {
                         val location = getCurrentLocation()
                         buildLatLngResult(function, location)
@@ -584,5 +598,19 @@ class AgentInternalTools
 
         companion object {
             const val INTERNAL_TOOL_PACKAGE = "com.example.appfunctions.agent.internal"
+
+            /** Progressive tool disclosure: read an app's instructions and function summaries. */
+            const val EXPAND_TOOL_DESCRIPTION = "expand_tool_description"
+
+            /** Progressive tool disclosure: load full function declarations from one app. */
+            const val EXPAND_FUNCTION_DECLARATIONS = "expand_function_declarations"
+
+            /** Returns whether [function] is one of the progressive tool disclosure tools. */
+            fun isToolDiscoveryTool(function: AppFunctionMetadata): Boolean =
+                function.packageName == INTERNAL_TOOL_PACKAGE &&
+                    (
+                        function.id == EXPAND_TOOL_DESCRIPTION ||
+                            function.id == EXPAND_FUNCTION_DECLARATIONS
+                    )
         }
     }

@@ -32,6 +32,10 @@ fun SettingsScreenScreenshotPreview() {
         onServiceTierSelected = {
             // no-op
         },
+        progressiveToolDisclosure = true,
+        onProgressiveToolDisclosureChange = {
+            // no-op
+        },
         onOpenLicenses = {
             // no-op
         },

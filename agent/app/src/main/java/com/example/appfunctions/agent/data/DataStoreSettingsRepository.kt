@@ -17,6 +17,7 @@ package com.example.appfunctions.agent.data
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -40,6 +41,18 @@ class DataStoreSettingsRepository
             val GEMINI_LIVE_VOICE = stringPreferencesKey("gemini_live_voice")
             val PINNED_APPS = stringSetPreferencesKey("pinned_apps")
             val DISCONNECTED_APPS = stringSetPreferencesKey("disconnected_apps")
+            val PROGRESSIVE_TOOL_DISCLOSURE = booleanPreferencesKey("progressive_tool_disclosure")
+        }
+
+        override val progressiveToolDisclosure: Flow<Boolean> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.PROGRESSIVE_TOOL_DISCLOSURE] ?: true
+            }
+
+        override suspend fun setProgressiveToolDisclosure(enabled: Boolean) {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.PROGRESSIVE_TOOL_DISCLOSURE] = enabled
+            }
         }
 
         override val geminiApiKey: Flow<String?> =

@@ -41,11 +41,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class AgentInternalToolsTest {
+    private val toolDiscoveryTools: ToolDiscoveryTools = mockk()
     private val agentInternalTools =
         spyk(
             AgentInternalTools(
                 context = ApplicationProvider.getApplicationContext(),
                 settingsDataStore = mockk(relaxed = true),
+                toolDiscoveryTools = toolDiscoveryTools,
             ),
         )
 
@@ -178,6 +180,47 @@ class AgentInternalToolsTest {
             assertEquals(
                 "Missing required parameter 'address'",
                 (missingResult as ExecuteAppFunctionResult.Error).exception.message,
+            )
+        }
+
+    @Test
+    fun `executeInternalTool delegates tool discovery tools to ToolDiscoveryTools`() =
+        runTest {
+            val function =
+                AppFunctionMetadata(
+                    name =
+                        AppFunctionName(
+                            AgentInternalTools.INTERNAL_TOOL_PACKAGE,
+                            AgentInternalTools.EXPAND_TOOL_DESCRIPTION,
+                        ),
+                    schema = null,
+                    parameters = emptyList(),
+                    response =
+                        AppFunctionResponseMetadata(
+                            valueType = AppFunctionStringTypeMetadata(false),
+                            description = "",
+                        ),
+                    description = "",
+                    deprecation = null,
+                    packageMetadata =
+                        AppFunctionPackageMetadata(
+                            packageName = AgentInternalTools.INTERNAL_TOOL_PACKAGE,
+                            components = AppFunctionComponentsMetadata(),
+                        ),
+                )
+            val availableApps =
+                mapOf(
+                    AppFunctionPackageMetadata("com.example.notes", AppFunctionComponentsMetadata()) to
+                        emptyList<AppFunctionMetadata>(),
+                )
+            val expected = ExecuteAppFunctionResult.Data(AppFunctionData.EMPTY, "{}")
+            coEvery {
+                toolDiscoveryTools.execute(function, AppFunctionData.EMPTY, availableApps)
+            } returns expected
+
+            assertEquals(
+                expected,
+                agentInternalTools.executeInternalTool(function, AppFunctionData.EMPTY, availableApps),
             )
         }
 }

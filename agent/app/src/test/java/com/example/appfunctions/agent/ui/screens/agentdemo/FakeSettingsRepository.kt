@@ -54,6 +54,13 @@ class FakeSettingsRepository : SettingsRepository {
         _geminiLiveVoice.value = voice
     }
 
+    private val _progressiveToolDisclosure = MutableStateFlow(true)
+    override val progressiveToolDisclosure: Flow<Boolean> = _progressiveToolDisclosure
+
+    override suspend fun setProgressiveToolDisclosure(enabled: Boolean) {
+        _progressiveToolDisclosure.value = enabled
+    }
+
     override suspend fun setAppPinned(
         packageName: String,
         pinned: Boolean,

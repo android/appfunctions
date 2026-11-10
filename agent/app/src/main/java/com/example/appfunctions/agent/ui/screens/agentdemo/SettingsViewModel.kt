@@ -46,8 +46,13 @@ class SettingsViewModel
             combine(
                 settingsRepository.selectedProvider,
                 settingsRepository.serviceTier,
-            ) { provider, serviceTier ->
-                SettingsUiState(selectedProvider = provider, serviceTier = serviceTier)
+                settingsRepository.progressiveToolDisclosure,
+            ) { provider, serviceTier, progressiveToolDisclosure ->
+                SettingsUiState(
+                    selectedProvider = provider,
+                    serviceTier = serviceTier,
+                    progressiveToolDisclosure = progressiveToolDisclosure,
+                )
             }
                 .stateIn(
                     scope = viewModelScope,
@@ -78,5 +83,9 @@ class SettingsViewModel
 
         fun setServiceTier(tier: ServiceTier) {
             viewModelScope.launch { settingsRepository.setServiceTier(tier) }
+        }
+
+        fun setProgressiveToolDisclosure(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setProgressiveToolDisclosure(enabled) }
         }
     }

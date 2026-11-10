@@ -27,6 +27,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,12 +44,14 @@ class ExecuteAppFunctionUseCaseTest {
     private val agentInternalTools = mockk<AgentInternalTools>(relaxed = true)
     private val grantAppFunctionUriPermissionsUseCase =
         mockk<GrantAppFunctionUriPermissionsUseCase>(relaxed = true)
+    private val getAppFunctionsUseCase = mockk<GetAppFunctionsUseCase>()
     private val useCase =
         ExecuteAppFunctionUseCase(
             appFunctionManager = appFunctionManager,
             convertAppFunctionDataToJsonUseCase = convertAppFunctionDataToJsonUseCase,
             agentInternalTools = agentInternalTools,
             grantAppFunctionUriPermissionsUseCase = grantAppFunctionUriPermissionsUseCase,
+            getAppFunctionsUseCase = getAppFunctionsUseCase,
         )
 
     @Test
@@ -122,6 +125,7 @@ class ExecuteAppFunctionUseCaseTest {
                     convertAppFunctionDataToJsonUseCase = convertAppFunctionDataToJsonUseCase,
                     agentInternalTools = agentInternalTools,
                     grantAppFunctionUriPermissionsUseCase = grantAppFunctionUriPermissionsUseCase,
+                    getAppFunctionsUseCase = getAppFunctionsUseCase,
                 )
             val function = mockk<AppFunctionMetadata>(relaxed = true)
             every { function.packageName } returns AgentInternalTools.INTERNAL_TOOL_PACKAGE
@@ -133,13 +137,49 @@ class ExecuteAppFunctionUseCaseTest {
                     formattedJson = """{"imageUri":"content://test/cat.png"}""",
                 )
             coEvery {
-                agentInternalTools.executeInternalTool(function, parameters)
+                agentInternalTools.executeInternalTool(function, parameters, emptyMap())
             } returns expectedResult
 
             val result = nullManagerUseCase(function, parameters)
 
             assertEquals(expectedResult, result)
-            coVerify(exactly = 1) { agentInternalTools.executeInternalTool(function, parameters) }
+            coVerify(exactly = 1) {
+                agentInternalTools.executeInternalTool(function, parameters, emptyMap())
+            }
+            verify(exactly = 0) { getAppFunctionsUseCase(any()) }
             verify(exactly = 0) { grantAppFunctionUriPermissionsUseCase(any(), any()) }
+        }
+
+    @Test
+    fun `invoke passes connected and enabled external apps when executing tool discovery tools`() =
+        runTest {
+            val function = mockk<AppFunctionMetadata>(relaxed = true)
+            every { function.packageName } returns AgentInternalTools.INTERNAL_TOOL_PACKAGE
+            every { function.id } returns AgentInternalTools.EXPAND_TOOL_DESCRIPTION
+            val parameters = AppFunctionData.EMPTY
+            val availableApps =
+                mapOf(
+                    androidx.appfunctions.metadata.AppFunctionPackageMetadata(
+                        packageName = "com.example.notes",
+                        components = androidx.appfunctions.metadata.AppFunctionComponentsMetadata(),
+                    ) to emptyList<AppFunctionMetadata>(),
+                )
+            every {
+                getAppFunctionsUseCase(
+                    GetAppFunctionsParams(
+                        isEnabled = true,
+                        isConnected = true,
+                        includeInternalTools = false,
+                    ),
+                )
+            } returns flowOf(availableApps)
+            val expectedResult = ExecuteAppFunctionResult.Data(AppFunctionData.EMPTY, "{}")
+            coEvery {
+                agentInternalTools.executeInternalTool(function, parameters, availableApps)
+            } returns expectedResult
+
+            val result = useCase(function, parameters)
+
+            assertEquals(expectedResult, result)
         }
 }

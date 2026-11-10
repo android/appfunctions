@@ -28,6 +28,7 @@ import androidx.appfunctions.metadata.AppFunctionParcelableTypeMetadata
 import androidx.core.net.toUri
 import com.example.appfunctions.agent.data.AgentInternalTools
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 /**
@@ -41,6 +42,7 @@ class ExecuteAppFunctionUseCase
         private val convertAppFunctionDataToJsonUseCase: ConvertAppFunctionDataToJsonUseCase,
         private val agentInternalTools: AgentInternalTools,
         private val grantAppFunctionUriPermissionsUseCase: GrantAppFunctionUriPermissionsUseCase,
+        private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
     ) {
         /**
          * Executes the use case.
@@ -56,7 +58,19 @@ class ExecuteAppFunctionUseCase
             threadId: String? = null,
         ): ExecuteAppFunctionResult {
             if (function.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
-                return agentInternalTools.executeInternalTool(function, parameters)
+                val availableApps =
+                    if (AgentInternalTools.isToolDiscoveryTool(function)) {
+                        getAppFunctionsUseCase(
+                            GetAppFunctionsParams(
+                                isEnabled = true,
+                                isConnected = true,
+                                includeInternalTools = false,
+                            ),
+                        ).first()
+                    } else {
+                        emptyMap()
+                    }
+                return agentInternalTools.executeInternalTool(function, parameters, availableApps)
             }
 
             if (appFunctionManager == null) {
@@ -143,6 +157,18 @@ sealed class ExecuteAppFunctionResult {
         ExecuteAppFunctionResult()
 
     data class PendingIntentAction(val pendingIntent: PendingIntent) : ExecuteAppFunctionResult()
+
+    /**
+     * A tool-discovery call (see [AgentInternalTools.EXPAND_FUNCTION_DECLARATIONS]) that loaded
+     * [tools] so the model can call them for the rest of the current agent turn.
+     *
+     * @property formattedJson The result to send back to the model.
+     * @property tools The discovered functions to make available as tools.
+     */
+    data class ToolsDiscovered(
+        val formattedJson: String,
+        val tools: List<AppFunctionMetadata>,
+    ) : ExecuteAppFunctionResult()
 
     data class Error(val exception: Exception) : ExecuteAppFunctionResult()
 }

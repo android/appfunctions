@@ -23,11 +23,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.DataStoreSettingsRepository
+import com.example.appfunctions.agent.data.ToolDiscoveryTools
 import com.example.appfunctions.agent.di.settingsDataStore
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
+import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -50,7 +53,12 @@ class GetAppFunctionsUseCaseTest {
                 appFunctionManager = appFunctionManager,
                 getAppFunctionStatesUseCase = GetAppFunctionStatesUseCase(appFunctionManager),
                 settingsRepository = DataStoreSettingsRepository(dataStore),
-                agentInternalTools = AgentInternalTools(context, dataStore),
+                agentInternalTools =
+                    AgentInternalTools(
+                        context = context,
+                        settingsDataStore = dataStore,
+                        toolDiscoveryTools = ToolDiscoveryTools(context),
+                    ),
             )
 
         // Adopt shell permission identity
@@ -93,5 +101,20 @@ class GetAppFunctionsUseCaseTest {
                         funcs.any { it.id.contains("fakeFunction") }
                 }
             assertTrue("Should find fakeFunction in a package matching $packageName", found)
+        }
+
+    @Test
+    fun invoke_progressiveToolDisclosure_returnsDiscoveryToolsWithAppCatalog() =
+        runBlocking {
+            val tools =
+                useCase(GetAppFunctionsParams(progressiveToolDisclosure = true))
+                    .first()
+                    .values
+                    .flatten()
+
+            assertFalse(tools.any { it.id.contains("fakeFunction") })
+            val expandTool =
+                tools.first { it.id == AgentInternalTools.EXPAND_TOOL_DESCRIPTION }
+            assertTrue(expandTool.description.contains(context.packageName))
         }
 }

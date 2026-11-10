@@ -255,19 +255,24 @@ class GeminiProviderImpl
                         val name =
                             stepObj[KEY_NAME]?.jsonPrimitive?.content
                                 ?: return LlmResponse.Error("Called function without a name")
-                        val matchingTool =
-                            toolConverter.findToolByName(name, tools)
-                                ?: return LlmResponse.Error("Called unknown function: $name")
-
-                        val packageName = matchingTool.packageName
-                        val functionId = matchingTool.id
-
-                        val argumentsMap = stepObj[KEY_ARGUMENTS]?.jsonObject.toArgumentsMap()
                         val callId =
                             stepObj["id"]?.jsonPrimitive?.content
                                 ?: return LlmResponse.Error(
                                     "Function call missing call_id in response",
                                 )
+                        val matchingTool = toolConverter.findToolByName(name, tools)
+                        if (matchingTool == null) {
+                            // Let the caller answer with a recoverable error instead of failing the
+                            // whole turn (e.g. the model called a function it saw earlier in the
+                            // conversation that is not declared in this request).
+                            parts.add(LlmResponsePart.UnknownToolCall(name = name, callId = callId))
+                            continue
+                        }
+
+                        val packageName = matchingTool.packageName
+                        val functionId = matchingTool.id
+
+                        val argumentsMap = stepObj[KEY_ARGUMENTS]?.jsonObject.toArgumentsMap()
                         parts.add(
                             LlmResponsePart.ToolCall(
                                 packageName = packageName,

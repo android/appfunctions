@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -48,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -93,6 +95,8 @@ fun SettingsScreen(
         geminiApiKeyState = viewModel.geminiApiKeyState,
         serviceTier = uiState.serviceTier,
         onServiceTierSelected = viewModel::setServiceTier,
+        progressiveToolDisclosure = uiState.progressiveToolDisclosure,
+        onProgressiveToolDisclosureChange = viewModel::setProgressiveToolDisclosure,
         onOpenLicenses = onOpenLicensesClick,
         onNavigateToConnectedApps = onNavigateToConnectedApps,
     )
@@ -105,6 +109,8 @@ fun SettingsScreenContent(
     geminiApiKeyState: TextFieldState,
     serviceTier: ServiceTier,
     onServiceTierSelected: (ServiceTier) -> Unit,
+    progressiveToolDisclosure: Boolean,
+    onProgressiveToolDisclosureChange: (Boolean) -> Unit,
     onOpenLicenses: () -> Unit,
     onNavigateToConnectedApps: () -> Unit,
 ) {
@@ -208,6 +214,35 @@ fun SettingsScreenContent(
             ListItem(
                 headlineContent = {
                     Text(
+                        text = stringResource(id = R.string.settings_progressive_tool_disclosure),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text =
+                            stringResource(
+                                id = R.string.settings_progressive_tool_disclosure_description,
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                trailingContent = {
+                    Switch(checked = progressiveToolDisclosure, onCheckedChange = null)
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier =
+                    Modifier.toggleable(
+                        value = progressiveToolDisclosure,
+                        role = Role.Switch,
+                        onValueChange = onProgressiveToolDisclosureChange,
+                    ),
+            )
+
+            ListItem(
+                headlineContent = {
+                    Text(
                         text = stringResource(id = R.string.manage_connected_apps),
                         style = MaterialTheme.typography.bodyLarge,
                     )
@@ -270,6 +305,8 @@ fun SettingsScreenPreview() {
         geminiApiKeyState = rememberTextFieldState("AIzaSy..."),
         serviceTier = ServiceTier.STANDARD,
         onServiceTierSelected = {},
+        progressiveToolDisclosure = true,
+        onProgressiveToolDisclosureChange = {},
         onOpenLicenses = {},
         onNavigateToConnectedApps = {},
     )
