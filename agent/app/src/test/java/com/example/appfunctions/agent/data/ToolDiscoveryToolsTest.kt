@@ -15,8 +15,12 @@
  */
 package com.example.appfunctions.agent.data
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.AppFunctionName
+import androidx.appfunctions.metadata.AppFunctionAppMetadata
 import androidx.appfunctions.metadata.AppFunctionArrayTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
@@ -24,16 +28,12 @@ import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_FUNCTION_DECLARATIONS
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_TOOL_DESCRIPTION
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
-import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
-import com.example.appfunctions.agent.domain.appfunction.ResolveAppInfoUseCase
-import com.example.appfunctions.agent.domain.appfunction.ResolvedAppInfo
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -48,11 +48,13 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ToolDiscoveryToolsTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
     private val notesPackage = packageMetadata(NOTES_PKG)
     private val chatPackage = packageMetadata(CHAT_PKG)
     private val createNote = function(notesPackage, "createNote", "Creates a new note. Supports checklists.")
@@ -60,23 +62,19 @@ class ToolDiscoveryToolsTest {
     private val sendMessage = function(chatPackage, "sendMessage", "Sends a message.")
     private val apps = mapOf(notesPackage to listOf(createNote, deleteNote), chatPackage to listOf(sendMessage))
 
-    private val resolveAppInfoUseCase: ResolveAppInfoUseCase = mockk()
-    private val getAppFunctionsUseCase: GetAppFunctionsUseCase = mockk()
-    private val toolDiscoveryTools = ToolDiscoveryTools(resolveAppInfoUseCase) { getAppFunctionsUseCase }
+    private val toolDiscoveryTools = ToolDiscoveryTools(context)
 
     @Before
     fun setUp() {
-        coEvery { resolveAppInfoUseCase(notesPackage) } returns
-            ResolvedAppInfo(
-                label = "Notes",
-                instructions =
-                    "Manage notes, e.g. shopping lists. Use createNote to add a note and " +
-                        "deleteNote to remove one; always confirm with the user before deleting " +
-                        "anything because deletion cannot be undone.",
-            )
-        coEvery { resolveAppInfoUseCase(chatPackage) } returns
-            ResolvedAppInfo(label = "Chat", instructions = null)
-        every { getAppFunctionsUseCase(any()) } returns flowOf(apps)
+        mockApp(
+            packageMetadata = notesPackage,
+            label = "Notes",
+            instructions =
+                "Manage notes, e.g. shopping lists. Use createNote to add a note and " +
+                    "deleteNote to remove one; always confirm with the user before deleting " +
+                    "anything because deletion cannot be undone.",
+        )
+        mockApp(packageMetadata = chatPackage, label = "Chat", instructions = null)
     }
 
     @Test
@@ -124,9 +122,10 @@ class ToolDiscoveryToolsTest {
         runTest {
             val tool = toolDiscoveryTools.buildTools(apps)[0]
 
-            val result = toolDiscoveryTools.execute(tool, data(tool, packageName = NOTES_PKG))
+            val result = toolDiscoveryTools.execute(tool, data(tool, packageName = NOTES_PKG), apps)
 
             val json = (result as ExecuteAppFunctionResult.Data).json()
+            assertEquals("Notes", json["app_name"]!!.jsonPrimitive.content)
             assertTrue(json["instructions"]!!.jsonPrimitive.content.contains("cannot be undone"))
             val functions = json["functions"]!!.jsonArray.map { it.jsonObject }
             assertEquals(
@@ -145,7 +144,7 @@ class ToolDiscoveryToolsTest {
         runTest {
             val tool = toolDiscoveryTools.buildTools(apps)[0]
 
-            val result = toolDiscoveryTools.execute(tool, data(tool, packageName = "com.unknown"))
+            val result = toolDiscoveryTools.execute(tool, data(tool, packageName = "com.unknown"), apps)
 
             assertNotNull((result as ExecuteAppFunctionResult.Data).json()["error"])
         }
@@ -163,6 +162,7 @@ class ToolDiscoveryToolsTest {
                         packageName = NOTES_PKG,
                         functionIds = listOf("createNote", "sendMessage", "missing"),
                     ),
+                    apps,
                 )
 
             val discovered = result as ExecuteAppFunctionResult.ToolsDiscovered
@@ -176,6 +176,26 @@ class ToolDiscoveryToolsTest {
         }
 
     private fun ExecuteAppFunctionResult.Data.json(): JsonObject = Json.parseToJsonElement(formattedJson).jsonObject
+
+    private fun mockApp(
+        packageMetadata: AppFunctionPackageMetadata,
+        label: String,
+        instructions: String?,
+    ) {
+        val packageName = packageMetadata.packageName
+        Shadows.shadowOf(context.packageManager).installPackage(
+            PackageInfo().apply {
+                this.packageName = packageName
+                applicationInfo =
+                    ApplicationInfo().apply {
+                        this.packageName = packageName
+                        nonLocalizedLabel = label
+                    }
+            },
+        )
+        every { packageMetadata.resolveAppFunctionAppMetadata(context) } returns
+            instructions?.let { AppFunctionAppMetadata(instructions = it, displayDescription = label) }
+    }
 
     private fun data(
         tool: AppFunctionMetadata,
@@ -191,8 +211,11 @@ class ToolDiscoveryToolsTest {
         return builder.build()
     }
 
-    private fun packageMetadata(packageName: String) =
-        AppFunctionPackageMetadata(packageName = packageName, components = AppFunctionComponentsMetadata())
+    private fun packageMetadata(packageName: String): AppFunctionPackageMetadata =
+        mockk<AppFunctionPackageMetadata>(relaxed = true).apply {
+            every { this@apply.packageName } returns packageName
+            every { this@apply.components } returns AppFunctionComponentsMetadata()
+        }
 
     private fun function(
         packageMetadata: AppFunctionPackageMetadata,

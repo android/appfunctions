@@ -208,12 +208,19 @@ class AgentInternalToolsTest {
                             components = AppFunctionComponentsMetadata(),
                         ),
                 )
+            val availableApps =
+                mapOf(
+                    AppFunctionPackageMetadata("com.example.notes", AppFunctionComponentsMetadata()) to
+                        emptyList<AppFunctionMetadata>(),
+                )
             val expected = ExecuteAppFunctionResult.Data(AppFunctionData.EMPTY, "{}")
-            coEvery { toolDiscoveryTools.execute(function, AppFunctionData.EMPTY) } returns expected
+            coEvery {
+                toolDiscoveryTools.execute(function, AppFunctionData.EMPTY, availableApps)
+            } returns expected
 
             assertEquals(
                 expected,
-                agentInternalTools.executeInternalTool(function, AppFunctionData.EMPTY),
+                agentInternalTools.executeInternalTool(function, AppFunctionData.EMPTY, availableApps),
             )
         }
 }

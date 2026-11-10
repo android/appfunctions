@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.data
 
+import android.content.Context
 import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionArrayTypeMetadata
@@ -28,15 +29,13 @@ import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_F
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_TOOL_DESCRIPTION
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.INTERNAL_TOOL_PACKAGE
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
-import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
-import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
-import com.example.appfunctions.agent.domain.appfunction.ResolveAppInfoUseCase
 import com.example.appfunctions.agent.domain.appfunction.toSummary
-import dagger.Lazy
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -56,15 +55,14 @@ import javax.inject.Singleton
  *    [ExecuteAppFunctionResult.ToolsDiscovered] whose tools the caller makes available for the rest
  *    of the current agent turn.
  *
- * This class is stateless: apps are re-queried on every call and nothing is kept across turns.
+ * This class is stateless: the available apps are passed in on every call and nothing is kept
+ * across turns.
  */
 @Singleton
 class ToolDiscoveryTools
     @Inject
     constructor(
-        private val resolveAppInfoUseCase: ResolveAppInfoUseCase,
-        // Lazy breaks the dependency cycle GetAppFunctionsUseCase -> AgentInternalTools -> this.
-        private val getAppFunctionsUseCase: Lazy<GetAppFunctionsUseCase>,
+        @ApplicationContext private val context: Context,
     ) {
         /**
          * Builds the tool discovery tools for [apps]. Returns no tools when there are no apps.
@@ -125,13 +123,13 @@ class ToolDiscoveryTools
             )
         }
 
-        /** Executes one of the tool discovery tools. */
+        /** Executes one of the tool discovery tools against the currently available [apps]. */
         suspend fun execute(
             function: AppFunctionMetadata,
             parameters: AppFunctionData,
+            apps: Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>>,
         ): ExecuteAppFunctionResult {
             val packageName = parameters.getString(PARAM_PACKAGE_NAME)
-            val apps = getAvailableApps()
             val entry =
                 apps.entries.find { it.key.packageName == packageName }
                     ?: return errorResult(
@@ -154,12 +152,12 @@ class ToolDiscoveryTools
             packageMetadata: AppFunctionPackageMetadata,
             functions: List<AppFunctionMetadata>,
         ): ExecuteAppFunctionResult {
-            val info = resolveAppInfoUseCase(packageMetadata)
+            val (label, instructions) = resolveAppInfo(packageMetadata)
             val json =
                 buildJsonObject {
                     put(PARAM_PACKAGE_NAME, packageMetadata.packageName)
-                    put("app_name", info.label)
-                    put("instructions", info.instructions ?: NO_INSTRUCTIONS)
+                    put("app_name", label)
+                    put("instructions", instructions ?: NO_INSTRUCTIONS)
                     put(
                         "functions",
                         buildJsonArray {
@@ -213,17 +211,6 @@ class ToolDiscoveryTools
             return ExecuteAppFunctionResult.ToolsDiscovered(json.toString(), loaded)
         }
 
-        private suspend fun getAvailableApps(): Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>> =
-            getAppFunctionsUseCase
-                .get()
-                .invoke(
-                    GetAppFunctionsParams(
-                        isEnabled = true,
-                        isConnected = true,
-                        includeInternalTools = false,
-                    ),
-                ).first()
-
         private suspend fun resolveCatalog(apps: Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>>): List<CatalogEntry> =
             coroutineScope {
                 apps
@@ -231,15 +218,35 @@ class ToolDiscoveryTools
                     .filterValues { it.isNotEmpty() }
                     .map { (packageMetadata, functions) ->
                         async {
-                            val info = resolveAppInfoUseCase(packageMetadata)
+                            val (label, instructions) = resolveAppInfo(packageMetadata)
                             CatalogEntry(
                                 packageName = packageMetadata.packageName,
-                                label = info.label,
-                                instructions = info.instructions,
+                                label = label,
+                                instructions = instructions,
                                 functions = functions,
                             )
                         }
                     }.awaitAll()
+            }
+
+        private suspend fun resolveAppInfo(packageMetadata: AppFunctionPackageMetadata): Pair<String, String?> =
+            withContext(Dispatchers.IO) {
+                val packageName = packageMetadata.packageName
+                val label =
+                    try {
+                        val packageManager = context.packageManager
+                        packageManager
+                            .getApplicationLabel(packageManager.getApplicationInfo(packageName, 0))
+                            .toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+                val instructions =
+                    packageMetadata
+                        .resolveAppFunctionAppMetadata(context)
+                        ?.instructions
+                        ?.takeIf { it.isNotBlank() }
+                label to instructions
             }
 
         private fun packageNameParameter() =

@@ -28,7 +28,6 @@ import com.example.appfunctions.agent.di.settingsDataStore
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
-import com.example.appfunctions.agent.domain.appfunction.ResolveAppInfoUseCase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
@@ -58,8 +57,7 @@ class GetAppFunctionsUseCaseTest {
                     AgentInternalTools(
                         context = context,
                         settingsDataStore = dataStore,
-                        toolDiscoveryTools =
-                            ToolDiscoveryTools(ResolveAppInfoUseCase(context)) { useCase },
+                        toolDiscoveryTools = ToolDiscoveryTools(context),
                     ),
             )
 

@@ -574,13 +574,7 @@ class AgentOrchestrator
             }.toString()
         }
 
-        private fun AppFunctionMetadata.isToolDiscoveryTool(): Boolean =
-            packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE &&
-                id in
-                setOf(
-                    AgentInternalTools.EXPAND_TOOL_DESCRIPTION,
-                    AgentInternalTools.EXPAND_FUNCTION_DECLARATIONS,
-                )
+        private fun AppFunctionMetadata.isToolDiscoveryTool(): Boolean = AgentInternalTools.isToolDiscoveryTool(this)
 
         /** Turns e.g. "com.example.notes.NoteFunctions#createNote" into "createNote". */
         private fun String.toShortFunctionName(): String = substringAfterLast('#').substringAfterLast('.')
