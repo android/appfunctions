@@ -15,9 +15,12 @@
  */
 package com.example.appfunctions.agent.domain.chat
 
+import android.os.Build
+import com.example.appfunctions.agent.data.AppInteractionSessionRepository
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
+import dagger.Lazy
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -27,6 +30,7 @@ class ManageThreadsUseCase
     @Inject
     constructor(
         private val chatRepository: ChatRepository,
+        private val appInteractionSessionRepository: Lazy<AppInteractionSessionRepository>,
     ) {
         /** Returns a flow of all threads. */
         fun getThreads(): Flow<List<ThreadEntity>> {
@@ -60,8 +64,11 @@ class ManageThreadsUseCase
             chatRepository.updateThreadModel(threadId, llmModel)
         }
 
-        /** Deletes a thread. */
+        /** Deletes a thread and closes any [android.app.AppInteractionSession] cached for it. */
         suspend fun deleteThread(threadId: String) {
             chatRepository.deleteThread(threadId)
+            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.CINNAMON_BUN_2) {
+                appInteractionSessionRepository.get().invalidateSession(threadId)
+            }
         }
     }

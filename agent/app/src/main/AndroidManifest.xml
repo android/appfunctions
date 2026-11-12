@@ -35,6 +35,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppFunctionsAgent">
+        <property
+            android:name="android.app.appfunctions.PROPERTY_SUPPORTS_APP_FUNCTION_USER_CONTROL"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"
