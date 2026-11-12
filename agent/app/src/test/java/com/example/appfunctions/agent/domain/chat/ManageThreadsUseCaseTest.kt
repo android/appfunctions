@@ -31,8 +31,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class ManageThreadsUseCaseTest {
     private lateinit var database: AppDatabase
     private lateinit var chatDao: ChatDao
@@ -52,7 +54,11 @@ class ManageThreadsUseCaseTest {
                 .build()
         chatDao = database.chatDao()
         chatRepository = RoomChatRepository(chatDao)
-        useCase = ManageThreadsUseCase(chatRepository)
+        useCase =
+            ManageThreadsUseCase(
+                chatRepository,
+                { error("AppInteractionSessionRepository should not be used below API 37.2") },
+            )
     }
 
     @After

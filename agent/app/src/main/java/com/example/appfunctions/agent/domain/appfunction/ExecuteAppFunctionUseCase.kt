@@ -27,6 +27,7 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionParcelableTypeMetadata
 import androidx.core.net.toUri
 import com.example.appfunctions.agent.data.AgentInternalTools
+import com.example.appfunctions.agent.domain.appinteraction.StartAppInteractionSessionUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -43,19 +44,22 @@ class ExecuteAppFunctionUseCase
         private val agentInternalTools: AgentInternalTools,
         private val grantAppFunctionUriPermissionsUseCase: GrantAppFunctionUriPermissionsUseCase,
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
+        private val startAppInteractionSessionUseCase: StartAppInteractionSessionUseCase,
     ) {
         /**
          * Executes the use case.
          *
          * @param function The metadata of the function to execute.
          * @param parameters The input parameters for the function.
-         * @param threadId Optional chat thread ID used for interaction attribution on API 37+.
+         * @param threadId Chat thread ID used for interaction attribution on API 37+ and to cache
+         *   the [android.app.AppInteractionSession]. Callers without a real chat thread should
+         *   pass a stable default thread ID so the session is reused.
          * @return An [ExecuteAppFunctionResult].
          */
         suspend operator fun invoke(
             function: AppFunctionMetadata,
             parameters: AppFunctionData,
-            threadId: String? = null,
+            threadId: String,
         ): ExecuteAppFunctionResult {
             if (function.packageName == AgentInternalTools.INTERNAL_TOOL_PACKAGE) {
                 val availableApps =
@@ -83,12 +87,7 @@ class ExecuteAppFunctionUseCase
 
             val request =
                 if (Build.VERSION.SDK_INT >= 37) {
-                    val uri =
-                        if (threadId != null) {
-                            "appfunctions-agent://chat?threadId=$threadId".toUri()
-                        } else {
-                            "appfunctions-agent://chat".toUri()
-                        }
+                    val uri = "appfunctions-agent://chat?threadId=$threadId".toUri()
                     ExecuteAppFunctionRequest(
                         targetPackageName = function.packageName,
                         functionIdentifier = function.id,
@@ -109,7 +108,20 @@ class ExecuteAppFunctionUseCase
                 }
 
             return try {
-                when (val response = appFunctionManager.executeAppFunction(request)) {
+                // Session acquisition is inside the try so that failures (e.g. the user denying
+                // consent) are reported back to the model as a tool error.
+                val response =
+                    if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.CINNAMON_BUN_2) {
+                        val session =
+                            startAppInteractionSessionUseCase(
+                                threadId,
+                                listOf(function.packageName),
+                            )
+                        appFunctionManager.executeAppFunction(session, request)
+                    } else {
+                        appFunctionManager.executeAppFunction(request)
+                    }
+                when (response) {
                     is ExecuteAppFunctionResponse.Success -> {
                         val data = response.returnValue
                         val valueType = function.response.valueType
