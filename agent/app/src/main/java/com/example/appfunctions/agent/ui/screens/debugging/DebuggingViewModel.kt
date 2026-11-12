@@ -233,6 +233,7 @@ class DebuggingViewModel
                                 executeAppFunctionUseCase(
                                     function = function,
                                     parameters = appFunctionData,
+                                    threadId = DEBUG_THREAD_ID,
                                 )
                             _uiState.update {
                                 it.copy(
@@ -382,5 +383,13 @@ class DebuggingViewModel
 
         private companion object {
             const val TAG = "DebuggingViewModel"
+
+            /**
+             * Default thread ID for executions from the Debugging screen, which has no chat thread.
+             * Using a stable ID makes all debug executions reuse the same cached
+             * [android.app.AppInteractionSession]. Real thread IDs are UUIDs, so this cannot
+             * collide.
+             */
+            const val DEBUG_THREAD_ID = "debugging-thread"
         }
     }

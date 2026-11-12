@@ -22,6 +22,8 @@ import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import com.example.appfunctions.agent.data.AgentInternalTools
+import com.example.appfunctions.agent.domain.appinteraction.StartAppInteractionSessionUseCase
+import dagger.Lazy
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -37,7 +39,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class ExecuteAppFunctionUseCaseTest {
     private val appFunctionManager = mockk<AppFunctionManager>()
     private val convertAppFunctionDataToJsonUseCase = mockk<ConvertAppFunctionDataToJsonUseCase>()
@@ -45,6 +47,10 @@ class ExecuteAppFunctionUseCaseTest {
     private val grantAppFunctionUriPermissionsUseCase =
         mockk<GrantAppFunctionUriPermissionsUseCase>(relaxed = true)
     private val getAppFunctionsUseCase = mockk<GetAppFunctionsUseCase>()
+    private val startAppInteractionSessionUseCase =
+        Lazy<StartAppInteractionSessionUseCase> {
+            error("StartAppInteractionSessionUseCase should not be used below API 37.2")
+        }
     private val useCase =
         ExecuteAppFunctionUseCase(
             appFunctionManager = appFunctionManager,
@@ -52,6 +58,7 @@ class ExecuteAppFunctionUseCaseTest {
             agentInternalTools = agentInternalTools,
             grantAppFunctionUriPermissionsUseCase = grantAppFunctionUriPermissionsUseCase,
             getAppFunctionsUseCase = getAppFunctionsUseCase,
+            startAppInteractionSessionUseCase = startAppInteractionSessionUseCase,
         )
 
     @Test
@@ -67,7 +74,7 @@ class ExecuteAppFunctionUseCaseTest {
             coEvery { appFunctionManager.executeAppFunction(any()) } returns
                 ExecuteAppFunctionResponse.Error(appException)
 
-            val result = useCase(function, parameters)
+            val result = useCase(function, parameters, TEST_THREAD_ID)
 
             assertTrue(result is ExecuteAppFunctionResult.Error)
             val errorResult = result as ExecuteAppFunctionResult.Error
@@ -87,7 +94,7 @@ class ExecuteAppFunctionUseCaseTest {
             val runtimeException = RuntimeException("Unexpected crash")
             coEvery { appFunctionManager.executeAppFunction(any()) } throws runtimeException
 
-            val result = useCase(function, parameters)
+            val result = useCase(function, parameters, TEST_THREAD_ID)
 
             assertTrue(result is ExecuteAppFunctionResult.Error)
             val errorResult = result as ExecuteAppFunctionResult.Error
@@ -109,7 +116,7 @@ class ExecuteAppFunctionUseCaseTest {
                 convertAppFunctionDataToJsonUseCase(any(), any(), any(), any())
             } returns """{"ok":true}"""
 
-            val result = useCase(function, parameters)
+            val result = useCase(function, parameters, TEST_THREAD_ID)
 
             assertTrue(result is ExecuteAppFunctionResult.Data)
             assertEquals("""{"ok":true}""", (result as ExecuteAppFunctionResult.Data).formattedJson)
@@ -126,6 +133,7 @@ class ExecuteAppFunctionUseCaseTest {
                     agentInternalTools = agentInternalTools,
                     grantAppFunctionUriPermissionsUseCase = grantAppFunctionUriPermissionsUseCase,
                     getAppFunctionsUseCase = getAppFunctionsUseCase,
+                    startAppInteractionSessionUseCase = startAppInteractionSessionUseCase,
                 )
             val function = mockk<AppFunctionMetadata>(relaxed = true)
             every { function.packageName } returns AgentInternalTools.INTERNAL_TOOL_PACKAGE
@@ -140,7 +148,7 @@ class ExecuteAppFunctionUseCaseTest {
                 agentInternalTools.executeInternalTool(function, parameters, emptyMap())
             } returns expectedResult
 
-            val result = nullManagerUseCase(function, parameters)
+            val result = nullManagerUseCase(function, parameters, TEST_THREAD_ID)
 
             assertEquals(expectedResult, result)
             coVerify(exactly = 1) {
@@ -178,8 +186,12 @@ class ExecuteAppFunctionUseCaseTest {
                 agentInternalTools.executeInternalTool(function, parameters, availableApps)
             } returns expectedResult
 
-            val result = useCase(function, parameters)
+            val result = useCase(function, parameters, TEST_THREAD_ID)
 
             assertEquals(expectedResult, result)
         }
+
+    private companion object {
+        const val TEST_THREAD_ID = "test-thread"
+    }
 }
