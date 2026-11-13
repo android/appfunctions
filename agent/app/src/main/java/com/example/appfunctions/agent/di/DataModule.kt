@@ -16,10 +16,12 @@
 package com.example.appfunctions.agent.di
 
 import android.content.Context
+import android.media.AudioManager
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
+import com.example.appfunctions.agent.data.AndroidLiveAudioSession
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.DataStoreSettingsRepository
 import com.example.appfunctions.agent.data.FileDownloadHelper
@@ -31,6 +33,7 @@ import com.example.appfunctions.agent.data.RoomChatRepository
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.AppDatabase
 import com.example.appfunctions.agent.data.db.dao.ChatDao
+import com.example.appfunctions.agent.domain.LiveAudioSessionFactory
 import com.example.appfunctions.agent.domain.LlmProviderFactory
 import dagger.Binds
 import dagger.Module
@@ -117,6 +120,19 @@ abstract class DataModule {
                 }
                 install(HttpTimeout) { socketTimeoutMillis = SOCKET_TIMEOUT_MS }
                 install(WebSockets) { pingIntervalMillis = WEBSOCKET_PING_INTERVAL_MS }
+            }
+        }
+
+        @Provides
+        @Singleton
+        fun provideLiveAudioSessionFactory(
+            @ApplicationContext context: Context,
+        ): LiveAudioSessionFactory {
+            return LiveAudioSessionFactory { config ->
+                AndroidLiveAudioSession(
+                    config = config,
+                    audioManager = context.getSystemService(AudioManager::class.java),
+                )
             }
         }
 
