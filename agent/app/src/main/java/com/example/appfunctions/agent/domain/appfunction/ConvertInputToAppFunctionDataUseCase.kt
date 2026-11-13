@@ -117,7 +117,12 @@ class ConvertInputToAppFunctionDataUseCase
                     builder.setAppFunctionData(name, objData)
                 }
                 is AppFunctionArrayTypeMetadata -> {
-                    setArrayValue(builder, name, dataType, value as List<Any>, components)
+                    val values =
+                        value as? List<*>
+                            ?: throw IllegalArgumentException(
+                                "Parameter '$name' expects an array but got '$value'",
+                            )
+                    setArrayValue(builder, name, dataType, values, components)
                 }
                 is AppFunctionReferenceTypeMetadata -> {
                     val referenceKey = dataType.referenceDataType
@@ -162,52 +167,72 @@ class ConvertInputToAppFunctionDataUseCase
             builder: AppFunctionData.Builder,
             name: String,
             arrayType: AppFunctionArrayTypeMetadata,
-            values: List<Any>,
+            values: List<*>,
             components: AppFunctionComponentsMetadata,
         ) {
             when (val itemType = arrayType.itemType) {
                 is AppFunctionStringTypeMetadata -> {
-                    builder.setStringList(name, values.map { it as String })
+                    val stringList = values.convertElements(name, "string") { it.toString() }
+                    builder.setStringList(name, stringList)
                 }
                 is AppFunctionIntTypeMetadata -> {
                     val intArray =
-                        values
-                            .map { if (it is Number) it.toInt() else (it as String).toInt() }
-                            .toIntArray()
-                    builder.setIntArray(name, intArray)
+                        values.convertElements(name, "int") {
+                            when (it) {
+                                is Number -> it.toInt()
+                                is String -> it.toIntOrNull()
+                                else -> null
+                            }
+                        }
+                    builder.setIntArray(name, intArray.toIntArray())
                 }
                 is AppFunctionLongTypeMetadata -> {
                     val longArray =
-                        values
-                            .map { if (it is Number) it.toLong() else (it as String).toLong() }
-                            .toLongArray()
-                    builder.setLongArray(name, longArray)
+                        values.convertElements(name, "long") {
+                            when (it) {
+                                is Number -> it.toLong()
+                                is String -> it.toLongOrNull()
+                                else -> null
+                            }
+                        }
+                    builder.setLongArray(name, longArray.toLongArray())
                 }
                 is AppFunctionBooleanTypeMetadata -> {
-                    val booleanArray = values.map { it as Boolean }.toBooleanArray()
-                    builder.setBooleanArray(name, booleanArray)
+                    val booleanArray =
+                        values.convertElements(name, "boolean") {
+                            when (it) {
+                                is Boolean -> it
+                                is String -> it.lowercase().toBooleanStrictOrNull()
+                                else -> null
+                            }
+                        }
+                    builder.setBooleanArray(name, booleanArray.toBooleanArray())
                 }
                 is AppFunctionDoubleTypeMetadata -> {
                     val doubleArray =
-                        values
-                            .map {
-                                if (it is Number) it.toDouble() else (it as String).toDouble()
+                        values.convertElements(name, "double") {
+                            when (it) {
+                                is Number -> it.toDouble()
+                                is String -> it.toDoubleOrNull()
+                                else -> null
                             }
-                            .toDoubleArray()
-                    builder.setDoubleArray(name, doubleArray)
+                        }
+                    builder.setDoubleArray(name, doubleArray.toDoubleArray())
                 }
                 is AppFunctionFloatTypeMetadata -> {
                     val floatArray =
-                        values
-                            .map {
-                                if (it is Number) it.toFloat() else (it as String).toFloat()
+                        values.convertElements(name, "float") {
+                            when (it) {
+                                is Number -> it.toFloat()
+                                is String -> it.toFloatOrNull()
+                                else -> null
                             }
-                            .toFloatArray()
-                    builder.setFloatArray(name, floatArray)
+                        }
+                    builder.setFloatArray(name, floatArray.toFloatArray())
                 }
                 is AppFunctionObjectTypeMetadata -> {
                     val dataList =
-                        values.map { item ->
+                        values.convertElements(name, "object") { item ->
                             toAppFunctionData(itemType, item, components)
                         }
                     builder.setAppFunctionDataList(name, dataList)
@@ -218,7 +243,7 @@ class ConvertInputToAppFunctionDataUseCase
                         components.dataTypes[referenceKey] as? AppFunctionObjectTypeMetadata
                     if (objectType != null) {
                         val dataList =
-                            values.map { item ->
+                            values.convertElements(name, "object") { item ->
                                 toAppFunctionData(objectType, item, components)
                             }
                         builder.setAppFunctionDataList(name, dataList)
@@ -226,4 +251,25 @@ class ConvertInputToAppFunctionDataUseCase
                 }
             }
         }
+
+        /**
+         * Converts each element with [convert], which returns null for an element it cannot
+         * convert. LLMs may encode array elements as numbers, strings or booleans regardless of
+         * the declared item type, so callers accept every lossless representation.
+         *
+         * @throws IllegalArgumentException naming the parameter, index and value of the first
+         *   element that is null or cannot be converted.
+         */
+        private inline fun <T> List<*>.convertElements(
+            name: String,
+            expectedType: String,
+            convert: (Any) -> T?,
+        ): List<T> =
+            mapIndexed { index, item ->
+                item?.let(convert)
+                    ?: throw IllegalArgumentException(
+                        "Parameter '$name' expects an array of $expectedType, " +
+                            "but element $index is '$item'",
+                    )
+            }
     }

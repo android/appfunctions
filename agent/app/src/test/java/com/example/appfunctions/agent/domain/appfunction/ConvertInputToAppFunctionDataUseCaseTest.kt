@@ -28,6 +28,7 @@ import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -127,6 +128,108 @@ class ConvertInputToAppFunctionDataUseCaseTest {
         assertEquals(listOf(true, false), result.getBooleanArray("boolArray")?.toList())
         assertEquals(listOf(1.1, 2.2), result.getDoubleArray("doubleArray")?.toList())
         assertEquals(listOf(3.3f, 4.4f), result.getFloatArray("floatArray")?.toList())
+    }
+
+    @Test
+    fun invoke_stringArrayWithNumericElements_stringifiesElements() {
+        val parameters = listOf(arrayParameter("ids", AppFunctionStringTypeMetadata(false)))
+        val inputs = mapOf("ids" to listOf(1L, 2.5, "three"))
+
+        val result = useCase(parameters, components, inputs).getOrThrow()
+
+        assertEquals(listOf("1", "2.5", "three"), result.getStringList("ids"))
+    }
+
+    @Test
+    fun invoke_numericArraysWithMixedNumbersAndNumericStrings_convertsElements() {
+        val parameters =
+            listOf(
+                arrayParameter("intArray", AppFunctionIntTypeMetadata(false)),
+                arrayParameter("longArray", AppFunctionLongTypeMetadata(false)),
+                arrayParameter("doubleArray", AppFunctionDoubleTypeMetadata(false)),
+                arrayParameter("floatArray", AppFunctionFloatTypeMetadata(false)),
+            )
+        val inputs =
+            mapOf(
+                "intArray" to listOf(1L, 2.0, "3"),
+                "longArray" to listOf(4L, 5.0, "6"),
+                "doubleArray" to listOf(7L, 8.5, "9.5"),
+                "floatArray" to listOf(1L, 2.5, "3.5"),
+            )
+
+        val result = useCase(parameters, components, inputs).getOrThrow()
+
+        assertEquals(listOf(1, 2, 3), result.getIntArray("intArray")?.toList())
+        assertEquals(listOf(4L, 5L, 6L), result.getLongArray("longArray")?.toList())
+        assertEquals(listOf(7.0, 8.5, 9.5), result.getDoubleArray("doubleArray")?.toList())
+        assertEquals(listOf(1.0f, 2.5f, 3.5f), result.getFloatArray("floatArray")?.toList())
+    }
+
+    @Test
+    fun invoke_booleanArrayWithBooleanStrings_convertsElements() {
+        val parameters = listOf(arrayParameter("flags", AppFunctionBooleanTypeMetadata(false)))
+        val inputs = mapOf("flags" to listOf("true", "false", "TRUE", false))
+
+        val result = useCase(parameters, components, inputs).getOrThrow()
+
+        assertEquals(listOf(true, false, true, false), result.getBooleanArray("flags")?.toList())
+    }
+
+    @Test
+    fun invoke_intArrayWithNonNumericString_returnsFailureNamingParameter() {
+        assertArrayFailure(
+            itemType = AppFunctionIntTypeMetadata(false),
+            value = listOf(1L, "abc"),
+            expectedMessage = "Parameter 'items' expects an array of int, but element 1 is 'abc'",
+        )
+    }
+
+    @Test
+    fun invoke_booleanArrayWithNonBooleanString_returnsFailureNamingParameter() {
+        assertArrayFailure(
+            itemType = AppFunctionBooleanTypeMetadata(false),
+            value = listOf("maybe"),
+            expectedMessage =
+                "Parameter 'items' expects an array of boolean, but element 0 is 'maybe'",
+        )
+    }
+
+    @Test
+    fun invoke_arrayWithNullElement_returnsFailureNamingParameter() {
+        assertArrayFailure(
+            itemType = AppFunctionStringTypeMetadata(false),
+            value = listOf("a", null),
+            expectedMessage =
+                "Parameter 'items' expects an array of string, but element 1 is 'null'",
+        )
+    }
+
+    @Test
+    fun invoke_nonListValueForArrayParameter_returnsFailureNamingParameter() {
+        assertArrayFailure(
+            itemType = AppFunctionStringTypeMetadata(false),
+            value = "not_a_list",
+            expectedMessage = "Parameter 'items' expects an array but got 'not_a_list'",
+        )
+    }
+
+    private fun arrayParameter(
+        name: String,
+        itemType: AppFunctionDataTypeMetadata,
+    ) = AppFunctionParameterMetadata(name, true, AppFunctionArrayTypeMetadata(itemType, false))
+
+    private fun assertArrayFailure(
+        itemType: AppFunctionDataTypeMetadata,
+        value: Any,
+        expectedMessage: String,
+    ) {
+        val parameters = listOf(arrayParameter("items", itemType))
+        val inputs = mapOf("items" to value)
+
+        val exception = useCase(parameters, components, inputs).exceptionOrNull()
+
+        assertTrue(exception is IllegalArgumentException)
+        assertEquals(expectedMessage, exception?.message)
     }
 
     @Test
