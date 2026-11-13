@@ -15,7 +15,25 @@
  */
 package com.example.appfunctions.agent.domain
 
+import android.Manifest
+import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.flow.Flow
+
+/**
+ * Provider-supplied PCM audio sample rate configuration for a [LiveAudioSession].
+ *
+ * @property inputSampleRateHz Microphone recording sample rate in Hz.
+ * @property outputSampleRateHz Default assistant playback sample rate in Hz.
+ */
+data class LiveAudioConfig(
+    val inputSampleRateHz: Int,
+    val outputSampleRateHz: Int,
+) {
+    init {
+        require(inputSampleRateHz > 0) { "inputSampleRateHz must be positive: $inputSampleRateHz" }
+        require(outputSampleRateHz > 0) { "outputSampleRateHz must be positive: $outputSampleRateHz" }
+    }
+}
 
 /** Abstraction over full-duplex audio recording and playback for a live voice session. */
 interface LiveAudioSession {
@@ -23,6 +41,7 @@ interface LiveAudioSession {
     val inputSampleRateHz: Int
 
     /** Acquires audio focus/routing and starts microphone capture and audio playback resources. */
+    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun start()
 
     /** Streams captured PCM microphone audio chunks while recording is active and unpaused. */
@@ -38,11 +57,11 @@ interface LiveAudioSession {
      * Enqueues a PCM audio chunk from the assistant for speaker/headset playback.
      *
      * @param pcmBytes Raw 16-bit little-endian mono PCM audio bytes.
-     * @param sampleRateHz Playback sample rate in Hz (defaults to [DEFAULT_OUTPUT_SAMPLE_RATE_HZ]).
+     * @param sampleRateHz Playback sample rate in Hz.
      */
     fun queueAudio(
         pcmBytes: ByteArray,
-        sampleRateHz: Int = DEFAULT_OUTPUT_SAMPLE_RATE_HZ,
+        sampleRateHz: Int,
     )
 
     /** Immediately clears queued assistant audio and flushes active playback on interruption. */
@@ -50,14 +69,9 @@ interface LiveAudioSession {
 
     /** Releases all underlying audio recording, playback, and audio-focus resources. */
     fun release()
-
-    companion object {
-        const val DEFAULT_INPUT_SAMPLE_RATE_HZ = 16_000
-        const val DEFAULT_OUTPUT_SAMPLE_RATE_HZ = 24_000
-    }
 }
 
-/** Factory for creating a new [LiveAudioSession] per voice session. */
+/** Factory for creating a new [LiveAudioSession] configured with [LiveAudioConfig] per voice session. */
 fun interface LiveAudioSessionFactory {
-    fun create(): LiveAudioSession
+    fun create(config: LiveAudioConfig): LiveAudioSession
 }

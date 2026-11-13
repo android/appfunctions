@@ -15,7 +15,7 @@
  */
 package com.example.appfunctions.agent.data
 
-import android.annotation.SuppressLint
+import android.Manifest
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
@@ -27,7 +27,9 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.annotation.VisibleForTesting
+import com.example.appfunctions.agent.domain.LiveAudioConfig
 import com.example.appfunctions.agent.domain.LiveAudioSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -46,14 +48,15 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Manages low-latency PCM audio recording (16 kHz mono 16-bit) and playback (24 kHz mono 16-bit by
- * default) for a Gemini Live bidirectional audio session.
+ * Android hardware implementation of [LiveAudioSession] managing full-duplex voice-communication
+ * PCM recording and playback with acoustic echo cancellation, noise suppression, and audio focus.
  */
-class GeminiLiveAudioHelper
+class AndroidLiveAudioSession
     @VisibleForTesting
     internal constructor(
+        private val config: LiveAudioConfig,
         private val audioManager: AudioManager?,
-        private val audioRecordFactory: (minBufferSize: Int) -> AudioRecord,
+        private val audioRecordFactory: (sampleRateHz: Int, minBufferSize: Int) -> AudioRecord,
         private val audioTrackFactory: (
             attributes: AudioAttributes,
             sampleRateHz: Int,
@@ -61,20 +64,22 @@ class GeminiLiveAudioHelper
         ) -> AudioTrack,
     ) : LiveAudioSession {
         constructor(
+            config: LiveAudioConfig,
             audioManager: AudioManager? = null,
         ) : this(
+            config = config,
             audioManager = audioManager,
             audioRecordFactory = ::defaultAudioRecord,
             audioTrackFactory = ::defaultAudioTrack,
         )
 
-        override val inputSampleRateHz: Int = INPUT_SAMPLE_RATE
+        override val inputSampleRateHz: Int = config.inputSampleRateHz
 
         private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         private val stateLock = Any()
         private val isReleased = AtomicBoolean(false)
         private val isRecordingPaused = AtomicBoolean(false)
-        private val isFocusLost = AtomicBoolean(false)
+        private val hasAudioFocus = AtomicBoolean(false)
         private val flushRequested = AtomicBoolean(false)
 
         @Volatile private var audioRecord: AudioRecord? = null
@@ -83,7 +88,7 @@ class GeminiLiveAudioHelper
 
         @Volatile private var audioTrack: AudioTrack? = null
 
-        @Volatile private var currentTrackSampleRateHz: Int = OUTPUT_SAMPLE_RATE
+        @Volatile private var currentTrackSampleRateHz: Int = config.outputSampleRateHz
         private var playbackAttributes: AudioAttributes? = null
         private var audioFocusRequest: AudioFocusRequest? = null
         private var previousAudioMode: Int? = null
@@ -98,21 +103,24 @@ class GeminiLiveAudioHelper
                     AudioManager.AUDIOFOCUS_LOSS,
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
                     -> {
-                        isFocusLost.set(true)
+                        hasAudioFocus.set(false)
                         stopAudio()
                     }
                     AudioManager.AUDIOFOCUS_GAIN -> {
-                        isFocusLost.set(false)
+                        if (!isReleased.get()) {
+                            hasAudioFocus.set(true)
+                        }
                     }
                 }
             }
 
-        @SuppressLint("MissingPermission")
+        @RequiresPermission(Manifest.permission.RECORD_AUDIO)
         override fun start() {
-            if (isReleased.get()) return
+            check(!isReleased.get()) { "LiveAudioSession has already been released" }
 
             synchronized(stateLock) {
-                if (isReleased.get() || audioRecord != null) return
+                check(!isReleased.get()) { "LiveAudioSession has already been released" }
+                check(audioRecord == null) { "LiveAudioSession has already been started" }
 
                 var createdFocusRequest: AudioFocusRequest? = null
                 var savedPreviousMode: Int? = null
@@ -143,10 +151,13 @@ class GeminiLiveAudioHelper
                                 .setOnAudioFocusChangeListener(focusChangeListener)
                                 .build()
                         val focusResult = manager.requestAudioFocus(focusReq)
-                        createdFocusRequest = focusReq
                         if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                            Log.w(TAG, "Audio focus request not granted (result=$focusResult)")
+                            throw IllegalStateException(
+                                "Failed to acquire audio focus (result=$focusResult)",
+                            )
                         }
+                        createdFocusRequest = focusReq
+                        hasAudioFocus.set(true)
 
                         try {
                             savedPreviousMode = manager.mode
@@ -155,16 +166,18 @@ class GeminiLiveAudioHelper
                             Log.w(TAG, "Failed to enter MODE_IN_COMMUNICATION", e)
                         }
                         commDeviceSelected = selectSpeakerphoneIfNoExternalDevice(manager)
+                    } else {
+                        hasAudioFocus.set(true)
                     }
 
                     val minRecordBuf =
                         AudioRecord.getMinBufferSize(
-                            INPUT_SAMPLE_RATE,
+                            config.inputSampleRateHz,
                             AudioFormat.CHANNEL_IN_MONO,
                             AudioFormat.ENCODING_PCM_16BIT,
                         ).coerceAtLeast(DEFAULT_READ_BUFFER_SIZE)
 
-                    val recorder = audioRecordFactory(minRecordBuf)
+                    val recorder = audioRecordFactory(config.inputSampleRateHz, minRecordBuf)
                     createdRecorder = recorder
                     if (recorder.state != AudioRecord.STATE_INITIALIZED) {
                         throw IllegalStateException("Failed to initialize AudioRecord")
@@ -192,21 +205,10 @@ class GeminiLiveAudioHelper
                         }
                     }
 
-                    val track = createAndPlayTrack(attributes, OUTPUT_SAMPLE_RATE)
+                    val track = createAndPlayTrack(attributes, config.outputSampleRateHz)
                     createdTrack = track
 
-                    if (isReleased.get()) {
-                        cleanupResources(
-                            focusRequest = createdFocusRequest,
-                            previousMode = savedPreviousMode,
-                            clearCommDevice = commDeviceSelected,
-                            echoCanceler = createdEchoCanceler,
-                            noiseSuppressor = createdNoiseSuppressor,
-                            recorder = createdRecorder,
-                            track = createdTrack,
-                        )
-                        return
-                    }
+                    check(!isReleased.get()) { "LiveAudioSession was released during start()" }
 
                     recorder.startRecording()
 
@@ -218,7 +220,7 @@ class GeminiLiveAudioHelper
                     noiseSuppressor = createdNoiseSuppressor
                     audioRecord = recorder
                     audioTrack = track
-                    currentTrackSampleRateHz = OUTPUT_SAMPLE_RATE
+                    currentTrackSampleRateHz = config.outputSampleRateHz
 
                     playbackJob =
                         scope.launch {
@@ -228,11 +230,11 @@ class GeminiLiveAudioHelper
                                 }
                                 val chunk = audioQueue.poll()
                                 if (chunk != null) {
-                                    if (flushRequested.get()) {
+                                    if (flushRequested.get() || !hasAudioFocus.get()) {
                                         continue
                                     }
                                     val currentTrack = ensureTrackForSampleRate(chunk.sampleRateHz)
-                                    if (currentTrack != null && !isReleased.get()) {
+                                    if (currentTrack != null && hasAudioFocus.get() && !isReleased.get()) {
                                         try {
                                             currentTrack.write(
                                                 chunk.pcmBytes,
@@ -264,11 +266,11 @@ class GeminiLiveAudioHelper
         }
 
         /**
-         * Emits PCM 16-bit 16 kHz mono byte chunks recorded from the microphone.
+         * Emits PCM 16-bit mono byte chunks recorded from the microphone at [inputSampleRateHz].
          *
          * Keeps [AudioRecord] continuously recording across tool calls so `audioserver` does not
          * broadcast system-wide port updates on pause/resume, while draining the HAL ring buffer
-         * and gating emission in software when paused or when audio focus is temporarily lost.
+         * and gating emission in software when paused or when audio focus is lost.
          */
         override fun listenToRecording(): Flow<ByteArray> =
             flow {
@@ -287,7 +289,7 @@ class GeminiLiveAudioHelper
                             -1
                         }
                     if (bytesRead > 0) {
-                        if (!isRecordingPaused.get() && !isFocusLost.get() && !isReleased.get()) {
+                        if (!isRecordingPaused.get() && hasAudioFocus.get() && !isReleased.get()) {
                             emit(buffer.copyOf(bytesRead))
                         }
                     } else if (bytesRead < 0) {
@@ -305,10 +307,9 @@ class GeminiLiveAudioHelper
             pcmBytes: ByteArray,
             sampleRateHz: Int,
         ) {
-            if (!isReleased.get()) {
-                val effectiveRate = if (sampleRateHz > 0) sampleRateHz else OUTPUT_SAMPLE_RATE
-                audioQueue.add(QueuedAudioChunk(pcmBytes = pcmBytes, sampleRateHz = effectiveRate))
-            }
+            if (isReleased.get() || !hasAudioFocus.get()) return
+            val effectiveRate = if (sampleRateHz > 0) sampleRateHz else config.outputSampleRateHz
+            audioQueue.add(QueuedAudioChunk(pcmBytes = pcmBytes, sampleRateHz = effectiveRate))
         }
 
         /** Clears any queued model audio and flushes the playback track when interrupted. */
@@ -334,6 +335,7 @@ class GeminiLiveAudioHelper
 
         override fun release() {
             if (!isReleased.compareAndSet(false, true)) return
+            hasAudioFocus.set(false)
             audioQueue.clear()
 
             synchronized(stateLock) {
@@ -472,6 +474,7 @@ class GeminiLiveAudioHelper
             recorder: AudioRecord?,
             track: AudioTrack?,
         ) {
+            hasAudioFocus.set(false)
             try {
                 echoCanceler?.release()
             } catch (e: Exception) {
@@ -529,9 +532,7 @@ class GeminiLiveAudioHelper
         )
 
         companion object {
-            private const val TAG = "GeminiLiveAudioHelper"
-            private const val INPUT_SAMPLE_RATE = LiveAudioSession.DEFAULT_INPUT_SAMPLE_RATE_HZ
-            private const val OUTPUT_SAMPLE_RATE = LiveAudioSession.DEFAULT_OUTPUT_SAMPLE_RATE_HZ
+            private const val TAG = "AndroidLiveAudioSession"
             private const val DEFAULT_READ_BUFFER_SIZE = 2048
             private const val PLAYBACK_POLL_DELAY_MS = 10L
             private const val RECORD_IDLE_DELAY_MS = 10L
@@ -555,11 +556,14 @@ class GeminiLiveAudioHelper
                     AudioDeviceInfo.TYPE_LINE_DIGITAL,
                 )
 
-            @SuppressLint("MissingPermission")
-            private fun defaultAudioRecord(minRecordBuf: Int): AudioRecord =
+            @RequiresPermission(Manifest.permission.RECORD_AUDIO)
+            private fun defaultAudioRecord(
+                sampleRateHz: Int,
+                minRecordBuf: Int,
+            ): AudioRecord =
                 AudioRecord(
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-                    INPUT_SAMPLE_RATE,
+                    sampleRateHz,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
                     minRecordBuf,

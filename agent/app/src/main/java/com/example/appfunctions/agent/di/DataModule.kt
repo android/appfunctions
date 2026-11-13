@@ -21,11 +21,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
+import com.example.appfunctions.agent.data.AndroidLiveAudioSession
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.DataStoreSettingsRepository
 import com.example.appfunctions.agent.data.FileDownloadHelper
 import com.example.appfunctions.agent.data.FileDownloadHelperImpl
-import com.example.appfunctions.agent.data.GeminiLiveAudioHelper
 import com.example.appfunctions.agent.data.InMemoryPendingIntentRepository
 import com.example.appfunctions.agent.data.LlmProviderFactoryImpl
 import com.example.appfunctions.agent.data.PendingIntentRepository
@@ -128,8 +128,11 @@ abstract class DataModule {
         fun provideLiveAudioSessionFactory(
             @ApplicationContext context: Context,
         ): LiveAudioSessionFactory {
-            return LiveAudioSessionFactory {
-                GeminiLiveAudioHelper(context.getSystemService(AudioManager::class.java))
+            return LiveAudioSessionFactory { config ->
+                AndroidLiveAudioSession(
+                    config = config,
+                    audioManager = context.getSystemService(AudioManager::class.java),
+                )
             }
         }
 
