@@ -24,6 +24,7 @@ jobs:
               'utkarsh2827',
               'cherieccy',
               'kasiakre',
+              'yara11',
             ];
 
             const pr = context.payload.pull_request;
