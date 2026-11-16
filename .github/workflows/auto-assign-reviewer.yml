@@ -21,9 +21,11 @@ jobs:
             const TEAM_SLUG = 'devrel-ai';
             const REVIEWERS = [
               'keyboardsurfer',
-              'calren',
-              'JolandaVerhoef',
-              'ksemenova',
+              'odedniv',
+              'utkarsh2827',
+              'cherieccy',
+              'corinac123',
+              'kasiakre',
             ];
 
             const pr = context.payload.pull_request;
