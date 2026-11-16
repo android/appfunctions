@@ -24,6 +24,7 @@ import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
 import androidx.test.core.app.ApplicationProvider
 import com.example.appfunctions.agent.domain.ToolOutputImage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -63,9 +64,19 @@ class ResultImageStoreTest {
         }
 
     @Test
-    fun `read uses the declared type over the type of the provider and lowercases it`() =
+    fun `read uses the type of the provider over the declared type`() =
         runTest {
-            val uri = imageProvider.addFile("photo", PHOTO_BYTES, type = "application/octet-stream")
+            val photoUri = imageProvider.addFile("photo.png", PHOTO_BYTES, type = "image/png")
+            val settingsUri = imageProvider.addFile("settings.preferences_pb", "api_key".toByteArray(), type = "application/octet-stream")
+
+            assertEquals("image/png", resultImageStore.read(photoUri, mimeType = "image/jpeg", maxBytes = MAX_BYTES).mimeType)
+            assertEquals("it is not an image (application/octet-stream)", readFailureReason(settingsUri, mimeType = "image/png"))
+        }
+
+    @Test
+    fun `read uses the declared type in lowercase when the provider reports none`() =
+        runTest {
+            val uri = imageProvider.addFile("photo", PHOTO_BYTES, type = null)
 
             val image = resultImageStore.read(uri, mimeType = "IMAGE/JPEG", maxBytes = MAX_BYTES)
 
@@ -96,10 +107,10 @@ class ResultImageStoreTest {
     fun `read rejects content that is not an image`() =
         runTest {
             val notesUri = imageProvider.addFile("notes.txt", "Buy milk".toByteArray(), type = "text/plain")
-            val photoUri = imageProvider.addFile("photo.png", PHOTO_BYTES, type = "image/png")
+            val documentUri = imageProvider.addFile("document", "%PDF".toByteArray(), type = null)
 
             assertEquals("it is not an image (text/plain)", readFailureReason(notesUri))
-            assertEquals("it is not an image (application/pdf)", readFailureReason(photoUri, mimeType = "application/pdf"))
+            assertEquals("it is not an image (application/pdf)", readFailureReason(documentUri, mimeType = "application/pdf"))
         }
 
     @Test
@@ -132,6 +143,36 @@ class ResultImageStoreTest {
             val uri = imageProvider.uriOf("unserved.png")
 
             assertEquals("it could not be opened", readFailureReason(uri, mimeType = "image/png"))
+        }
+
+    @Test
+    fun `read reports content that its provider fails to open`() =
+        runTest {
+            val failures =
+                listOf(
+                    IllegalArgumentException("Failed to find configured root that contains /data/photo.png"),
+                    UnsupportedOperationException("No files supported by provider"),
+                    IllegalStateException("Provider is shutting down"),
+                )
+
+            for ((index, failure) in failures.withIndex()) {
+                val uri = imageProvider.addFailure("broken$index.png", type = "image/png", failure)
+
+                assertEquals("it could not be read (${failure.message})", readFailureReason(uri))
+            }
+        }
+
+    @Test
+    fun `read rethrows a cancellation instead of reporting it`() =
+        runTest {
+            val uri = imageProvider.addFailure("photo.png", type = "image/png", CancellationException("Cancelled"))
+
+            try {
+                resultImageStore.read(uri, mimeType = null, maxBytes = MAX_BYTES)
+                fail("Expected the CancellationException to be rethrown")
+            } catch (e: CancellationException) {
+                assertEquals("Cancelled", e.message)
+            }
         }
 
     @Test

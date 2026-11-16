@@ -22,6 +22,7 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import com.example.appfunctions.agent.domain.ToolOutputImage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,7 +38,8 @@ interface ResultImageStore {
      * Reads the image at [uri].
      *
      * @param uri The `content://` URI to read.
-     * @param mimeType The MIME type the result declared for [uri], or null to ask its provider.
+     * @param mimeType The MIME type the result declared for [uri], or null. Used only when the
+     *   provider of [uri] reports no type, because a result can declare any type for any URI.
      * @param maxBytes The size limit of the image, in bytes.
      * @return The image.
      * @throws ResultImageException If [uri] can't be read, isn't an image, or is larger than
@@ -88,7 +90,7 @@ class ResultImageStoreImpl
             withContext(Dispatchers.IO) {
                 try {
                     val type =
-                        (mimeType ?: context.contentResolver.getType(uri))?.lowercase()
+                        (context.contentResolver.getType(uri) ?: mimeType)?.lowercase()
                             ?: throw ResultImageException("its content type is unknown")
                     if (!type.startsWith(IMAGE_MIME_TYPE_PREFIX)) {
                         throw ResultImageException("it is not an image ($type)")
@@ -105,6 +107,12 @@ class ResultImageStoreImpl
                 } catch (e: FileNotFoundException) {
                     throw ResultImageException("it was not found", e)
                 } catch (e: IOException) {
+                    throw ResultImageException("it could not be read (${e.message})", e)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: RuntimeException) {
+                    // ContentResolver rethrows what the provider's openFile() throws, e.g. an
+                    // IllegalArgumentException for a URI outside the roots of a FileProvider.
                     throw ResultImageException("it could not be read (${e.message})", e)
                 }
             }

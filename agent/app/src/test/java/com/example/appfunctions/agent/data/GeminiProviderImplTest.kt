@@ -18,6 +18,7 @@ package com.example.appfunctions.agent.data
 import android.util.Log
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import com.example.appfunctions.agent.domain.LlmInput
@@ -38,6 +39,7 @@ import io.mockk.every
 import io.mockk.mockkStatic
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -114,8 +116,12 @@ class GeminiProviderImplTest {
         }
     }
 
-    /** Sends [output] to the model and returns the `function_result` input of the request. */
-    private suspend fun sendToolOutput(output: ToolOutput): JsonObject {
+    /** Sends [input] with [tools] to [modelName] and returns the body of the request. */
+    private suspend fun sendInput(
+        input: LlmInput,
+        modelName: String = "test_model",
+        tools: List<AppFunctionMetadata> = emptyList(),
+    ): String {
         val responseJson = buildJsonObject { put("id", "interaction_123") }.toString()
         val capturedRequestBodies = mutableListOf<String>()
         val httpClient =
@@ -124,14 +130,35 @@ class GeminiProviderImplTest {
 
         provider.generateResponse(
             previousInteractionId = "interaction_1",
-            input = LlmInput.ToolResponse(listOf(output)),
-            tools = emptyList(),
+            input = input,
+            tools = tools,
             apiKey = "test_key",
-            modelName = "test_model",
+            modelName = modelName,
         )
 
-        val requestBody = Json.parseToJsonElement(capturedRequestBodies.single()).jsonObject
+        return capturedRequestBodies.single()
+    }
+
+    /** Sends [output] to [modelName] and returns the `function_result` input of the request. */
+    private suspend fun sendToolOutput(
+        output: ToolOutput,
+        modelName: String = "test_model",
+    ): JsonObject {
+        val requestBody = Json.parseToJsonElement(sendInput(LlmInput.ToolResponse(listOf(output)), modelName)).jsonObject
         return requestBody["input"]!!.jsonArray.single().jsonObject
+    }
+
+    /** Captures the messages logged with [Log.d] from now on. */
+    private fun captureDebugLogs(): List<String> {
+        val messages = mutableListOf<String>()
+        every { Log.d(any(), capture(messages)) } returns 0
+        return messages
+    }
+
+    /** Returns the request body logged among the debug log [messages]. */
+    private fun loggedRequestBody(messages: List<String>): JsonElement {
+        val prefix = "Gemini Request Body: "
+        return Json.parseToJsonElement(messages.single { it.startsWith(prefix) }.removePrefix(prefix))
     }
 
     private fun textContent(text: String): JsonObject =
@@ -639,6 +666,147 @@ class GeminiProviderImplTest {
                 sendToolOutput(ToolOutput(functionId = "createNote", callId = "call_1", result = """{"ok":true}"""))
 
             assertEquals(JsonPrimitive("""{"ok":true}"""), functionResult["result"])
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithHeicImages_sendsNotesInsteadOfImages() =
+        runBlocking {
+            val functionResult =
+                sendToolOutput(
+                    ToolOutput(
+                        functionId = "getPhotos",
+                        callId = "call_1",
+                        result = "Found 2 photos",
+                        images =
+                            listOf(
+                                ToolOutputImage(mimeType = "image/heic", data = byteArrayOf(1)),
+                                ToolOutputImage(mimeType = "image/heif", data = byteArrayOf(2)),
+                            ),
+                    ),
+                )
+
+            val content = functionResult["result"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(
+                listOf(
+                    textContent("Found 2 photos"),
+                    textContent("An image of type image/heic was not attached because the model doesn't support it."),
+                    textContent("An image of type image/heif was not attached because the model doesn't support it."),
+                ),
+                content,
+            )
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithImagesForGemini1Or2Model_sendsResultStringWithNotesInsteadOfImages() =
+        runBlocking {
+            val output =
+                ToolOutput(
+                    functionId = "getPhotos",
+                    callId = "call_1",
+                    result = "Found 2 photos",
+                    images =
+                        listOf(
+                            ToolOutputImage(mimeType = "image/png", data = byteArrayOf(1)),
+                            ToolOutputImage(mimeType = "image/jpeg", data = byteArrayOf(2)),
+                        ),
+                )
+
+            for (modelName in listOf("gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-1.5-pro")) {
+                val functionResult = sendToolOutput(output, modelName)
+
+                assertEquals(
+                    modelName,
+                    JsonPrimitive(
+                        "Found 2 photos" +
+                            "\nAn image of type image/png was not attached because the model doesn't support images in function results." +
+                            "\nAn image of type image/jpeg was not attached because the model doesn't support images in function results.",
+                    ),
+                    functionResult["result"],
+                )
+            }
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithImagesForGemini3OrLaterModel_sendsImages() =
+        runBlocking {
+            val png = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte())
+            val output =
+                ToolOutput(
+                    functionId = "getPhoto",
+                    callId = "call_1",
+                    result = "Found a photo",
+                    images = listOf(ToolOutputImage(mimeType = "image/png", data = png)),
+                )
+
+            for (modelName in listOf("gemini-3-pro-preview", "gemini-3.1-flash-lite-preview", "gemini-flash-latest")) {
+                val content = sendToolOutput(output, modelName)["result"]!!.jsonArray.map { it.jsonObject }
+
+                assertEquals(modelName, 2, content.size)
+                assertEquals(modelName, textContent("Found a photo"), content[0])
+                assertImageContent("image/png", png, content[1])
+            }
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithImages_logsRequestBodyWithImageDataLengthInsteadOfData() =
+        runBlocking {
+            val loggedMessages = captureDebugLogs()
+            val image = ByteArray(3000) { it.toByte() }
+            val imageData = Base64.getEncoder().encodeToString(image)
+
+            val requestBody =
+                sendInput(
+                    LlmInput.ToolResponse(
+                        listOf(
+                            ToolOutput(
+                                functionId = "getPhoto",
+                                callId = "call_1",
+                                result = "Found a photo",
+                                images = listOf(ToolOutputImage(mimeType = "image/png", data = image)),
+                            ),
+                        ),
+                    ),
+                )
+
+            assertTrue(requestBody.contains(imageData))
+            assertEquals(
+                Json.parseToJsonElement(requestBody.replace(imageData, "<${imageData.length} base64 characters>")),
+                loggedRequestBody(loggedMessages),
+            )
+        }
+
+    @Test
+    fun generateResponse_requestWithoutImages_logsRequestBodyAsSent() =
+        runBlocking {
+            val loggedMessages = captureDebugLogs()
+            val tool =
+                AppFunctionMetadata(
+                    id = "createNote",
+                    packageName = "com.example.notes",
+                    isEnabled = true,
+                    schema = null,
+                    parameters =
+                        listOf(
+                            AppFunctionParameterMetadata(
+                                name = "title",
+                                isRequired = true,
+                                dataType = AppFunctionStringTypeMetadata(isNullable = false),
+                                description = "The title of the note",
+                            ),
+                        ),
+                    response =
+                        AppFunctionResponseMetadata(
+                            valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                            description = "",
+                        ),
+                    components = AppFunctionComponentsMetadata(emptyMap()),
+                    description = "Creates a note",
+                    deprecation = null,
+                )
+
+            val requestBody = sendInput(LlmInput.UserMessage("Create a note"), tools = listOf(tool))
+
+            assertEquals(Json.parseToJsonElement(requestBody), loggedRequestBody(loggedMessages))
         }
 
     @Test
