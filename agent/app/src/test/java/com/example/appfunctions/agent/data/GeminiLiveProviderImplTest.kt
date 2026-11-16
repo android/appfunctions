@@ -21,6 +21,7 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import com.example.appfunctions.agent.domain.LiveAudioConfig
 import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.withSession
@@ -91,7 +92,15 @@ class GeminiLiveProviderImplTest {
                 apiKey = "secret-key",
                 tools = listOf(tool),
                 voiceName = GeminiLiveVoice.AOEDE.apiName,
-            ) {}
+            ) { session ->
+                assertEquals(
+                    LiveAudioConfig(
+                        inputSampleRateHz = 16_000,
+                        outputSampleRateHz = 24_000,
+                    ),
+                    session.audioConfig,
+                )
+            }
 
             assertTrue(capturedWsUrl!!.endsWith("?key=secret-key"))
             val setup = Json.parseToJsonElement(sentFrames.first()).jsonObject["setup"]!!.jsonObject

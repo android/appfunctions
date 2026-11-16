@@ -57,6 +57,9 @@ suspend inline fun LiveLlmProvider.withSession(
 
 /** Represents an active bidirectional voice and tool session with an LLM provider. */
 interface LiveLlmSession {
+    /** Audio capture and playback sample rate configuration required by this session's provider. */
+    val audioConfig: LiveAudioConfig
+
     /** Sequential stream of server-originated events for this live session. */
     val events: Flow<LiveLlmEvent>
 

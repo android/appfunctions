@@ -18,6 +18,7 @@ package com.example.appfunctions.agent.data
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.domain.LiveAudioConfig
 import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.LiveLlmProvider
 import com.example.appfunctions.agent.domain.LiveLlmSession
@@ -130,6 +131,12 @@ class GeminiLiveProviderImpl
             tools: List<AppFunctionMetadata>,
         ): LiveLlmSession =
             object : LiveLlmSession {
+                override val audioConfig: LiveAudioConfig =
+                    LiveAudioConfig(
+                        inputSampleRateHz = DEFAULT_INPUT_SAMPLE_RATE_HZ,
+                        outputSampleRateHz = DEFAULT_OUTPUT_SAMPLE_RATE_HZ,
+                    )
+
                 override val events: Flow<LiveLlmEvent> =
                     flow {
                         while (currentCoroutineContext().isActive && webSocketSession.isActive) {
