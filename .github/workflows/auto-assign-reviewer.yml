@@ -22,9 +22,10 @@ jobs:
           script: |
             const TEAM_SLUG = 'devrel-ai';
             const REVIEWERS = [
-              'utkarsh2827',
-              'cherieccy',
               'kasiakre',
+              'mingweiliao',
+              'tony-mak',
+              'utkarsh2827',
               'yara11',
             ];
 
@@ -67,5 +68,6 @@ jobs:
               owner,
               repo,
               pull_number,
+              reviewers: [],
               team_reviewers: [TEAM_SLUG],
             });
