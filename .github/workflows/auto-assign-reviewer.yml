@@ -68,5 +68,6 @@ jobs:
               owner,
               repo,
               pull_number,
+              reviewers: [],
               team_reviewers: [TEAM_SLUG],
             });
