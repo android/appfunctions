@@ -1,5 +1,6 @@
 name: Auto-assign reviewer
 
+# zizmor: ignore[dangerous-triggers] - Safe: no checkout or untrusted PR code execution; only routes PR review requests via GitHub API
 on:
   pull_request_target:
     types:
