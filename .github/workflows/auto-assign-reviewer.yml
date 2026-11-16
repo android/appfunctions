@@ -1,8 +1,7 @@
 name: Auto-assign reviewer
 
-# zizmor: ignore[dangerous-triggers] - Safe: no checkout or untrusted PR code execution; only routes PR review requests via GitHub API
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - ready_for_review
@@ -13,7 +12,9 @@ permissions:
 jobs:
   assign-reviewer:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Route team review request to one member
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
