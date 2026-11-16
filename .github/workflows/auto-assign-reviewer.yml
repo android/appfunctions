@@ -22,7 +22,6 @@ jobs:
           script: |
             const TEAM_SLUG = 'devrel-ai';
             const REVIEWERS = [
-              'keyboardsurfer',
               'utkarsh2827',
               'cherieccy',
               'kasiakre',
