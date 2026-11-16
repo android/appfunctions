@@ -21,6 +21,7 @@ import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
+import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.appfunction.findToolByName
 import com.example.appfunctions.agent.domain.appfunction.resolveToolName
 import com.example.appfunctions.agent.domain.appfunction.selectDistinctTools
@@ -36,6 +37,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -45,6 +47,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.time.LocalDate
+import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -162,7 +165,11 @@ class GeminiProviderImpl
                                                 if (output.callId.isNotEmpty()) {
                                                     put("call_id", output.callId)
                                                 }
-                                                put("result", output.result)
+                                                if (output.images.isEmpty()) {
+                                                    put("result", output.result)
+                                                } else {
+                                                    put("result", functionResultContent(output))
+                                                }
                                             },
                                         )
                                     }
@@ -293,6 +300,35 @@ class GeminiProviderImpl
             )
         }
 
+        /**
+         * Builds the content of a `function_result` that returned images: the result text followed by
+         * the images. An image in a format Gemini doesn't accept is replaced by a note, because it
+         * would make the API reject the whole request.
+         */
+        private fun functionResultContent(output: ToolOutput): JsonArray =
+            buildJsonArray {
+                add(textContent(output.result))
+                for (image in output.images) {
+                    if (image.mimeType in SUPPORTED_IMAGE_MIME_TYPES) {
+                        add(
+                            buildJsonObject {
+                                put(KEY_TYPE, VALUE_IMAGE)
+                                put(KEY_MIME_TYPE, image.mimeType)
+                                put(KEY_DATA, Base64.getEncoder().encodeToString(image.data))
+                            },
+                        )
+                    } else {
+                        add(textContent("An image of type ${image.mimeType} was not attached because the model doesn't support it."))
+                    }
+                }
+            }
+
+        private fun textContent(text: String): JsonObject =
+            buildJsonObject {
+                put(KEY_TYPE, VALUE_TEXT)
+                put(KEY_TEXT, text)
+            }
+
         private fun getSystemInstruction(): String {
             val currentDate = LocalDate.now().toString()
             return """
@@ -336,5 +372,12 @@ class GeminiProviderImpl
             private const val KEY_ARGUMENTS = "arguments"
             private const val HEADER_API_REVISION = "Api-Revision"
             private const val VALUE_API_REVISION = "2026-05-20"
+            private const val VALUE_IMAGE = "image"
+            private const val KEY_MIME_TYPE = "mime_type"
+            private const val KEY_DATA = "data"
+
+            /** Image formats Gemini accepts as input. */
+            private val SUPPORTED_IMAGE_MIME_TYPES =
+                setOf("image/png", "image/jpeg", "image/webp", "image/heic", "image/heif")
         }
     }

@@ -33,7 +33,9 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResul
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.LoadResultImagesUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
+import com.example.appfunctions.agent.domain.appfunction.SkippedResultImage
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
@@ -73,6 +75,7 @@ class AgentOrchestrator
         private val resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase,
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
+        private val loadResultImagesUseCase: LoadResultImagesUseCase,
         private val savePendingIntentUseCase: SavePendingIntentUseCase,
     ) {
         private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
@@ -458,16 +461,17 @@ class AgentOrchestrator
                         )
                 ) {
                     is ExecuteAppFunctionResult.Data -> {
+                        val resultImages = loadResultImagesUseCase(matchingTool, executionResult)
                         results.add(
                             ToolOutput(
                                 functionId = toolCall.functionId,
                                 callId = toolCall.callId,
-                                result = executionResult.formattedJson,
+                                result = executionResult.formattedJson + resultImages.skipped.toNotes(),
+                                images = resultImages.loaded.map { it.image },
                             ),
                         )
-                        val attachment = executionResult.toAttachment()
-                        if (attachment != null) {
-                            capturedAttachments.add(attachment)
+                        resultImages.loaded.mapTo(capturedAttachments) {
+                            MessageAttachment(uri = it.displayUri, mimeType = it.image.mimeType)
                         }
                     }
 
@@ -588,6 +592,12 @@ class AgentOrchestrator
                 processingStatus = MessageProcessingStatus.FAILED,
             )
         }
+
+        /** Tells the model which returned images it doesn't get, so it doesn't assume it sees them. */
+        private fun List<SkippedResultImage>.toNotes(): String =
+            joinToString(separator = "") { skipped ->
+                "\nImage ${skipped.uri ?: "in the result"} was not attached because ${skipped.reason}."
+            }
 
         private companion object {
             const val TAG = "AgentOrchestrator"

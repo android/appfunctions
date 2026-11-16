@@ -23,6 +23,7 @@ import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_FUNCTION_DECLARATIONS
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_TOOL_DESCRIPTION
+import com.example.appfunctions.agent.data.FakeResultImageStore
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
@@ -38,6 +39,7 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResul
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import com.example.appfunctions.agent.domain.appfunction.LoadResultImagesUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.ObservePendingMessagesUseCase
@@ -77,6 +79,7 @@ class AgentOrchestratorTest {
     private val resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase = mockk()
     private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
     private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase = mockk()
+    private val resultImageStore = FakeResultImageStore()
     private val sendMessageUseCase: SendMessageUseCase = mockk(relaxed = true)
     private val savePendingIntentUseCase: SavePendingIntentUseCase = mockk(relaxed = true)
 
@@ -100,6 +103,7 @@ class AgentOrchestratorTest {
                 resolveRemoteFileToLocalUriUseCase = resolveRemoteFileToLocalUriUseCase,
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
+                loadResultImagesUseCase = LoadResultImagesUseCase(resultImageStore),
                 savePendingIntentUseCase = savePendingIntentUseCase,
             )
     }
@@ -417,6 +421,9 @@ class AgentOrchestratorTest {
             val generateTool = createMockTool("com.example.appfunctions.agent", "generateImage")
             mockAppFunctions(listOf(generateTool))
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+            val testUri =
+                "content://com.example.appfunctions.agent.fileprovider/cache/test.jpg"
+            resultImageStore.addImage(testUri, ToolOutputImage(mimeType = "image/jpeg", data = byteArrayOf(1, 2, 3)))
 
             val toolCall =
                 LlmResponsePart.ToolCall(
@@ -436,8 +443,6 @@ class AgentOrchestratorTest {
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
-            val testUri =
-                "content://com.example.appfunctions.agent.fileprovider/cache/test.jpg"
             coVerify {
                 sendMessageUseCase(
                     threadId = threadId,
@@ -451,6 +456,114 @@ class AgentOrchestratorTest {
             }
         }
     }
+
+    @Test
+    fun `observeAndProcessMessages sends the images of a tool result to the model and attaches their copies`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "show my last photo")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            mockAppFunctions(listOf(createMockTool(PHOTOS_PKG, GET_LAST_PHOTO)))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+            val photo = ToolOutputImage(mimeType = "image/png", data = byteArrayOf(1, 2, 3))
+            resultImageStore.addImage(PHOTO_URI, photo)
+            val toolResultJson = """{"imageUri":"$PHOTO_URI"}"""
+            setupTwoStepToolCallAndExecution(
+                llmProvider = llmProvider,
+                toolCall = LlmResponsePart.ToolCall(PHOTOS_PKG, GET_LAST_PHOTO, emptyMap(), "call_1"),
+                secondResponseText = "Here is your last photo.",
+                toolResultJson = toolResultJson,
+            )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = "interaction_1",
+                    input =
+                        LlmInput.ToolResponse(
+                            listOf(
+                                ToolOutput(
+                                    functionId = GET_LAST_PHOTO,
+                                    callId = "call_1",
+                                    result = toolResultJson,
+                                    images = listOf(photo),
+                                ),
+                            ),
+                        ),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any(),
+                )
+            }
+            // The chat shows the copy of the agent, which outlives the grant of the photos app.
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Here is your last photo.",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = null,
+                    targetPackageName = null,
+                    attachments =
+                        listOf(MessageAttachment(uri = FakeResultImageStore.snapshotUri(1), mimeType = "image/png")),
+                )
+            }
+        }
+
+    @Test
+    fun `observeAndProcessMessages tells the model about the images of a tool result it does not get`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "show my last photo")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            mockAppFunctions(listOf(createMockTool(PHOTOS_PKG, GET_LAST_PHOTO)))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+            resultImageStore.addFailure(PHOTO_URI, "it is not an image (text/plain)")
+            val toolResultJson = """{"imageUri":"$PHOTO_URI"}"""
+            setupTwoStepToolCallAndExecution(
+                llmProvider = llmProvider,
+                toolCall = LlmResponsePart.ToolCall(PHOTOS_PKG, GET_LAST_PHOTO, emptyMap(), "call_1"),
+                secondResponseText = "I could not open your last photo.",
+                toolResultJson = toolResultJson,
+            )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = "interaction_1",
+                    input =
+                        LlmInput.ToolResponse(
+                            listOf(
+                                ToolOutput(
+                                    functionId = GET_LAST_PHOTO,
+                                    callId = "call_1",
+                                    result =
+                                        toolResultJson +
+                                            "\nImage $PHOTO_URI was not attached because it is not an image (text/plain).",
+                                ),
+                            ),
+                        ),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any(),
+                )
+            }
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "I could not open your last photo.",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = null,
+                    targetPackageName = null,
+                    attachments = emptyList(),
+                )
+            }
+        }
 
     @Test
     fun `progressive disclosure loads functions within the turn and shows each level`() =
@@ -959,5 +1072,8 @@ class AgentOrchestratorTest {
     private companion object {
         const val NOTES_PKG = "com.example.notes"
         const val CREATE_NOTE = "createNote"
+        const val PHOTOS_PKG = "com.example.photos"
+        const val GET_LAST_PHOTO = "getLastPhoto"
+        const val PHOTO_URI = "content://com.example.photos.provider/photos/1"
     }
 }

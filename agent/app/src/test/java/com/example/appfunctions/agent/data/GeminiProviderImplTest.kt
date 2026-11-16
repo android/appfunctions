@@ -23,6 +23,8 @@ import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
+import com.example.appfunctions.agent.domain.ToolOutput
+import com.example.appfunctions.agent.domain.ToolOutputImage
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -36,16 +38,21 @@ import io.mockk.every
 import io.mockk.mockkStatic
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.Base64
 
 class GeminiProviderImplTest {
     private val toolConverter = GeminiToolConverter()
@@ -105,6 +112,43 @@ class GeminiProviderImplTest {
                 )
             }
         }
+    }
+
+    /** Sends [output] to the model and returns the `function_result` input of the request. */
+    private suspend fun sendToolOutput(output: ToolOutput): JsonObject {
+        val responseJson = buildJsonObject { put("id", "interaction_123") }.toString()
+        val capturedRequestBodies = mutableListOf<String>()
+        val httpClient =
+            createCapturingHttpClient(HttpStatusCode.OK, responseJson, capturedRequestBodies)
+        val provider = GeminiProviderImpl(httpClient, toolConverter)
+
+        provider.generateResponse(
+            previousInteractionId = "interaction_1",
+            input = LlmInput.ToolResponse(listOf(output)),
+            tools = emptyList(),
+            apiKey = "test_key",
+            modelName = "test_model",
+        )
+
+        val requestBody = Json.parseToJsonElement(capturedRequestBodies.single()).jsonObject
+        return requestBody["input"]!!.jsonArray.single().jsonObject
+    }
+
+    private fun textContent(text: String): JsonObject =
+        buildJsonObject {
+            put("type", "text")
+            put("text", text)
+        }
+
+    private fun assertImageContent(
+        mimeType: String,
+        data: ByteArray,
+        content: JsonObject,
+    ) {
+        assertEquals(setOf("type", "mime_type", "data"), content.keys)
+        assertEquals("image", content["type"]!!.jsonPrimitive.content)
+        assertEquals(mimeType, content["mime_type"]!!.jsonPrimitive.content)
+        assertArrayEquals(data, Base64.getDecoder().decode(content["data"]!!.jsonPrimitive.content))
     }
 
     @Test
@@ -527,6 +571,74 @@ class GeminiProviderImplTest {
             val success = response as LlmResponse.Success
             val textPart = success.parts.first() as LlmResponsePart.Text
             assertEquals("Served on standard", textPart.text)
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithImages_sendsResultTextFollowedByImages() =
+        runBlocking {
+            val png = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte())
+            val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+
+            val functionResult =
+                sendToolOutput(
+                    ToolOutput(
+                        functionId = "getPhotos",
+                        callId = "call_1",
+                        result = """{"count":2}""",
+                        images =
+                            listOf(
+                                ToolOutputImage(mimeType = "image/png", data = png),
+                                ToolOutputImage(mimeType = "image/jpeg", data = jpeg),
+                            ),
+                    ),
+                )
+
+            assertEquals("function_result", functionResult["type"]!!.jsonPrimitive.content)
+            assertEquals("call_1", functionResult["call_id"]!!.jsonPrimitive.content)
+            val content = functionResult["result"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(3, content.size)
+            assertEquals(textContent("""{"count":2}"""), content[0])
+            assertImageContent("image/png", png, content[1])
+            assertImageContent("image/jpeg", jpeg, content[2])
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithUnsupportedImage_sendsNoteInsteadOfImage() =
+        runBlocking {
+            val gif = "GIF89a".toByteArray()
+            val png = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte())
+
+            val functionResult =
+                sendToolOutput(
+                    ToolOutput(
+                        functionId = "getPhotos",
+                        callId = "call_1",
+                        result = "Found 2 photos",
+                        images =
+                            listOf(
+                                ToolOutputImage(mimeType = "image/gif", data = gif),
+                                ToolOutputImage(mimeType = "image/png", data = png),
+                            ),
+                    ),
+                )
+
+            val content = functionResult["result"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(3, content.size)
+            assertEquals(textContent("Found 2 photos"), content[0])
+            assertEquals(
+                textContent("An image of type image/gif was not attached because the model doesn't support it."),
+                content[1],
+            )
+            assertImageContent("image/png", png, content[2])
+        }
+
+    @Test
+    fun generateResponse_toolOutputWithoutImages_sendsResultAsString() =
+        runBlocking {
+            val functionResult =
+                sendToolOutput(ToolOutput(functionId = "createNote", callId = "call_1", result = """{"ok":true}"""))
+
+            assertEquals(JsonPrimitive("""{"ok":true}"""), functionResult["result"])
         }
 
     @Test

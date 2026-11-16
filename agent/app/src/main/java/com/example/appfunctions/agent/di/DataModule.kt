@@ -31,6 +31,8 @@ import com.example.appfunctions.agent.data.InMemoryAppInteractionSessionReposito
 import com.example.appfunctions.agent.data.InMemoryPendingIntentRepository
 import com.example.appfunctions.agent.data.LlmProviderFactoryImpl
 import com.example.appfunctions.agent.data.PendingIntentRepository
+import com.example.appfunctions.agent.data.ResultImageStore
+import com.example.appfunctions.agent.data.ResultImageStoreImpl
 import com.example.appfunctions.agent.data.RoomChatRepository
 import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.AppDatabase
@@ -81,6 +83,10 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindFileDownloadHelper(impl: FileDownloadHelperImpl): FileDownloadHelper
+
+    @Binds
+    @Singleton
+    abstract fun bindResultImageStore(impl: ResultImageStoreImpl): ResultImageStore
 
     companion object {
         @Provides
