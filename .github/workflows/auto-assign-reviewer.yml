@@ -1,0 +1,69 @@
+name: Auto-assign reviewer
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - ready_for_review
+
+permissions:
+  pull-requests: write
+
+jobs:
+  assign-reviewer:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Route team review request to one member
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const TEAM_SLUG = 'devrel-ai';
+            const REVIEWERS = [
+              'keyboardsurfer',
+              'calren',
+              'JolandaVerhoef',
+              'ksemenova',
+            ];
+
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const pull_number = pr.number;
+
+            const hasTeamRequest = (pr.requested_teams || []).some(
+              (team) => team.slug === TEAM_SLUG
+            );
+            if (!hasTeamRequest) {
+              core.info(`Team @${owner}/${TEAM_SLUG} is not requested; skipping.`);
+              return;
+            }
+
+            const alreadyHasIndividual = (pr.requested_reviewers || []).length > 0;
+            if (!alreadyHasIndividual) {
+              const candidates = REVIEWERS.filter(
+                (login) => login.toLowerCase() !== pr.user.login.toLowerCase()
+              );
+              if (candidates.length === 0) {
+                core.info('No eligible reviewers after excluding PR author.');
+                return;
+              }
+
+              const selected = candidates[pull_number % candidates.length];
+              core.info(`Assigning reviewer: ${selected}`);
+              await github.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number,
+                reviewers: [selected],
+              });
+            } else {
+              core.info('Individual reviewer(s) already requested; keeping existing.');
+            }
+
+            core.info(`Removing team review request for @${owner}/${TEAM_SLUG}`);
+            await github.rest.pulls.removeRequestedReviewers({
+              owner,
+              repo,
+              pull_number,
+              team_reviewers: [TEAM_SLUG],
+            });
