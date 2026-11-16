@@ -21,10 +21,8 @@ jobs:
             const TEAM_SLUG = 'devrel-ai';
             const REVIEWERS = [
               'keyboardsurfer',
-              'odedniv',
               'utkarsh2827',
               'cherieccy',
-              'corinac123',
               'kasiakre',
             ];
 
