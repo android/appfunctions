@@ -22,10 +22,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.example.appfunctions.agent.data.AndroidLiveAudioSession
+import com.example.appfunctions.agent.data.AppInteractionSessionRepository
 import com.example.appfunctions.agent.data.ChatRepository
 import com.example.appfunctions.agent.data.DataStoreSettingsRepository
 import com.example.appfunctions.agent.data.FileDownloadHelper
 import com.example.appfunctions.agent.data.FileDownloadHelperImpl
+import com.example.appfunctions.agent.data.InMemoryAppInteractionSessionRepository
 import com.example.appfunctions.agent.data.InMemoryPendingIntentRepository
 import com.example.appfunctions.agent.data.LlmProviderFactoryImpl
 import com.example.appfunctions.agent.data.PendingIntentRepository
@@ -67,6 +69,10 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindPendingIntentRepository(impl: InMemoryPendingIntentRepository): PendingIntentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppInteractionSessionRepository(impl: InMemoryAppInteractionSessionRepository): AppInteractionSessionRepository
 
     @Binds
     @Singleton
