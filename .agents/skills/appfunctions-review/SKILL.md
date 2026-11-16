@@ -35,6 +35,15 @@ Review new or changed code only.
    the actual payload, before and after the change, for one user turn and one
    tool-result turn. Flag anything that is unnecessary, unbounded, sensitive, or
    misleading to the model.
+6. **LLM provider isolation**: Code outside a provider implementation
+   (orchestrators, use cases, ViewModels, UI) must work unchanged if a second
+   provider were added. For each new or changed class there, ask "what would I
+   edit to add a provider?" If the answer is anything other than "add a new
+   provider class and register it", flag it.
+7. **Silent failures**: Flag errors that are swallowed: `catch` blocks that
+   return null, continue, or only log, and failures that silently do nothing.
+   Prefer to throw, or surface the error to the caller and let it decide.
+   Never swallow `CancellationException`.
 
 ## Output
 
