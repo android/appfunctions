@@ -246,7 +246,6 @@ class LiveAgentOrchestratorTest {
                 events.add("teardown1_flush_begin")
                 allowTeardown1Finish.await()
                 events.add("teardown1_flush_end")
-                "msg-1"
             }
 
             val ch1 = Channel<LiveLlmEvent>(Channel.UNLIMITED)
@@ -528,16 +527,14 @@ class LiveAgentOrchestratorTest {
                 mockAudio.resumeRecording()
                 mockAudio.release()
             }
-            val savedPendingIntentId = slot<String>()
-            verify(exactly = 1) { savePendingIntentUseCase(capture(savedPendingIntentId), pendingIntent) }
             verify(exactly = 1) { launchPendingIntentUseCase(pendingIntent) }
+            verify(exactly = 0) { savePendingIntentUseCase(any(), any()) }
             coVerify {
                 sendMessageUseCase(
                     threadId = "thread-1",
                     role = MessageRole.ASSISTANT,
                     textContent = "Launched makeCall (com.example.notes)",
                     processingStatus = MessageProcessingStatus.PROCESSED,
-                    pendingIntentId = savedPendingIntentId.captured,
                 )
             }
             coVerify {

@@ -228,7 +228,7 @@ class LiveAgentOrchestrator
             } catch (e: Exception) {
                 if (!currentCoroutineContext().isActive) {
                     wasCancelled = true
-                    return
+                    currentCoroutineContext().ensureActive()
                 }
                 Log.e(TAG, "Live session error", e)
                 terminatedWithError.set(true)
@@ -438,19 +438,20 @@ class LiveAgentOrchestrator
                         }
 
                         is ExecuteAppFunctionResult.PendingIntentAction -> {
-                            val pendingIntentId = UUID.randomUUID().toString()
-                            savePendingIntentUseCase(pendingIntentId, executionResult.pendingIntent)
                             val shortName = toolCall.functionId.toShortFunctionName()
                             val launchResult =
                                 launchPendingIntentUseCase(executionResult.pendingIntent)
                             if (launchResult.isSuccess) {
+                                // AppFunction PendingIntents are often FLAG_ONE_SHOT (e.g. ChatApp
+                                // makeCall), so once auto-launch succeeds we record a plain status
+                                // message in the thread rather than an active "Confirm Action"
+                                // button backed by an already-consumed PendingIntent.
                                 sendMessageUseCase(
                                     threadId = threadId,
                                     role = MessageRole.ASSISTANT,
                                     textContent =
                                         "Launched $shortName (${toolCall.packageName})",
                                     processingStatus = MessageProcessingStatus.PROCESSED,
-                                    pendingIntentId = pendingIntentId,
                                 )
                                 outputs.add(
                                     ToolOutput(
@@ -460,6 +461,11 @@ class LiveAgentOrchestrator
                                     ),
                                 )
                             } else {
+                                val pendingIntentId = UUID.randomUUID().toString()
+                                savePendingIntentUseCase(
+                                    pendingIntentId,
+                                    executionResult.pendingIntent,
+                                )
                                 val reason =
                                     launchResult.exceptionOrNull()?.message
                                         ?: "PendingIntent canceled"

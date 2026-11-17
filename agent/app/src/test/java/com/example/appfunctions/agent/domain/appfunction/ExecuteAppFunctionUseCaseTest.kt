@@ -182,4 +182,48 @@ class ExecuteAppFunctionUseCaseTest {
 
             assertEquals(expectedResult, result)
         }
+
+    @Test
+    fun `Data toAttachment extracts imageUri and mimeType and ignores non-attachment or malformed JSON`() {
+        val validWithMime =
+            ExecuteAppFunctionResult.Data(
+                data = AppFunctionData.EMPTY,
+                formattedJson =
+                    """{"imageUri":"content://media/1.webp","mimeType":"image/webp"}""",
+            )
+        assertEquals(
+            com.example.appfunctions.agent.data.db.entities.MessageAttachment(
+                uri = "content://media/1.webp",
+                mimeType = "image/webp",
+            ),
+            validWithMime.toAttachment(),
+        )
+
+        val defaultMime =
+            ExecuteAppFunctionResult.Data(
+                data = AppFunctionData.EMPTY,
+                formattedJson = """{"imageUri":"content://media/2.png"}""",
+            )
+        assertEquals(
+            com.example.appfunctions.agent.data.db.entities.MessageAttachment(
+                uri = "content://media/2.png",
+                mimeType = "image/png",
+            ),
+            defaultMime.toAttachment(),
+        )
+
+        val nonPrimitiveUri =
+            ExecuteAppFunctionResult.Data(
+                data = AppFunctionData.EMPTY,
+                formattedJson = """{"imageUri":{"nested":"invalid"}}""",
+            )
+        assertEquals(null, nonPrimitiveUri.toAttachment())
+
+        val malformedJson =
+            ExecuteAppFunctionResult.Data(
+                data = AppFunctionData.EMPTY,
+                formattedJson = "not-json",
+            )
+        assertEquals(null, malformedJson.toAttachment())
+    }
 }
