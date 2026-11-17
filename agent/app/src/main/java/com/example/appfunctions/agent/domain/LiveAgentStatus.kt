@@ -15,13 +15,20 @@
  */
 package com.example.appfunctions.agent.domain
 
-/** Represents the state of a live voice session. */
-sealed class LiveSessionState {
-    object Idle : LiveSessionState()
+/**
+ * Represents the unified connection, listening, and tool-invocation status of a live voice session.
+ */
+sealed class LiveAgentStatus {
+    object Idle : LiveAgentStatus()
 
-    object Connecting : LiveSessionState()
+    object Connecting : LiveAgentStatus()
 
-    object Listening : LiveSessionState()
+    object Listening : LiveAgentStatus()
 
-    data class Error(val message: String) : LiveSessionState()
+    data class InvokingTool(
+        val functionId: String,
+        val packageName: String,
+    ) : LiveAgentStatus()
+
+    data class Error(val message: String) : LiveAgentStatus()
 }

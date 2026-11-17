@@ -18,7 +18,6 @@ package com.example.appfunctions.agent.domain
 import android.Manifest
 import android.util.Log
 import androidx.annotation.RequiresPermission
-import androidx.annotation.VisibleForTesting
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -32,16 +31,12 @@ import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCa
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
+import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
+import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -55,6 +50,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,8 +62,9 @@ import javax.inject.Singleton
  */
 @Singleton
 class LiveAgentOrchestrator
-    @VisibleForTesting
-    internal constructor(
+    @Inject
+    constructor(
+        private val manageThreadsUseCase: ManageThreadsUseCase,
         private val llmProviderFactory: LlmProviderFactory,
         private val settingsRepository: SettingsRepository,
         private val getAppFunctionsUseCase: GetAppFunctionsUseCase,
@@ -75,140 +72,36 @@ class LiveAgentOrchestrator
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val launchPendingIntentUseCase: LaunchPendingIntentUseCase,
+        private val savePendingIntentUseCase: SavePendingIntentUseCase,
         private val sendMessageUseCase: SendMessageUseCase,
         private val audioSessionFactory: LiveAudioSessionFactory,
-        private val ioDispatcher: CoroutineDispatcher,
     ) {
-        @Inject
-        constructor(
-            llmProviderFactory: LlmProviderFactory,
-            settingsRepository: SettingsRepository,
-            getAppFunctionsUseCase: GetAppFunctionsUseCase,
-            resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase,
-            convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
-            executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
-            launchPendingIntentUseCase: LaunchPendingIntentUseCase,
-            sendMessageUseCase: SendMessageUseCase,
-            audioSessionFactory: LiveAudioSessionFactory,
-        ) : this(
-            llmProviderFactory = llmProviderFactory,
-            settingsRepository = settingsRepository,
-            getAppFunctionsUseCase = getAppFunctionsUseCase,
-            resolveRemoteFileToLocalUriUseCase = resolveRemoteFileToLocalUriUseCase,
-            convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
-            executeAppFunctionUseCase = executeAppFunctionUseCase,
-            launchPendingIntentUseCase = launchPendingIntentUseCase,
-            sendMessageUseCase = sendMessageUseCase,
-            audioSessionFactory = audioSessionFactory,
-            ioDispatcher = Dispatchers.IO,
-        )
-
-        private val scope = CoroutineScope(SupervisorJob())
-        private val stateLock = Any()
         private val sessionMutex = Mutex()
 
-        private val _state = MutableStateFlow<LiveSessionState>(LiveSessionState.Idle)
+        private val _status = MutableStateFlow<LiveAgentStatus>(LiveAgentStatus.Idle)
 
-        /** Current connection/listening state of the live voice session. */
-        val state: StateFlow<LiveSessionState> = _state.asStateFlow()
+        /** Current unified connection, listening, and tool-invocation status of the live session. */
+        val status: StateFlow<LiveAgentStatus> = _status.asStateFlow()
 
-        private val _status = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
-
-        /** Current tool invocation status emitted during active live voice sessions. */
-        val status: StateFlow<AgentStatus> = _status.asStateFlow()
-
-        private var sessionJob: Job? = null
-        private var activeSessionId: Long = 0L
-
-        /** Starts a new live voice session for [threadId]. */
+        /**
+         * Runs a bidirectional live voice session for [threadId] until the session ends or the
+         * calling coroutine is cancelled.
+         *
+         * The caller (host service or ViewModel) owns the session `Job` and stops the session by
+         * cancelling that `Job`. Concurrent calls serialize on [sessionMutex] so audio hardware
+         * teardown of a cancelled session finishes before a subsequent session opens `AudioRecord`.
+         */
         @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-        fun startSession(
+        suspend fun runSession(
             threadId: String,
             targetPackageName: String? = null,
         ) {
-            val (mySessionId, previousJob) =
-                synchronized(stateLock) {
-                    val nextId = ++activeSessionId
-                    val prev = sessionJob
-                    prev?.cancel()
-                    _state.value = LiveSessionState.Connecting
-                    _status.value = AgentStatus.Idle
-                    nextId to prev
-                }
-
-            lateinit var launchedJob: Job
-            launchedJob =
-                scope.launch(ioDispatcher) {
-                    try {
-                        // Serialize full audio hardware teardown of any prior session before
-                        // opening a new session so two AudioRecord instances never overlap.
-                        previousJob?.cancelAndJoin()
-                        sessionMutex.withLock {
-                            if (!isActive || !isCurrentSession(mySessionId)) {
-                                return@withLock
-                            }
-                            runSession(
-                                sessionId = mySessionId,
-                                threadId = threadId,
-                                targetPackageName = targetPackageName,
-                            )
-                        }
-                    } finally {
-                        synchronized(stateLock) {
-                            if (sessionJob === launchedJob) {
-                                sessionJob = null
-                            }
-                        }
-                    }
-                }
-
-            synchronized(stateLock) {
-                if (activeSessionId == mySessionId) {
-                    sessionJob = launchedJob
-                } else {
-                    launchedJob.cancel()
-                }
-            }
-        }
-
-        /**
-         * Stops any active live voice session without blocking the calling (UI) thread.
-         *
-         * Audio hardware teardown runs asynchronously on [ioDispatcher] inside the session
-         * coroutine's `finally` block under [sessionMutex].
-         */
-        fun stopSession() {
-            val jobToCancel =
-                synchronized(stateLock) {
-                    activeSessionId++
-                    _state.value = LiveSessionState.Idle
-                    _status.value = AgentStatus.Idle
-                    sessionJob
-                }
-            jobToCancel?.cancel()
-        }
-
-        private fun isCurrentSession(sessionId: Long): Boolean = synchronized(stateLock) { activeSessionId == sessionId }
-
-        private fun updateStateIfCurrent(
-            sessionId: Long,
-            newState: LiveSessionState,
-        ) {
-            synchronized(stateLock) {
-                if (activeSessionId == sessionId) {
-                    _state.value = newState
-                }
-            }
-        }
-
-        private fun updateStatusIfCurrent(
-            sessionId: Long,
-            newStatus: AgentStatus,
-        ) {
-            synchronized(stateLock) {
-                if (activeSessionId == sessionId) {
-                    _status.value = newStatus
-                }
+            sessionMutex.withLock {
+                currentCoroutineContext().ensureActive()
+                runSessionLocked(
+                    threadId = threadId,
+                    targetPackageName = targetPackageName,
+                )
             }
         }
 
@@ -218,32 +111,46 @@ class LiveAgentOrchestrator
             }
         }
 
+        private suspend fun getVoiceName(provider: LlmProviderName): String {
+            return when (provider) {
+                LlmProviderName.GEMINI -> settingsRepository.geminiLiveVoice.first().apiName
+            }
+        }
+
         @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-        private suspend fun runSession(
-            sessionId: Long,
+        private suspend fun runSessionLocked(
             threadId: String,
             targetPackageName: String?,
         ) {
+            _status.value = LiveAgentStatus.Connecting
             val userTranscriptBuilder = StringBuilder()
             val modelTranscriptBuilder = StringBuilder()
             val terminatedWithError = AtomicBoolean(false)
+            var wasCancelled = false
             var localAudioSession: LiveAudioSession? = null
 
             try {
-                val providerName = settingsRepository.selectedProvider.first()
-                val apiKey = getApiKey(providerName)?.takeIf { it.isNotBlank() }
-                if (!currentCoroutineContext().isActive || !isCurrentSession(sessionId)) {
+                val thread = manageThreadsUseCase.getThread(threadId).first()
+                if (thread == null) {
+                    val errorMsg = "Thread not found: $threadId"
+                    terminatedWithError.set(true)
+                    _status.value = LiveAgentStatus.Error(errorMsg)
                     return
                 }
+
+                val providerName = thread.llmModel.providerName
+                val apiKey = getApiKey(providerName)?.takeIf { it.isNotBlank() }
+                currentCoroutineContext().ensureActive()
                 if (apiKey == null) {
                     val errorMsg = "API key is missing for ${providerName.name}"
+                    terminatedWithError.set(true)
                     sendMessageUseCase(
                         threadId = threadId,
                         role = MessageRole.ASSISTANT,
                         textContent = errorMsg,
                         processingStatus = MessageProcessingStatus.FAILED,
                     )
-                    updateStateIfCurrent(sessionId, LiveSessionState.Error(errorMsg))
+                    _status.value = LiveAgentStatus.Error(errorMsg)
                     return
                 }
 
@@ -265,27 +172,23 @@ class LiveAgentOrchestrator
                         ),
                     ).first().values.flatten()
                 currentCoroutineContext().ensureActive()
-                if (!isCurrentSession(sessionId)) return
 
-                val selectedVoice = settingsRepository.geminiLiveVoice.first()
+                val voiceName = getVoiceName(providerName)
                 val liveProvider = llmProviderFactory.getLiveProvider(providerName)
 
                 liveProvider.withSession(
                     apiKey = apiKey,
                     tools = tools,
-                    voiceName = selectedVoice.apiName,
+                    voiceName = voiceName,
                 ) { session ->
                     currentCoroutineContext().ensureActive()
-                    if (!isCurrentSession(sessionId)) return@withSession
 
                     val audioSession = audioSessionFactory.create(session.audioConfig)
                     localAudioSession = audioSession
                     audioSession.start()
 
-                    if (!currentCoroutineContext().isActive || !isCurrentSession(sessionId)) {
-                        return@withSession
-                    }
-                    updateStateIfCurrent(sessionId, LiveSessionState.Listening)
+                    currentCoroutineContext().ensureActive()
+                    _status.value = LiveAgentStatus.Listening
 
                     coroutineScope {
                         val sendAudioJob =
@@ -297,15 +200,11 @@ class LiveAgentOrchestrator
 
                         try {
                             session.events.firstOrNull { event ->
-                                if (
-                                    !currentCoroutineContext().isActive ||
-                                    !isCurrentSession(sessionId)
-                                ) {
+                                if (!currentCoroutineContext().isActive) {
                                     true
                                 } else {
                                     handleLiveEvent(
                                         event = event,
-                                        sessionId = sessionId,
                                         session = session,
                                         threadId = threadId,
                                         tools = tools,
@@ -315,8 +214,7 @@ class LiveAgentOrchestrator
                                         terminatedWithError = terminatedWithError,
                                     )
                                     terminatedWithError.get() ||
-                                        !currentCoroutineContext().isActive ||
-                                        !isCurrentSession(sessionId)
+                                        !currentCoroutineContext().isActive
                                 }
                             }
                         } finally {
@@ -324,20 +222,16 @@ class LiveAgentOrchestrator
                         }
                     }
                 }
-
-                if (currentCoroutineContext().isActive && isCurrentSession(sessionId)) {
-                    flushTranscripts(threadId, userTranscriptBuilder, modelTranscriptBuilder)
-                    if (!terminatedWithError.get()) {
-                        updateStateIfCurrent(sessionId, LiveSessionState.Idle)
-                    }
-                }
             } catch (e: CancellationException) {
+                wasCancelled = true
                 throw e
             } catch (e: Exception) {
-                if (!currentCoroutineContext().isActive || !isCurrentSession(sessionId)) {
+                if (!currentCoroutineContext().isActive) {
+                    wasCancelled = true
                     return
                 }
                 Log.e(TAG, "Live session error", e)
+                terminatedWithError.set(true)
                 flushTranscripts(threadId, userTranscriptBuilder, modelTranscriptBuilder)
                 val errorText = "Live session error: ${e.message ?: "Connection failed"}"
                 try {
@@ -352,7 +246,7 @@ class LiveAgentOrchestrator
                 } catch (sendError: Exception) {
                     Log.w(TAG, "Failed to persist live session error message", sendError)
                 }
-                updateStateIfCurrent(sessionId, LiveSessionState.Error(errorText))
+                _status.value = LiveAgentStatus.Error(errorText)
             } finally {
                 withContext(NonCancellable) {
                     try {
@@ -360,16 +254,17 @@ class LiveAgentOrchestrator
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to flush remaining live transcripts", e)
                     }
-                    updateStatusIfCurrent(sessionId, AgentStatus.Idle)
                     localAudioSession?.release()
                     localAudioSession = null
+                    if (wasCancelled || !terminatedWithError.get()) {
+                        _status.value = LiveAgentStatus.Idle
+                    }
                 }
             }
         }
 
         private suspend fun handleLiveEvent(
             event: LiveLlmEvent,
-            sessionId: Long,
             session: LiveLlmSession,
             threadId: String,
             tools: List<AppFunctionMetadata>,
@@ -409,7 +304,6 @@ class LiveAgentOrchestrator
                         try {
                             val toolOutputs =
                                 executeLiveToolCalls(
-                                    sessionId = sessionId,
                                     threadId = threadId,
                                     toolCalls = event.calls,
                                     tools = tools,
@@ -422,7 +316,11 @@ class LiveAgentOrchestrator
                 }
 
                 is LiveLlmEvent.Error -> {
-                    Log.w(TAG, "Live provider error: ${event.message}", event.cause)
+                    if (!event.isFatal) {
+                        Log.w(TAG, "Recoverable live provider error: ${event.message}", event.cause)
+                        return
+                    }
+                    Log.w(TAG, "Fatal live provider error: ${event.message}", event.cause)
                     terminatedWithError.set(true)
                     audioSession.stopAudio()
                     flushTranscripts(threadId, userTranscriptBuilder, modelTranscriptBuilder)
@@ -433,13 +331,12 @@ class LiveAgentOrchestrator
                         textContent = errorText,
                         processingStatus = MessageProcessingStatus.FAILED,
                     )
-                    updateStateIfCurrent(sessionId, LiveSessionState.Error(errorText))
+                    _status.value = LiveAgentStatus.Error(errorText)
                 }
             }
         }
 
         private suspend fun executeLiveToolCalls(
-            sessionId: Long,
             threadId: String,
             toolCalls: List<LlmResponsePart.ToolCall>,
             tools: List<AppFunctionMetadata>,
@@ -448,10 +345,8 @@ class LiveAgentOrchestrator
             val capturedAttachments = mutableListOf<MessageAttachment>()
             try {
                 for (toolCall in toolCalls) {
-                    updateStatusIfCurrent(
-                        sessionId,
-                        AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName),
-                    )
+                    _status.value =
+                        LiveAgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
                     val matchingTool =
                         tools.find {
                             it.packageName == toolCall.packageName && it.id == toolCall.functionId
@@ -467,7 +362,7 @@ class LiveAgentOrchestrator
                         continue
                     }
 
-                    val inputs = nonNullArguments(toolCall.arguments)
+                    val inputs = toolCall.arguments.filterNotNullValues()
                     val convertedLocalFileInput =
                         try {
                             resolveRemoteFileToLocalUriUseCase(
@@ -526,7 +421,7 @@ class LiveAgentOrchestrator
                                     result = executionResult.formattedJson,
                                 ),
                             )
-                            val attachment = extractMessageAttachment(executionResult.formattedJson)
+                            val attachment = executionResult.toAttachment()
                             if (attachment != null) {
                                 capturedAttachments.add(attachment)
                             }
@@ -543,9 +438,20 @@ class LiveAgentOrchestrator
                         }
 
                         is ExecuteAppFunctionResult.PendingIntentAction -> {
+                            val pendingIntentId = UUID.randomUUID().toString()
+                            savePendingIntentUseCase(pendingIntentId, executionResult.pendingIntent)
+                            val shortName = toolCall.functionId.toShortFunctionName()
                             val launchResult =
                                 launchPendingIntentUseCase(executionResult.pendingIntent)
                             if (launchResult.isSuccess) {
+                                sendMessageUseCase(
+                                    threadId = threadId,
+                                    role = MessageRole.ASSISTANT,
+                                    textContent =
+                                        "Launched $shortName (${toolCall.packageName})",
+                                    processingStatus = MessageProcessingStatus.PROCESSED,
+                                    pendingIntentId = pendingIntentId,
+                                )
                                 outputs.add(
                                     ToolOutput(
                                         functionId = toolCall.functionId,
@@ -557,6 +463,14 @@ class LiveAgentOrchestrator
                                 val reason =
                                     launchResult.exceptionOrNull()?.message
                                         ?: "PendingIntent canceled"
+                                sendMessageUseCase(
+                                    threadId = threadId,
+                                    role = MessageRole.ASSISTANT,
+                                    textContent =
+                                        "Action ready for $shortName (${toolCall.packageName})",
+                                    processingStatus = MessageProcessingStatus.PROCESSED,
+                                    pendingIntentId = pendingIntentId,
+                                )
                                 outputs.add(
                                     ToolOutput(
                                         functionId = toolCall.functionId,
@@ -605,11 +519,16 @@ class LiveAgentOrchestrator
                     )
                 }
             } finally {
-                updateStatusIfCurrent(sessionId, AgentStatus.Idle)
+                if (currentCoroutineContext().isActive) {
+                    _status.value = LiveAgentStatus.Listening
+                }
             }
             return outputs
         }
 
+        // TODO: Bridge voice turn transcripts into subsequent typed turns. BidiGenerateContent does
+        // not return an Interactions API interactionId, so thread.latestInteractionId is not
+        // updated here; follow-up typed messages currently lack server-side context from voice turns.
         private suspend fun flushTranscripts(
             threadId: String,
             userTranscriptBuilder: StringBuilder,

@@ -418,7 +418,7 @@ class AgentOrchestrator
                     _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
                 }
 
-                val inputs = nonNullArguments(toolCall.arguments)
+                val inputs = toolCall.arguments.filterNotNullValues()
                 val convertedLocalFileInput =
                     resolveRemoteFileToLocalUriUseCase(
                         parameters = matchingTool.parameters,
@@ -465,7 +465,7 @@ class AgentOrchestrator
                                 result = executionResult.formattedJson,
                             ),
                         )
-                        val attachment = extractMessageAttachment(executionResult.formattedJson)
+                        val attachment = executionResult.toAttachment()
                         if (attachment != null) {
                             capturedAttachments.add(attachment)
                         }
@@ -571,9 +571,6 @@ class AgentOrchestrator
         }
 
         private fun AppFunctionMetadata.isToolDiscoveryTool(): Boolean = AgentInternalTools.isToolDiscoveryTool(this)
-
-        /** Turns e.g. "com.example.notes.NoteFunctions#createNote" into "createNote". */
-        private fun String.toShortFunctionName(): String = substringAfterLast('#').substringAfterLast('.')
 
         private suspend fun completeMessageWithError(
             messageId: String,

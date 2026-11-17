@@ -15,15 +15,11 @@
  */
 package com.example.appfunctions.agent.domain
 
-import com.example.appfunctions.agent.data.db.entities.MessageAttachment
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 /** Converts a [JsonElement] recursively into standard Kotlin primitive, [Map], or [List] values. */
 internal fun JsonElement.toPrimitive(): Any? {
@@ -44,32 +40,4 @@ internal fun JsonElement.toPrimitive(): Any? {
 internal fun JsonObject?.toArgumentsMap(): Map<String, Any?> {
     if (this == null) return emptyMap()
     return mapValues { (_, value) -> value.toPrimitive() }
-}
-
-/** Filters out null values from a tool-call [arguments] map. */
-internal fun nonNullArguments(arguments: Map<String, Any?>): Map<String, Any> =
-    buildMap {
-        for ((key, value) in arguments) {
-            if (value != null) {
-                put(key, value)
-            }
-        }
-    }
-
-/** Extracts an optional [MessageAttachment] (`imageUri` and `mimeType`) from a tool result JSON string. */
-internal fun extractMessageAttachment(jsonString: String): MessageAttachment? {
-    return try {
-        val json = Json.parseToJsonElement(jsonString) as? JsonObject ?: return null
-        val uri = json["imageUri"]?.jsonPrimitive?.contentOrNull
-        if (!uri.isNullOrBlank()) {
-            val mimeType =
-                json["mimeType"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                    ?: "image/png"
-            MessageAttachment(uri = uri, mimeType = mimeType)
-        } else {
-            null
-        }
-    } catch (_: Exception) {
-        null
-    }
 }

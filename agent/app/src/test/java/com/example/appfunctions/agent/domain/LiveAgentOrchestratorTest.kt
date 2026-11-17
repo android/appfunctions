@@ -25,36 +25,40 @@ import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import com.example.appfunctions.agent.data.GeminiLiveVoice
+import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.db.entities.MessageAttachment
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
+import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.appfunction.ConvertInputToAppFunctionDataUseCase
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionResult
 import com.example.appfunctions.agent.domain.appfunction.ExecuteAppFunctionUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
 import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLocalUriUseCase
+import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
+import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import com.example.appfunctions.agent.ui.screens.agentdemo.FakeSettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import io.mockk.verifyOrder
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -66,15 +70,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.Collections
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class LiveAgentOrchestratorTest {
+    private lateinit var manageThreadsUseCase: ManageThreadsUseCase
     private lateinit var llmProviderFactory: LlmProviderFactory
     private lateinit var liveLlmProvider: LiveLlmProvider
     private lateinit var settingsRepository: FakeSettingsRepository
@@ -83,6 +84,7 @@ class LiveAgentOrchestratorTest {
     private lateinit var convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase
     private lateinit var executeAppFunctionUseCase: ExecuteAppFunctionUseCase
     private lateinit var launchPendingIntentUseCase: LaunchPendingIntentUseCase
+    private lateinit var savePendingIntentUseCase: SavePendingIntentUseCase
     private lateinit var sendMessageUseCase: SendMessageUseCase
     private var currentAudioFactory: (LiveAudioConfig) -> LiveAudioSession = {
         mockk(relaxed = true)
@@ -91,18 +93,28 @@ class LiveAgentOrchestratorTest {
     @Before
     fun setUp() =
         runTest {
+            manageThreadsUseCase = mockk()
             llmProviderFactory = mockk()
             liveLlmProvider = mockk()
             settingsRepository = FakeSettingsRepository()
-            settingsRepository.setSelectedProvider(LlmProviderName.GEMINI)
             settingsRepository.setGeminiApiKey("test-api-key")
+            settingsRepository.setGeminiLiveVoice(GeminiLiveVoice.AOEDE)
             getAppFunctionsUseCase = mockk()
             resolveRemoteFileToLocalUriUseCase = mockk()
             convertInputToAppFunctionDataUseCase = mockk()
             executeAppFunctionUseCase = mockk()
             launchPendingIntentUseCase = mockk()
+            savePendingIntentUseCase = mockk(relaxed = true)
             sendMessageUseCase = mockk(relaxed = true)
 
+            every { manageThreadsUseCase.getThread("thread-1") } returns
+                flowOf(
+                    ThreadEntity(
+                        threadId = "thread-1",
+                        createdAt = 1L,
+                        llmModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash"),
+                    ),
+                )
             every { launchPendingIntentUseCase(any()) } returns Result.success(Unit)
             every { llmProviderFactory.getLiveProvider(LlmProviderName.GEMINI) } returns liveLlmProvider
             every { getAppFunctionsUseCase(any()) } returns flowOf(emptyMap())
@@ -112,8 +124,9 @@ class LiveAgentOrchestratorTest {
             } returns Result.success(mockk())
         }
 
-    private fun createOrchestrator(ioDispatcher: CoroutineDispatcher = Dispatchers.IO): LiveAgentOrchestrator =
+    private fun createOrchestrator(): LiveAgentOrchestrator =
         LiveAgentOrchestrator(
+            manageThreadsUseCase = manageThreadsUseCase,
             llmProviderFactory = llmProviderFactory,
             settingsRepository = settingsRepository,
             getAppFunctionsUseCase = getAppFunctionsUseCase,
@@ -121,23 +134,22 @@ class LiveAgentOrchestratorTest {
             convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
             executeAppFunctionUseCase = executeAppFunctionUseCase,
             launchPendingIntentUseCase = launchPendingIntentUseCase,
+            savePendingIntentUseCase = savePendingIntentUseCase,
             sendMessageUseCase = sendMessageUseCase,
             audioSessionFactory = LiveAudioSessionFactory { config -> currentAudioFactory(config) },
-            ioDispatcher = ioDispatcher,
         )
 
     @Test
-    fun `startSession reports Error and persists FAILED message when API key is missing`() =
+    fun `runSession reports Error and persists FAILED message when API key is missing`() =
         runTest {
-            val orchestrator = createOrchestrator(StandardTestDispatcher(testScheduler))
+            val orchestrator = createOrchestrator()
             settingsRepository.setGeminiApiKey("")
 
-            orchestrator.startSession("thread-1")
-            advanceUntilIdle()
+            orchestrator.runSession("thread-1")
 
             assertEquals(
-                LiveSessionState.Error("API key is missing for GEMINI"),
-                orchestrator.state.value,
+                LiveAgentStatus.Error("API key is missing for GEMINI"),
+                orchestrator.status.value,
             )
             coVerify {
                 sendMessageUseCase(
@@ -150,9 +162,23 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `stopSession does not call audioSession release synchronously on caller thread`() =
+    fun `runSession reports Error when thread does not exist`() =
         runTest {
-            val orchestrator = createOrchestrator(StandardTestDispatcher(testScheduler))
+            val orchestrator = createOrchestrator()
+            every { manageThreadsUseCase.getThread("missing-thread") } returns flowOf(null)
+
+            orchestrator.runSession("missing-thread")
+
+            assertEquals(
+                LiveAgentStatus.Error("Thread not found: missing-thread"),
+                orchestrator.status.value,
+            )
+        }
+
+    @Test
+    fun `cancelling caller job flushes partial transcripts, releases audioSession, and resets status to Idle`() =
+        runTest {
+            val orchestrator = createOrchestrator()
 
             val mockAudio =
                 mockk<LiveAudioSession>(relaxed = true).apply {
@@ -163,98 +189,128 @@ class LiveAgentOrchestratorTest {
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
             stubLiveConnection(eventChannel.receiveAsFlow())
 
-            orchestrator.startSession("thread-1")
+            val job = launch { orchestrator.runSession("thread-1") }
             runCurrent()
-            assertEquals(LiveSessionState.Listening, orchestrator.state.value)
+            assertEquals(LiveAgentStatus.Listening, orchestrator.status.value)
 
-            orchestrator.stopSession()
-            assertEquals(LiveSessionState.Idle, orchestrator.state.value)
+            eventChannel.trySend(LiveLlmEvent.InputTranscription("Partial user utterance"))
+            runCurrent()
+
+            job.cancel()
             verify(exactly = 0) { mockAudio.release() }
 
             advanceUntilIdle()
+            assertEquals(LiveAgentStatus.Idle, orchestrator.status.value)
             verify(exactly = 1) { mockAudio.release() }
+            coVerify {
+                sendMessageUseCase(
+                    threadId = "thread-1",
+                    role = MessageRole.USER,
+                    textContent = "Partial user utterance",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                )
+            }
         }
 
     @Test
-    fun `startSession waits for prior session audio teardown before starting new LiveAudioSession`() {
-        val orchestrator = createOrchestrator()
-        val events = Collections.synchronizedList(mutableListOf<String>())
-        val session1Listening = CountDownLatch(1)
-        val release1Entered = CountDownLatch(1)
-        val allowRelease1Finish = CountDownLatch(1)
-        val session2Started = CountDownLatch(1)
-
-        val audio1 =
-            mockk<LiveAudioSession>(relaxed = true).apply {
-                every { listenToRecording() } returns emptyFlow()
-                every { start() } answers {
-                    events.add("start1")
-                    session1Listening.countDown()
-                }
-                every { release() } answers {
-                    events.add("release1_begin")
-                    release1Entered.countDown()
-                    assertTrue(allowRelease1Finish.await(2, TimeUnit.SECONDS))
-                    events.add("release1_end")
-                }
-            }
-        val audio2 =
-            mockk<LiveAudioSession>(relaxed = true).apply {
-                every { listenToRecording() } returns emptyFlow()
-                every { start() } answers {
-                    events.add("start2")
-                    session2Started.countDown()
-                }
-                every { release() } answers {
-                    events.add("release2")
-                }
-            }
-
-        val counter = AtomicInteger(0)
-        currentAudioFactory = { if (counter.incrementAndGet() == 1) audio1 else audio2 }
-
-        val ch1 = Channel<LiveLlmEvent>(Channel.UNLIMITED)
-        val ch2 = Channel<LiveLlmEvent>(Channel.UNLIMITED)
-        val connCounter = AtomicInteger(0)
-        coEvery { liveLlmProvider.connect(any(), any(), any()) } coAnswers {
-            val flow =
-                if (connCounter.incrementAndGet() == 1) {
-                    ch1.receiveAsFlow()
-                } else {
-                    ch2.receiveAsFlow()
-                }
-            FakeLiveLlmSession(flow)
-        }
-
-        orchestrator.startSession("thread-1")
-        assertTrue(session1Listening.await(2, TimeUnit.SECONDS))
-
-        orchestrator.stopSession()
-        assertTrue(release1Entered.await(2, TimeUnit.SECONDS))
-
-        orchestrator.startSession("thread-1")
-        Thread.sleep(50)
-        assertEquals(listOf("start1", "release1_begin"), events.toList())
-
-        allowRelease1Finish.countDown()
-        assertTrue(session2Started.await(2, TimeUnit.SECONDS))
-        assertEquals(
-            listOf("start1", "release1_begin", "release1_end", "start2"),
-            events.toList(),
-        )
-
-        orchestrator.stopSession()
-    }
-
-    @Test
-    fun `streams audio chunks, flushes transcriptions in order, and stops playback on interruption`() =
+    fun `runSession waits for prior cancelled session teardown before starting new LiveAudioSession`() =
         runTest {
-            val orchestrator = createOrchestrator(StandardTestDispatcher(testScheduler))
+            val orchestrator = createOrchestrator()
+            val events = mutableListOf<String>()
+            val allowTeardown1Finish = CompletableDeferred<Unit>()
+
+            val audio1 =
+                mockk<LiveAudioSession>(relaxed = true).apply {
+                    every { listenToRecording() } returns emptyFlow()
+                    every { start() } answers { events.add("start1") }
+                    every { release() } answers { events.add("release1") }
+                }
+            val audio2 =
+                mockk<LiveAudioSession>(relaxed = true).apply {
+                    every { listenToRecording() } returns emptyFlow()
+                    every { start() } answers { events.add("start2") }
+                    every { release() } answers { events.add("release2") }
+                }
+
+            var audioCounter = 0
+            currentAudioFactory = { if (++audioCounter == 1) audio1 else audio2 }
+
+            coEvery {
+                sendMessageUseCase(
+                    threadId = "thread-1",
+                    role = MessageRole.USER,
+                    textContent = "Hello",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                )
+            } coAnswers {
+                events.add("teardown1_flush_begin")
+                allowTeardown1Finish.await()
+                events.add("teardown1_flush_end")
+                "msg-1"
+            }
+
+            val ch1 = Channel<LiveLlmEvent>(Channel.UNLIMITED)
+            val ch2 = Channel<LiveLlmEvent>(Channel.UNLIMITED)
+            var connCounter = 0
+            coEvery { liveLlmProvider.connect(any(), any(), any()) } coAnswers {
+                val flow =
+                    if (++connCounter == 1) {
+                        ch1.receiveAsFlow()
+                    } else {
+                        ch2.receiveAsFlow()
+                    }
+                FakeLiveLlmSession(flow)
+            }
+
+            val job1 = launch { orchestrator.runSession("thread-1") }
+            runCurrent()
+            assertEquals(listOf("start1"), events)
+
+            ch1.trySend(LiveLlmEvent.InputTranscription("Hello"))
+            runCurrent()
+
+            // Cancel session 1 and immediately launch session 2 before session 1's NonCancellable
+            // teardown completes.
+            job1.cancel()
+            val job2 = launch { orchestrator.runSession("thread-1") }
+            runCurrent()
+
+            // Session 2 must wait on sessionMutex until session 1 finishes flushing and releasing audio1.
+            assertEquals(listOf("start1", "teardown1_flush_begin"), events)
+
+            allowTeardown1Finish.complete(Unit)
+            runCurrent()
+
+            assertEquals(
+                listOf("start1", "teardown1_flush_begin", "teardown1_flush_end", "release1", "start2"),
+                events,
+            )
+
+            job2.cancel()
+            advanceUntilIdle()
+            assertEquals(
+                listOf(
+                    "start1",
+                    "teardown1_flush_begin",
+                    "teardown1_flush_end",
+                    "release1",
+                    "start2",
+                    "release2",
+                ),
+                events,
+            )
+        }
+
+    @Test
+    fun `streams audio chunks, passes thread provider voice, flushes transcriptions in order, and stops playback on interruption`() =
+        runTest {
+            val orchestrator = createOrchestrator()
 
             val micPcm = byteArrayOf(1, 2, 3, 4)
             val modelPcm = byteArrayOf(9, 8, 7, 6)
             val queuedChunks = mutableListOf<Pair<ByteArray, Int>>()
             var capturedConfig: LiveAudioConfig? = null
+            var capturedVoiceName: String? = null
             val mockAudio =
                 mockk<LiveAudioSession>(relaxed = true).apply {
                     every { inputSampleRateHz } returns 16_000
@@ -269,9 +325,13 @@ class LiveAgentOrchestratorTest {
             }
 
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
-            val fakeSession = stubLiveConnection(eventChannel.receiveAsFlow())
+            val fakeSession = FakeLiveLlmSession(eventChannel.receiveAsFlow())
+            coEvery { liveLlmProvider.connect(any(), any(), any()) } coAnswers {
+                capturedVoiceName = thirdArg()
+                fakeSession
+            }
 
-            orchestrator.startSession("thread-1")
+            val job = launch { orchestrator.runSession("thread-1") }
             runCurrent()
 
             eventChannel.trySend(LiveLlmEvent.InputTranscription("What is "))
@@ -281,7 +341,9 @@ class LiveAgentOrchestratorTest {
             eventChannel.trySend(LiveLlmEvent.Interrupted)
             eventChannel.close()
             advanceUntilIdle()
+            job.join()
 
+            assertEquals("Aoede", capturedVoiceName)
             assertEquals(fakeSession.audioConfig, capturedConfig)
             assertEquals(1, fakeSession.sentAudio.size)
             assertArrayEquals(micPcm, fakeSession.sentAudio.first().first)
@@ -289,6 +351,7 @@ class LiveAgentOrchestratorTest {
             assertEquals(1, queuedChunks.size)
             assertArrayEquals(modelPcm, queuedChunks.first().first)
             assertEquals(24_000, queuedChunks.first().second)
+            assertEquals(LiveAgentStatus.Idle, orchestrator.status.value)
             verify(exactly = 1) { mockAudio.stopAudio() }
             coVerifyOrder {
                 sendMessageUseCase(
@@ -307,9 +370,9 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `LiveLlmEvent Error flushes transcripts, persists FAILED message, and transitions state to Error`() =
+    fun `recoverable LiveLlmEvent Error keeps session active while fatal Error ends session with FAILED message`() =
         runTest {
-            val orchestrator = createOrchestrator(StandardTestDispatcher(testScheduler))
+            val orchestrator = createOrchestrator()
             val mockAudio =
                 mockk<LiveAudioSession>(relaxed = true).apply {
                     every { listenToRecording() } returns emptyFlow()
@@ -319,20 +382,36 @@ class LiveAgentOrchestratorTest {
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
             stubLiveConnection(eventChannel.receiveAsFlow())
 
-            orchestrator.startSession("thread-1")
+            val job = launch { orchestrator.runSession("thread-1") }
             runCurrent()
 
+            // Non-fatal error (e.g. skipped malformed frame) must NOT end the session
+            eventChannel.trySend(
+                LiveLlmEvent.Error(
+                    message = "Failed to parse Gemini Live server frame",
+                    isFatal = false,
+                ),
+            )
+            runCurrent()
+            assertEquals(LiveAgentStatus.Listening, orchestrator.status.value)
+            verify(exactly = 0) { mockAudio.release() }
+
+            // Subsequent valid events continue normally until a fatal error arrives
             eventChannel.trySend(LiveLlmEvent.InputTranscription("Turn on the lights"))
             eventChannel.trySend(
-                LiveLlmEvent.Error("WebSocket closed by server (code=1011): Internal error"),
+                LiveLlmEvent.Error(
+                    message = "WebSocket closed by server (code=1011): Internal error",
+                    isFatal = true,
+                ),
             )
             advanceUntilIdle()
+            job.join()
 
             assertEquals(
-                LiveSessionState.Error(
+                LiveAgentStatus.Error(
                     "Live session error: WebSocket closed by server (code=1011): Internal error",
                 ),
-                orchestrator.state.value,
+                orchestrator.status.value,
             )
             verify(atLeast = 1) { mockAudio.stopAudio() }
             verify(exactly = 1) { mockAudio.release() }
@@ -354,9 +433,9 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `ToolCallRequest gates recording, updates status, launches PendingIntent directly, saves attachments, and sends ToolOutputs`() =
+    fun `ToolCallRequest gates recording, updates status, launches and saves PendingIntent, and sends ToolOutputs`() =
         runTest {
-            val orchestrator = createOrchestrator(StandardTestDispatcher(testScheduler))
+            val orchestrator = createOrchestrator()
 
             val notesPkg =
                 AppFunctionPackageMetadata(
@@ -392,7 +471,7 @@ class LiveAgentOrchestratorTest {
                 )
             val pendingIntent = mockk<PendingIntent>()
             val mockData = mockk<AppFunctionData>()
-            val observedStatuses = mutableListOf<AgentStatus>()
+            val observedStatuses = mutableListOf<LiveAgentStatus>()
 
             coEvery {
                 convertInputToAppFunctionDataUseCase(any(), any(), any())
@@ -432,15 +511,14 @@ class LiveAgentOrchestratorTest {
                     },
                 )
 
-            orchestrator.startSession("thread-1", targetPackageName = "com.example.notes")
-            advanceUntilIdle()
+            orchestrator.runSession("thread-1", targetPackageName = "com.example.notes")
 
             assertTrue(toolResponseSent.isCompleted)
-            assertEquals(AgentStatus.Idle, orchestrator.status.value)
+            assertEquals(LiveAgentStatus.Idle, orchestrator.status.value)
             assertEquals(
                 listOf(
-                    AgentStatus.InvokingTool(noteTool.id, "com.example.notes"),
-                    AgentStatus.InvokingTool("makeCall", "com.example.notes"),
+                    LiveAgentStatus.InvokingTool(noteTool.id, "com.example.notes"),
+                    LiveAgentStatus.InvokingTool("makeCall", "com.example.notes"),
                 ),
                 observedStatuses,
             )
@@ -450,7 +528,18 @@ class LiveAgentOrchestratorTest {
                 mockAudio.resumeRecording()
                 mockAudio.release()
             }
+            val savedPendingIntentId = slot<String>()
+            verify(exactly = 1) { savePendingIntentUseCase(capture(savedPendingIntentId), pendingIntent) }
             verify(exactly = 1) { launchPendingIntentUseCase(pendingIntent) }
+            coVerify {
+                sendMessageUseCase(
+                    threadId = "thread-1",
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Launched makeCall (com.example.notes)",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = savedPendingIntentId.captured,
+                )
+            }
             coVerify {
                 sendMessageUseCase(
                     threadId = "thread-1",
@@ -476,9 +565,9 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `ToolCallRequest reports failure ToolOutput when PendingIntent launch or AppFunction execution fails`() =
+    fun `ToolCallRequest saves tappable PendingIntent and reports failure when launch or execution fails`() =
         runTest {
-            val orchestrator = createOrchestrator(StandardTestDispatcher(testScheduler))
+            val orchestrator = createOrchestrator()
 
             val chatPkg =
                 AppFunctionPackageMetadata(
@@ -533,9 +622,19 @@ class LiveAgentOrchestratorTest {
                     onToolResponses = { eventChannel.close() },
                 )
 
-            orchestrator.startSession("thread-1")
-            advanceUntilIdle()
+            orchestrator.runSession("thread-1")
 
+            val savedPendingIntentId = slot<String>()
+            verify(exactly = 1) { savePendingIntentUseCase(capture(savedPendingIntentId), pendingIntent) }
+            coVerify {
+                sendMessageUseCase(
+                    threadId = "thread-1",
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Action ready for makeCall (com.example.chat)",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = savedPendingIntentId.captured,
+                )
+            }
             val outputs = fakeSession.sentToolOutputs.single()
             assertEquals(2, outputs.size)
             assertTrue(
