@@ -548,7 +548,8 @@ class GeminiLiveProviderImplTest {
             }
 
             assertEquals(2, receivedEvents.size)
-            assertTrue(receivedEvents[0] is LiveLlmEvent.Error)
+            val recoverableError = receivedEvents[0] as LiveLlmEvent.Error
+            assertFalse(recoverableError.isFatal)
             assertEquals(LiveLlmEvent.TurnComplete, receivedEvents[1])
         }
 
@@ -573,7 +574,9 @@ class GeminiLiveProviderImplTest {
             }
 
             assertEquals(1, closeEvents.size)
-            assertTrue((closeEvents.single() as LiveLlmEvent.Error).message.contains("Invalid API key"))
+            val closeError = closeEvents.single() as LiveLlmEvent.Error
+            assertTrue(closeError.isFatal)
+            assertTrue(closeError.message.contains("Invalid API key"))
 
             var receiveCount = 0
             val wsSession = mockk<WebSocketSession>(relaxed = true)

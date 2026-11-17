@@ -51,11 +51,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.util.UUID
 import javax.inject.Inject
@@ -422,7 +418,7 @@ class AgentOrchestrator
                     _status.value = AgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
                 }
 
-                val inputs = nonNullArguments(toolCall.arguments)
+                val inputs = toolCall.arguments.filterNotNullValues()
                 val convertedLocalFileInput =
                     resolveRemoteFileToLocalUriUseCase(
                         parameters = matchingTool.parameters,
@@ -469,7 +465,7 @@ class AgentOrchestrator
                                 result = executionResult.formattedJson,
                             ),
                         )
-                        val attachment = extractMessageAttachment(executionResult.formattedJson)
+                        val attachment = executionResult.toAttachment()
                         if (attachment != null) {
                             capturedAttachments.add(attachment)
                         }
@@ -576,9 +572,6 @@ class AgentOrchestrator
 
         private fun AppFunctionMetadata.isToolDiscoveryTool(): Boolean = AgentInternalTools.isToolDiscoveryTool(this)
 
-        /** Turns e.g. "com.example.notes.NoteFunctions#createNote" into "createNote". */
-        private fun String.toShortFunctionName(): String = substringAfterLast('#').substringAfterLast('.')
-
         private suspend fun completeMessageWithError(
             messageId: String,
             threadId: String,
@@ -594,32 +587,6 @@ class AgentOrchestrator
                 textContent = reason,
                 processingStatus = MessageProcessingStatus.FAILED,
             )
-        }
-
-        private fun nonNullArguments(arguments: Map<String, Any?>): Map<String, Any> =
-            buildMap {
-                for ((key, value) in arguments) {
-                    if (value != null) {
-                        put(key, value)
-                    }
-                }
-            }
-
-        private fun extractMessageAttachment(jsonString: String): MessageAttachment? {
-            return try {
-                val json = Json.parseToJsonElement(jsonString) as? JsonObject ?: return null
-                val uri = json["imageUri"]?.jsonPrimitive?.contentOrNull
-                if (!uri.isNullOrBlank()) {
-                    val mimeType =
-                        json["mimeType"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                            ?: "image/png"
-                    MessageAttachment(uri = uri, mimeType = mimeType)
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
-                null
-            }
         }
 
         private companion object {

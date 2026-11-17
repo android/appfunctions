@@ -116,9 +116,18 @@ sealed class LiveLlmEvent {
     /** Requests execution of one or more [calls] before continuing the live conversation. */
     data class ToolCallRequest(val calls: List<LlmResponsePart.ToolCall>) : LiveLlmEvent()
 
-    /** Indicates an error occurred during the live session. */
+    /**
+     * Indicates an error occurred during the live session.
+     *
+     * @property message Human-readable error description.
+     * @property cause Optional underlying exception.
+     * @property isFatal `true` when the error is terminal and the session cannot continue (e.g.,
+     *   transport failure or abnormal server close); `false` when the error is recoverable (e.g., a
+     *   single malformed frame was skipped while the underlying connection remains open).
+     */
     data class Error(
         val message: String,
         val cause: Throwable? = null,
+        val isFatal: Boolean = true,
     ) : LiveLlmEvent()
 }

@@ -149,6 +149,7 @@ class GeminiLiveProviderImpl
                                             LiveLlmEvent.Error(
                                                 message = frameResult.message,
                                                 cause = frameResult.cause,
+                                                isFatal = true,
                                             ),
                                         )
                                         break
@@ -163,6 +164,7 @@ class GeminiLiveProviderImpl
                                         LiveLlmEvent.Error(
                                             message = "Failed to parse Gemini Live server frame",
                                             cause = e,
+                                            isFatal = false,
                                         ),
                                     )
                                     continue
@@ -262,7 +264,9 @@ class GeminiLiveProviderImpl
                     } else {
                         listOf(
                             LiveLlmEvent.Error(
-                                "Invalid '$KEY_SERVER_CONTENT' payload in server message: $serverJson",
+                                message =
+                                    "Invalid '$KEY_SERVER_CONTENT' payload in server message: $serverJson",
+                                isFatal = false,
                             ),
                         )
                     }
@@ -274,7 +278,9 @@ class GeminiLiveProviderImpl
                     } else {
                         listOf(
                             LiveLlmEvent.Error(
-                                "Invalid '$KEY_TOOL_CALL' payload in server message: $serverJson",
+                                message =
+                                    "Invalid '$KEY_TOOL_CALL' payload in server message: $serverJson",
+                                isFatal = false,
                             ),
                         )
                     }
@@ -324,7 +330,9 @@ class GeminiLiveProviderImpl
                     } else {
                         listOf(
                             LiveLlmEvent.Error(
-                                "Invalid '$KEY_MODEL_TURN' payload in serverContent: $serverContent",
+                                message =
+                                    "Invalid '$KEY_MODEL_TURN' payload in serverContent: $serverContent",
+                                isFatal = false,
                             ),
                         )
                     }
@@ -337,7 +345,10 @@ class GeminiLiveProviderImpl
             val parts =
                 modelTurn[KEY_PARTS]?.jsonArray
                     ?: return listOf(
-                        LiveLlmEvent.Error("modelTurn is missing '$KEY_PARTS' array: $modelTurn"),
+                        LiveLlmEvent.Error(
+                            message = "modelTurn is missing '$KEY_PARTS' array: $modelTurn",
+                            isFatal = false,
+                        ),
                     )
             val events = mutableListOf<LiveLlmEvent>()
             for (part in parts) {
@@ -347,7 +358,8 @@ class GeminiLiveProviderImpl
                 if (mimeType == null || !mimeType.startsWith(MIME_TYPE_AUDIO_PCM_PREFIX)) {
                     events.add(
                         LiveLlmEvent.Error(
-                            "Unsupported inlineData mimeType in modelTurn: $mimeType",
+                            message = "Unsupported inlineData mimeType in modelTurn: $mimeType",
+                            isFatal = false,
                         ),
                     )
                     continue
@@ -355,7 +367,10 @@ class GeminiLiveProviderImpl
                 val base64Data = inlineData[KEY_DATA]?.jsonPrimitive?.contentOrNull
                 if (base64Data.isNullOrEmpty()) {
                     events.add(
-                        LiveLlmEvent.Error("inlineData is missing audio '$KEY_DATA' in modelTurn"),
+                        LiveLlmEvent.Error(
+                            message = "inlineData is missing audio '$KEY_DATA' in modelTurn",
+                            isFatal = false,
+                        ),
                     )
                     continue
                 }
@@ -374,6 +389,7 @@ class GeminiLiveProviderImpl
                         LiveLlmEvent.Error(
                             message = "Failed to decode base64 PCM audio chunk",
                             cause = e,
+                            isFatal = false,
                         ),
                     )
                 }
@@ -399,12 +415,17 @@ class GeminiLiveProviderImpl
                 toolCallObj[KEY_FUNCTION_CALLS]?.jsonArray
                     ?: return listOf(
                         LiveLlmEvent.Error(
-                            "toolCall is missing '$KEY_FUNCTION_CALLS' array: $toolCallObj",
+                            message =
+                                "toolCall is missing '$KEY_FUNCTION_CALLS' array: $toolCallObj",
+                            isFatal = false,
                         ),
                     )
             if (functionCalls.isEmpty()) {
                 return listOf(
-                    LiveLlmEvent.Error("toolCall '$KEY_FUNCTION_CALLS' array is empty"),
+                    LiveLlmEvent.Error(
+                        message = "toolCall '$KEY_FUNCTION_CALLS' array is empty",
+                        isFatal = false,
+                    ),
                 )
             }
 
@@ -416,21 +437,30 @@ class GeminiLiveProviderImpl
                 val callId = callObj[KEY_ID]?.jsonPrimitive?.contentOrNull
                 if (callId.isNullOrBlank()) {
                     events.add(
-                        LiveLlmEvent.Error("Function call missing '$KEY_ID' in response: $callObj"),
+                        LiveLlmEvent.Error(
+                            message = "Function call missing '$KEY_ID' in response: $callObj",
+                            isFatal = false,
+                        ),
                     )
                     continue
                 }
                 val name = callObj[KEY_NAME]?.jsonPrimitive?.contentOrNull
                 if (name.isNullOrBlank()) {
                     events.add(
-                        LiveLlmEvent.Error("Called function without a '$KEY_NAME': $callObj"),
+                        LiveLlmEvent.Error(
+                            message = "Called function without a '$KEY_NAME': $callObj",
+                            isFatal = false,
+                        ),
                     )
                     continue
                 }
                 val matchingTool = toolConverter.findToolByName(name, tools)
                 if (matchingTool == null) {
                     events.add(
-                        LiveLlmEvent.Error("Called unknown function: $name"),
+                        LiveLlmEvent.Error(
+                            message = "Called unknown function: $name",
+                            isFatal = false,
+                        ),
                     )
                     continue
                 }

@@ -27,10 +27,16 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionParcelableTypeMetadata
 import androidx.core.net.toUri
 import com.example.appfunctions.agent.data.AgentInternalTools
+import com.example.appfunctions.agent.data.db.entities.MessageAttachment
 import com.example.appfunctions.agent.domain.appinteraction.StartAppInteractionSessionUseCase
 import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 
 /**
@@ -168,7 +174,34 @@ class ExecuteAppFunctionUseCase
 /** Sealed class representing the result of an AppFunction execution. */
 sealed class ExecuteAppFunctionResult {
     data class Data(val data: AppFunctionData, val formattedJson: String) :
-        ExecuteAppFunctionResult()
+        ExecuteAppFunctionResult() {
+        /**
+         * Extracts an optional [MessageAttachment] (`imageUri` and `mimeType`) when [formattedJson]
+         * encodes a generated or returned media URI.
+         */
+        fun toAttachment(): MessageAttachment? {
+            val json =
+                try {
+                    Json.parseToJsonElement(formattedJson) as? JsonObject
+                } catch (_: SerializationException) {
+                    null
+                } ?: return null
+            val uri = (json[KEY_IMAGE_URI] as? JsonPrimitive)?.contentOrNull
+            if (uri.isNullOrBlank()) return null
+            val mimeType =
+                (json[KEY_MIME_TYPE] as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+                    ?: DEFAULT_ATTACHMENT_MIME_TYPE
+            return MessageAttachment(uri = uri, mimeType = mimeType)
+        }
+
+        private companion object {
+            const val KEY_IMAGE_URI = "imageUri"
+            const val KEY_MIME_TYPE = "mimeType"
+            const val DEFAULT_ATTACHMENT_MIME_TYPE = "image/png"
+        }
+    }
 
     data class PendingIntentAction(val pendingIntent: PendingIntent) : ExecuteAppFunctionResult()
 
