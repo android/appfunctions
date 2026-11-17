@@ -16,11 +16,12 @@
 package com.example.appfunctions.agent.domain
 
 /**
- * Represents the unified connection, listening, and tool-invocation status of a live voice session.
+ * Represents the per-session connection, listening, tool-invocation, and terminal status emitted by
+ * [LiveAgentOrchestrator.runSession].
+ *
+ * Hosts should treat flow completion (after [Ended] or [Error]) or collector cancellation as idle.
  */
 sealed class LiveAgentStatus {
-    object Idle : LiveAgentStatus()
-
     object Connecting : LiveAgentStatus()
 
     object Listening : LiveAgentStatus()
@@ -29,6 +30,8 @@ sealed class LiveAgentStatus {
         val functionId: String,
         val packageName: String,
     ) : LiveAgentStatus()
+
+    object Ended : LiveAgentStatus()
 
     data class Error(val message: String) : LiveAgentStatus()
 }

@@ -39,15 +39,14 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -75,32 +74,40 @@ class LiveAgentOrchestrator
     ) {
         private val sessionMutex = Mutex()
 
-        private val _status = MutableStateFlow<LiveAgentStatus>(LiveAgentStatus.Idle)
-
-        /** Current unified connection, listening, and tool-invocation status of the live session. */
-        val status: StateFlow<LiveAgentStatus> = _status.asStateFlow()
-
         /**
-         * Runs a bidirectional live voice session for [threadId] until the session ends or the
-         * calling coroutine is cancelled.
+         * Returns a cold [Flow] that runs a bidirectional live voice session for [threadId] while
+         * collected, emitting [LiveAgentStatus] updates bound to that session.
          *
-         * The caller (host service or ViewModel) owns the session `Job` and stops the session by
-         * cancelling that `Job`. Concurrent calls serialize on [sessionMutex] so audio hardware
-         * teardown of a cancelled session finishes before a subsequent session opens `AudioRecord`.
+         * - **Lifecycle**: Cancelling collection stops the session and runs `NonCancellable` audio
+         *   hardware release and transcript flushing before releasing the session lock.
+         * - **Single active session**: If another live session is currently active (or still
+         *   releasing audio hardware), collection fails fast by emitting [LiveAgentStatus.Error]
+         *   and completing immediately rather than queuing. To restart a session, callers should
+         *   `cancelAndJoin()` the previous collection `Job` before collecting a new session.
+         * - **Completion**: When the session ends on its own, a final [LiveAgentStatus.Ended] or
+         *   [LiveAgentStatus.Error] is emitted before the flow completes. Hosts should treat
+         *   completion or cancellation as idle.
          */
         @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-        suspend fun runSession(
+        fun runSession(
             threadId: String,
             targetPackageName: String? = null,
-        ) {
-            sessionMutex.withLock {
-                currentCoroutineContext().ensureActive()
-                runSessionLocked(
-                    threadId = threadId,
-                    targetPackageName = targetPackageName,
-                )
-            }
-        }
+        ): Flow<LiveAgentStatus> =
+            channelFlow {
+                if (!sessionMutex.tryLock()) {
+                    send(LiveAgentStatus.Error(ERROR_SESSION_ALREADY_ACTIVE))
+                    return@channelFlow
+                }
+                try {
+                    runSessionLocked(
+                        statusSink = ::send,
+                        threadId = threadId,
+                        targetPackageName = targetPackageName,
+                    )
+                } finally {
+                    sessionMutex.unlock()
+                }
+            }.conflate()
 
         private suspend fun getApiKey(provider: LlmProviderName): String? {
             return when (provider) {
@@ -116,14 +123,14 @@ class LiveAgentOrchestrator
 
         @RequiresPermission(Manifest.permission.RECORD_AUDIO)
         private suspend fun runSessionLocked(
+            statusSink: suspend (LiveAgentStatus) -> Unit,
             threadId: String,
             targetPackageName: String?,
         ) {
-            _status.value = LiveAgentStatus.Connecting
+            statusSink(LiveAgentStatus.Connecting)
             val userTranscriptBuilder = StringBuilder()
             val modelTranscriptBuilder = StringBuilder()
             val terminatedWithError = AtomicBoolean(false)
-            var wasCancelled = false
             var localAudioSession: LiveAudioSession? = null
 
             try {
@@ -131,7 +138,7 @@ class LiveAgentOrchestrator
                 if (thread == null) {
                     val errorMsg = "Thread not found: $threadId"
                     terminatedWithError.set(true)
-                    _status.value = LiveAgentStatus.Error(errorMsg)
+                    statusSink(LiveAgentStatus.Error(errorMsg))
                     return
                 }
 
@@ -147,7 +154,7 @@ class LiveAgentOrchestrator
                         textContent = errorMsg,
                         processingStatus = MessageProcessingStatus.FAILED,
                     )
-                    _status.value = LiveAgentStatus.Error(errorMsg)
+                    statusSink(LiveAgentStatus.Error(errorMsg))
                     return
                 }
 
@@ -185,7 +192,7 @@ class LiveAgentOrchestrator
                     audioSession.start()
 
                     currentCoroutineContext().ensureActive()
-                    _status.value = LiveAgentStatus.Listening
+                    statusSink(LiveAgentStatus.Listening)
 
                     coroutineScope {
                         val sendAudioJob =
@@ -202,6 +209,7 @@ class LiveAgentOrchestrator
                                 } else {
                                     handleLiveEvent(
                                         event = event,
+                                        statusSink = statusSink,
                                         session = session,
                                         threadId = threadId,
                                         tools = tools,
@@ -219,12 +227,16 @@ class LiveAgentOrchestrator
                         }
                     }
                 }
+
+                if (!terminatedWithError.get()) {
+                    currentCoroutineContext().ensureActive()
+                    flushTranscripts(threadId, userTranscriptBuilder, modelTranscriptBuilder)
+                    statusSink(LiveAgentStatus.Ended)
+                }
             } catch (e: CancellationException) {
-                wasCancelled = true
                 throw e
             } catch (e: Exception) {
                 if (!currentCoroutineContext().isActive) {
-                    wasCancelled = true
                     currentCoroutineContext().ensureActive()
                 }
                 Log.e(TAG, "Live session error", e)
@@ -243,7 +255,7 @@ class LiveAgentOrchestrator
                 } catch (sendError: Exception) {
                     Log.w(TAG, "Failed to persist live session error message", sendError)
                 }
-                _status.value = LiveAgentStatus.Error(errorText)
+                statusSink(LiveAgentStatus.Error(errorText))
             } finally {
                 withContext(NonCancellable) {
                     try {
@@ -253,15 +265,13 @@ class LiveAgentOrchestrator
                     }
                     localAudioSession?.release()
                     localAudioSession = null
-                    if (wasCancelled || !terminatedWithError.get()) {
-                        _status.value = LiveAgentStatus.Idle
-                    }
                 }
             }
         }
 
         private suspend fun handleLiveEvent(
             event: LiveLlmEvent,
+            statusSink: suspend (LiveAgentStatus) -> Unit,
             session: LiveLlmSession,
             threadId: String,
             tools: List<AppFunctionMetadata>,
@@ -301,6 +311,7 @@ class LiveAgentOrchestrator
                         try {
                             val toolOutputs =
                                 executeLiveToolCalls(
+                                    statusSink = statusSink,
                                     threadId = threadId,
                                     toolCalls = event.calls,
                                     tools = tools,
@@ -328,12 +339,13 @@ class LiveAgentOrchestrator
                         textContent = errorText,
                         processingStatus = MessageProcessingStatus.FAILED,
                     )
-                    _status.value = LiveAgentStatus.Error(errorText)
+                    statusSink(LiveAgentStatus.Error(errorText))
                 }
             }
         }
 
         private suspend fun executeLiveToolCalls(
+            statusSink: suspend (LiveAgentStatus) -> Unit,
             threadId: String,
             toolCalls: List<LlmResponsePart.ToolCall>,
             tools: List<AppFunctionMetadata>,
@@ -342,8 +354,9 @@ class LiveAgentOrchestrator
             val capturedAttachments = mutableListOf<MessageAttachment>()
             try {
                 for (toolCall in toolCalls) {
-                    _status.value =
-                        LiveAgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName)
+                    statusSink(
+                        LiveAgentStatus.InvokingTool(toolCall.functionId, toolCall.packageName),
+                    )
                     val matchingTool =
                         tools.find {
                             it.packageName == toolCall.packageName && it.id == toolCall.functionId
@@ -513,7 +526,7 @@ class LiveAgentOrchestrator
                 }
             } finally {
                 if (currentCoroutineContext().isActive) {
-                    _status.value = LiveAgentStatus.Listening
+                    statusSink(LiveAgentStatus.Listening)
                 }
             }
             return outputs
@@ -550,6 +563,7 @@ class LiveAgentOrchestrator
 
         companion object {
             private const val TAG = "LiveAgentOrchestrator"
+            internal const val ERROR_SESSION_ALREADY_ACTIVE = "Another live session is active"
             private const val PENDING_INTENT_LAUNCHED_RESULT =
                 """{"status":"launched","message":"The action was executed and the target app UI was opened."}"""
         }

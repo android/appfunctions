@@ -51,15 +51,19 @@ import io.mockk.verify
 import io.mockk.verifyOrder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -71,7 +75,7 @@ import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class LiveAgentOrchestratorTest {
     private lateinit var manageThreadsUseCase: ManageThreadsUseCase
     private lateinit var llmProviderFactory: LlmProviderFactory
@@ -135,16 +139,25 @@ class LiveAgentOrchestratorTest {
         )
 
     @Test
-    fun `runSession reports Error and persists FAILED message when API key is missing`() =
+    fun `runSession emits Error and persists FAILED message when API key is missing`() =
         runTest {
             val orchestrator = createOrchestrator()
             settingsRepository.setGeminiApiKey("")
 
-            orchestrator.runSession("thread-1")
+            val statuses = mutableListOf<LiveAgentStatus>()
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").toList(statuses)
+                }
+            advanceUntilIdle()
+            job.join()
 
             assertEquals(
-                LiveAgentStatus.Error("API key is missing for GEMINI"),
-                orchestrator.status.value,
+                listOf(
+                    LiveAgentStatus.Connecting,
+                    LiveAgentStatus.Error("API key is missing for GEMINI"),
+                ),
+                statuses,
             )
             coVerify {
                 sendMessageUseCase(
@@ -157,21 +170,30 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `runSession reports Error when thread does not exist`() =
+    fun `runSession emits Error when thread does not exist`() =
         runTest {
             val orchestrator = createOrchestrator()
             every { manageThreadsUseCase.getThread("missing-thread") } returns flowOf(null)
 
-            orchestrator.runSession("missing-thread")
+            val statuses = mutableListOf<LiveAgentStatus>()
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("missing-thread").toList(statuses)
+                }
+            advanceUntilIdle()
+            job.join()
 
             assertEquals(
-                LiveAgentStatus.Error("Thread not found: missing-thread"),
-                orchestrator.status.value,
+                listOf(
+                    LiveAgentStatus.Connecting,
+                    LiveAgentStatus.Error("Thread not found: missing-thread"),
+                ),
+                statuses,
             )
         }
 
     @Test
-    fun `cancelling caller job flushes partial transcripts, releases audioSession, and resets status to Idle`() =
+    fun `cancelling collector flushes partial transcripts and releases audioSession`() =
         runTest {
             val orchestrator = createOrchestrator()
 
@@ -184,18 +206,26 @@ class LiveAgentOrchestratorTest {
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
             stubLiveConnection(eventChannel.receiveAsFlow())
 
-            val job = launch { orchestrator.runSession("thread-1") }
+            val statuses = mutableListOf<LiveAgentStatus>()
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").collect { statuses.add(it) }
+                }
             runCurrent()
-            assertEquals(LiveAgentStatus.Listening, orchestrator.status.value)
+            assertEquals(
+                listOf(LiveAgentStatus.Connecting, LiveAgentStatus.Listening),
+                statuses,
+            )
 
             eventChannel.trySend(LiveLlmEvent.InputTranscription("Partial user utterance"))
             runCurrent()
 
             job.cancel()
-            verify(exactly = 0) { mockAudio.release() }
-
             advanceUntilIdle()
-            assertEquals(LiveAgentStatus.Idle, orchestrator.status.value)
+            assertEquals(
+                listOf(LiveAgentStatus.Connecting, LiveAgentStatus.Listening),
+                statuses,
+            )
             verify(exactly = 1) { mockAudio.release() }
             coVerify {
                 sendMessageUseCase(
@@ -208,7 +238,7 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `runSession waits for prior cancelled session teardown before starting new LiveAudioSession`() =
+    fun `concurrent runSession fails fast while active or tearing down and succeeds after cancelAndJoin`() =
         runTest {
             val orchestrator = createOrchestrator()
             val events = mutableListOf<String>()
@@ -256,32 +286,62 @@ class LiveAgentOrchestratorTest {
                 FakeLiveLlmSession(flow)
             }
 
-            val job1 = launch { orchestrator.runSession("thread-1") }
+            val statuses1 = mutableListOf<LiveAgentStatus>()
+            val job1 =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").collect { statuses1.add(it) }
+                }
             runCurrent()
+            assertEquals(listOf("start1"), events)
+
+            // A concurrent call while session 1 is active fails fast without starting audio2
+            val activeRejectStatuses = orchestrator.runSession("thread-1").toList()
+            assertEquals(
+                listOf(LiveAgentStatus.Error(LiveAgentOrchestrator.ERROR_SESSION_ALREADY_ACTIVE)),
+                activeRejectStatuses,
+            )
             assertEquals(listOf("start1"), events)
 
             ch1.trySend(LiveLlmEvent.InputTranscription("Hello"))
             runCurrent()
 
-            // Cancel session 1 and immediately launch session 2 before session 1's NonCancellable
-            // teardown completes.
+            // Cancel session 1 while its NonCancellable teardown is still in flight
             job1.cancel()
-            val job2 = launch { orchestrator.runSession("thread-1") }
             runCurrent()
-
-            // Session 2 must wait on sessionMutex until session 1 finishes flushing and releasing audio1.
             assertEquals(listOf("start1", "teardown1_flush_begin"), events)
 
-            allowTeardown1Finish.complete(Unit)
-            runCurrent()
-
+            // A concurrent call during teardown also fails fast rather than queuing on the mic
+            val teardownRejectStatuses = orchestrator.runSession("thread-1").toList()
             assertEquals(
-                listOf("start1", "teardown1_flush_begin", "teardown1_flush_end", "release1", "start2"),
+                listOf(LiveAgentStatus.Error(LiveAgentOrchestrator.ERROR_SESSION_ALREADY_ACTIVE)),
+                teardownRejectStatuses,
+            )
+
+            // Once teardown completes (e.g. caller awaits cancelAndJoin), starting a new session succeeds
+            allowTeardown1Finish.complete(Unit)
+            job1.join()
+            assertEquals(
+                listOf("start1", "teardown1_flush_begin", "teardown1_flush_end", "release1"),
                 events,
             )
 
-            job2.cancel()
-            advanceUntilIdle()
+            val job2 =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").collect {}
+                }
+            runCurrent()
+            assertEquals(
+                listOf(
+                    "start1",
+                    "teardown1_flush_begin",
+                    "teardown1_flush_end",
+                    "release1",
+                    "start2",
+                ),
+                events,
+            )
+
+            job2.cancelAndJoin()
             assertEquals(
                 listOf(
                     "start1",
@@ -296,7 +356,7 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `streams audio chunks, passes thread provider voice, flushes transcriptions in order, and stops playback on interruption`() =
+    fun `streams audio chunks, passes thread provider voice, flushes transcriptions in order, and emits Ended`() =
         runTest {
             val orchestrator = createOrchestrator()
 
@@ -325,7 +385,11 @@ class LiveAgentOrchestratorTest {
                 fakeSession
             }
 
-            val job = launch { orchestrator.runSession("thread-1") }
+            val statuses = mutableListOf<LiveAgentStatus>()
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").toList(statuses)
+                }
             runCurrent()
 
             eventChannel.trySend(LiveLlmEvent.InputTranscription("What is "))
@@ -345,7 +409,14 @@ class LiveAgentOrchestratorTest {
             assertEquals(1, queuedChunks.size)
             assertArrayEquals(modelPcm, queuedChunks.first().first)
             assertEquals(24_000, queuedChunks.first().second)
-            assertEquals(LiveAgentStatus.Idle, orchestrator.status.value)
+            assertEquals(
+                listOf(
+                    LiveAgentStatus.Connecting,
+                    LiveAgentStatus.Listening,
+                    LiveAgentStatus.Ended,
+                ),
+                statuses,
+            )
             verify(exactly = 1) { mockAudio.stopAudio() }
             coVerifyOrder {
                 sendMessageUseCase(
@@ -376,7 +447,11 @@ class LiveAgentOrchestratorTest {
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
             stubLiveConnection(eventChannel.receiveAsFlow())
 
-            val job = launch { orchestrator.runSession("thread-1") }
+            val statuses = mutableListOf<LiveAgentStatus>()
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").toList(statuses)
+                }
             runCurrent()
 
             // Non-fatal error (e.g. skipped malformed frame) must NOT end the session
@@ -387,7 +462,10 @@ class LiveAgentOrchestratorTest {
                 ),
             )
             runCurrent()
-            assertEquals(LiveAgentStatus.Listening, orchestrator.status.value)
+            assertEquals(
+                listOf(LiveAgentStatus.Connecting, LiveAgentStatus.Listening),
+                statuses,
+            )
             verify(exactly = 0) { mockAudio.release() }
 
             // Subsequent valid events continue normally until a fatal error arrives
@@ -402,10 +480,14 @@ class LiveAgentOrchestratorTest {
             job.join()
 
             assertEquals(
-                LiveAgentStatus.Error(
-                    "Live session error: WebSocket closed by server (code=1011): Internal error",
+                listOf(
+                    LiveAgentStatus.Connecting,
+                    LiveAgentStatus.Listening,
+                    LiveAgentStatus.Error(
+                        "Live session error: WebSocket closed by server (code=1011): Internal error",
+                    ),
                 ),
-                orchestrator.status.value,
+                statuses,
             )
             verify(atLeast = 1) { mockAudio.stopAudio() }
             verify(exactly = 1) { mockAudio.release() }
@@ -427,7 +509,7 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `ToolCallRequest gates recording, updates status, launches and saves PendingIntent, and sends ToolOutputs`() =
+    fun `ToolCallRequest gates recording, emits InvokingTool statuses, launches PendingIntent, and sends ToolOutputs`() =
         runTest {
             val orchestrator = createOrchestrator()
 
@@ -465,15 +547,14 @@ class LiveAgentOrchestratorTest {
                 )
             val pendingIntent = mockk<PendingIntent>()
             val mockData = mockk<AppFunctionData>()
-            val observedStatuses = mutableListOf<LiveAgentStatus>()
 
             coEvery {
                 convertInputToAppFunctionDataUseCase(any(), any(), any())
             } returns Result.success(mockData)
             coEvery {
                 executeAppFunctionUseCase(noteTool, mockData, "thread-1")
-            } answers {
-                observedStatuses.add(orchestrator.status.value)
+            } coAnswers {
+                yield()
                 ExecuteAppFunctionResult.Data(
                     data = mockData,
                     formattedJson =
@@ -482,8 +563,8 @@ class LiveAgentOrchestratorTest {
             }
             coEvery {
                 executeAppFunctionUseCase(callTool, mockData, "thread-1")
-            } answers {
-                observedStatuses.add(orchestrator.status.value)
+            } coAnswers {
+                yield()
                 ExecuteAppFunctionResult.PendingIntentAction(pendingIntent)
             }
 
@@ -494,7 +575,6 @@ class LiveAgentOrchestratorTest {
             currentAudioFactory = { mockAudio }
 
             val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
-            eventChannel.trySend(LiveLlmEvent.ToolCallRequest(listOf(noteCall, callAction)))
             val toolResponseSent = CompletableDeferred<Unit>()
             val fakeSession =
                 stubLiveConnection(
@@ -505,16 +585,29 @@ class LiveAgentOrchestratorTest {
                     },
                 )
 
-            orchestrator.runSession("thread-1", targetPackageName = "com.example.notes")
+            val statuses = mutableListOf<LiveAgentStatus>()
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator
+                        .runSession("thread-1", targetPackageName = "com.example.notes")
+                        .toList(statuses)
+                }
+            runCurrent()
+            eventChannel.trySend(LiveLlmEvent.ToolCallRequest(listOf(noteCall, callAction)))
+            advanceUntilIdle()
+            job.join()
 
             assertTrue(toolResponseSent.isCompleted)
-            assertEquals(LiveAgentStatus.Idle, orchestrator.status.value)
             assertEquals(
                 listOf(
+                    LiveAgentStatus.Connecting,
+                    LiveAgentStatus.Listening,
                     LiveAgentStatus.InvokingTool(noteTool.id, "com.example.notes"),
                     LiveAgentStatus.InvokingTool("makeCall", "com.example.notes"),
+                    LiveAgentStatus.Listening,
+                    LiveAgentStatus.Ended,
                 ),
-                observedStatuses,
+                statuses,
             )
             verifyOrder {
                 mockAudio.start()
@@ -613,7 +706,7 @@ class LiveAgentOrchestratorTest {
                     onToolResponses = { eventChannel.close() },
                 )
 
-            orchestrator.runSession("thread-1")
+            orchestrator.runSession("thread-1").toList()
 
             coVerify {
                 sendMessageUseCase(
