@@ -41,14 +41,12 @@ import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLoca
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
-import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import com.example.appfunctions.agent.ui.screens.agentdemo.FakeSettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
 import io.mockk.verifyOrder
 import kotlinx.coroutines.CompletableDeferred
@@ -84,7 +82,6 @@ class LiveAgentOrchestratorTest {
     private lateinit var convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase
     private lateinit var executeAppFunctionUseCase: ExecuteAppFunctionUseCase
     private lateinit var launchPendingIntentUseCase: LaunchPendingIntentUseCase
-    private lateinit var savePendingIntentUseCase: SavePendingIntentUseCase
     private lateinit var sendMessageUseCase: SendMessageUseCase
     private var currentAudioFactory: (LiveAudioConfig) -> LiveAudioSession = {
         mockk(relaxed = true)
@@ -104,7 +101,6 @@ class LiveAgentOrchestratorTest {
             convertInputToAppFunctionDataUseCase = mockk()
             executeAppFunctionUseCase = mockk()
             launchPendingIntentUseCase = mockk()
-            savePendingIntentUseCase = mockk(relaxed = true)
             sendMessageUseCase = mockk(relaxed = true)
 
             every { manageThreadsUseCase.getThread("thread-1") } returns
@@ -134,7 +130,6 @@ class LiveAgentOrchestratorTest {
             convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
             executeAppFunctionUseCase = executeAppFunctionUseCase,
             launchPendingIntentUseCase = launchPendingIntentUseCase,
-            savePendingIntentUseCase = savePendingIntentUseCase,
             sendMessageUseCase = sendMessageUseCase,
             audioSessionFactory = LiveAudioSessionFactory { config -> currentAudioFactory(config) },
         )
@@ -528,7 +523,6 @@ class LiveAgentOrchestratorTest {
                 mockAudio.release()
             }
             verify(exactly = 1) { launchPendingIntentUseCase(pendingIntent) }
-            verify(exactly = 0) { savePendingIntentUseCase(any(), any()) }
             coVerify {
                 sendMessageUseCase(
                     threadId = "thread-1",
@@ -562,7 +556,7 @@ class LiveAgentOrchestratorTest {
         }
 
     @Test
-    fun `ToolCallRequest saves tappable PendingIntent and reports failure when launch or execution fails`() =
+    fun `ToolCallRequest records FAILED message and reports failure when PendingIntent or execution fails`() =
         runTest {
             val orchestrator = createOrchestrator()
 
@@ -621,15 +615,13 @@ class LiveAgentOrchestratorTest {
 
             orchestrator.runSession("thread-1")
 
-            val savedPendingIntentId = slot<String>()
-            verify(exactly = 1) { savePendingIntentUseCase(capture(savedPendingIntentId), pendingIntent) }
             coVerify {
                 sendMessageUseCase(
                     threadId = "thread-1",
                     role = MessageRole.ASSISTANT,
-                    textContent = "Action ready for makeCall (com.example.chat)",
-                    processingStatus = MessageProcessingStatus.PROCESSED,
-                    pendingIntentId = savedPendingIntentId.captured,
+                    textContent =
+                        "Failed to launch makeCall (com.example.chat): PendingIntent canceled",
+                    processingStatus = MessageProcessingStatus.FAILED,
                 )
             }
             val outputs = fakeSession.sentToolOutputs.single()

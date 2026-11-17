@@ -34,7 +34,6 @@ import com.example.appfunctions.agent.domain.appfunction.ResolveRemoteFileToLoca
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
-import com.example.appfunctions.agent.domain.pendingintent.SavePendingIntentUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
@@ -50,7 +49,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,7 +70,6 @@ class LiveAgentOrchestrator
         private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase,
         private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase,
         private val launchPendingIntentUseCase: LaunchPendingIntentUseCase,
-        private val savePendingIntentUseCase: SavePendingIntentUseCase,
         private val sendMessageUseCase: SendMessageUseCase,
         private val audioSessionFactory: LiveAudioSessionFactory,
     ) {
@@ -442,10 +439,6 @@ class LiveAgentOrchestrator
                             val launchResult =
                                 launchPendingIntentUseCase(executionResult.pendingIntent)
                             if (launchResult.isSuccess) {
-                                // AppFunction PendingIntents are often FLAG_ONE_SHOT (e.g. ChatApp
-                                // makeCall), so once auto-launch succeeds we record a plain status
-                                // message in the thread rather than an active "Confirm Action"
-                                // button backed by an already-consumed PendingIntent.
                                 sendMessageUseCase(
                                     threadId = threadId,
                                     role = MessageRole.ASSISTANT,
@@ -461,11 +454,6 @@ class LiveAgentOrchestrator
                                     ),
                                 )
                             } else {
-                                val pendingIntentId = UUID.randomUUID().toString()
-                                savePendingIntentUseCase(
-                                    pendingIntentId,
-                                    executionResult.pendingIntent,
-                                )
                                 val reason =
                                     launchResult.exceptionOrNull()?.message
                                         ?: "PendingIntent canceled"
@@ -473,9 +461,8 @@ class LiveAgentOrchestrator
                                     threadId = threadId,
                                     role = MessageRole.ASSISTANT,
                                     textContent =
-                                        "Action ready for $shortName (${toolCall.packageName})",
-                                    processingStatus = MessageProcessingStatus.PROCESSED,
-                                    pendingIntentId = pendingIntentId,
+                                        "Failed to launch $shortName (${toolCall.packageName}): $reason",
+                                    processingStatus = MessageProcessingStatus.FAILED,
                                 )
                                 outputs.add(
                                     ToolOutput(
