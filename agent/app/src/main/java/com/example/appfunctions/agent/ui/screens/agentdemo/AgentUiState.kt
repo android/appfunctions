@@ -19,6 +19,7 @@ import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LiveAgentStatus
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 
 /** Represents the UI state for the Agent Demo screen. */
@@ -29,11 +30,32 @@ sealed class AgentUiState {
         val currentThread: ThreadEntity? = null,
         val messages: List<MessageEntity> = emptyList(),
         val status: AgentStatus = AgentStatus.Idle,
+        val liveStatus: LiveAgentStatus? = null,
+        val isAnotherThreadLiveBusy: Boolean = false,
+        val liveSetupPrompt: LiveSetupPrompt? = null,
         val threads: List<ThreadEntity> = emptyList(),
         val activePendingActionIds: Set<String> = emptySet(),
         val installedApps: List<AppInfo> = emptyList(),
         val availableModels: List<LlmModel> = emptyList(),
     ) : AgentUiState()
+}
+
+/** Setup prompt or launch request emitted when starting a Live voice session. */
+sealed class LiveSetupPrompt {
+    data class RequestAudioPermission(val targetPackageName: String? = null) : LiveSetupPrompt()
+
+    data class SelectDigitalAssistant(val targetPackageName: String? = null) : LiveSetupPrompt()
+
+    data class LaunchAssistSession(
+        val threadId: String,
+        val targetPackageName: String? = null,
+    ) : LiveSetupPrompt()
+
+    data object AudioPermissionDenied : LiveSetupPrompt()
+
+    data object AssistantSettingsUnavailable : LiveSetupPrompt()
+
+    data object AssistLaunchFailed : LiveSetupPrompt()
 }
 
 /** Represents UI events for the Agent Demo screen. */
@@ -50,4 +72,16 @@ sealed class AgentUiEvent {
     data class OnThreadSelected(val threadId: String) : AgentUiEvent()
 
     data class OnConfirmAction(val pendingIntentId: String) : AgentUiEvent()
+
+    data class OnStartLiveSession(val targetPackageName: String? = null) : AgentUiEvent()
+
+    data class OnLiveSessionLaunchResult(val isLaunched: Boolean) : AgentUiEvent()
+
+    data class OnAudioPermissionResult(val isGranted: Boolean) : AgentUiEvent()
+
+    data object OnAssistantSettingsReturned : AgentUiEvent()
+
+    data object OnAssistantSettingsUnavailable : AgentUiEvent()
+
+    data object OnDismissLiveSetupPrompt : AgentUiEvent()
 }

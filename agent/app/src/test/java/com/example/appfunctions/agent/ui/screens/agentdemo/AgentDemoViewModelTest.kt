@@ -24,8 +24,11 @@ import com.example.appfunctions.agent.data.db.entities.MessageEntity
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
+import com.example.appfunctions.agent.domain.ActiveLiveSession
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LiveAgentOrchestrator
+import com.example.appfunctions.agent.domain.LiveAgentStatus
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmProviderFactory
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
@@ -34,6 +37,8 @@ import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
+import com.example.appfunctions.agent.domain.live.CheckAudioPermissionUseCase
+import com.example.appfunctions.agent.domain.live.CheckVoiceServiceActiveUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ConsumePendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ObserveActivePendingIntentsUseCase
@@ -51,6 +56,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -63,6 +71,9 @@ class AgentDemoViewModelTest {
     private lateinit var manageThreadsUseCase: ManageThreadsUseCase
     private lateinit var sendMessageUseCase: SendMessageUseCase
     private lateinit var agentOrchestrator: AgentOrchestrator
+    private lateinit var liveAgentOrchestrator: LiveAgentOrchestrator
+    private lateinit var checkAudioPermissionUseCase: CheckAudioPermissionUseCase
+    private lateinit var checkVoiceServiceActiveUseCase: CheckVoiceServiceActiveUseCase
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var llmProviderFactory: LlmProviderFactory
     private lateinit var llmProvider: LlmProvider
@@ -82,6 +93,7 @@ class AgentDemoViewModelTest {
     private val selectedProviderFlow = MutableStateFlow<LlmProviderName>(LlmProviderName.GEMINI)
     private val geminiApiKeyFlow = MutableStateFlow<String?>(null)
     private val agentStatusFlow = MutableStateFlow<AgentStatus>(AgentStatus.Idle)
+    private val activeLiveSessionFlow = MutableStateFlow<ActiveLiveSession?>(null)
     private val messagesFlow = MutableStateFlow<List<MessageEntity>>(emptyList())
     private val activePendingActionIdsFlow = MutableStateFlow<Set<String>>(emptySet())
 
@@ -93,6 +105,9 @@ class AgentDemoViewModelTest {
         manageThreadsUseCase = mockk()
         sendMessageUseCase = mockk()
         agentOrchestrator = mockk()
+        liveAgentOrchestrator = mockk(relaxed = true)
+        checkAudioPermissionUseCase = mockk()
+        checkVoiceServiceActiveUseCase = mockk()
         settingsRepository = mockk()
         llmProviderFactory = mockk()
         llmProvider = mockk()
@@ -114,6 +129,9 @@ class AgentDemoViewModelTest {
         every { llmProviderFactory.getProvider(any()) } returns llmProvider
         coEvery { llmProvider.getAvailableModels(any()) } returns listOf(testModelFlash, testModelPro)
         every { agentOrchestrator.status } returns agentStatusFlow
+        every { liveAgentOrchestrator.activeSession } returns activeLiveSessionFlow
+        every { checkAudioPermissionUseCase() } returns true
+        every { checkVoiceServiceActiveUseCase() } returns true
         every { getChatHistoryUseCase(any()) } returns messagesFlow
         every { observeActivePendingIntentsUseCase() } returns activePendingActionIdsFlow
 
@@ -133,6 +151,9 @@ class AgentDemoViewModelTest {
             manageThreadsUseCase,
             sendMessageUseCase,
             agentOrchestrator,
+            liveAgentOrchestrator,
+            checkAudioPermissionUseCase,
+            checkVoiceServiceActiveUseCase,
             settingsRepository,
             llmProviderFactory,
             observeActivePendingIntentsUseCase,
@@ -316,5 +337,94 @@ class AgentDemoViewModelTest {
             val loadedState = viewModel.uiState.value as AgentUiState.Loaded
             assertEquals(null, loadedState.currentThread)
             assertEquals(emptyList<LlmModel>(), loadedState.availableModels)
+        }
+
+    @Test
+    fun `uiState reflects LiveAgentOrchestrator activeSession on current and other threads`() =
+        runTest {
+            val thread1 = ThreadEntity("thread-1", 2000L, testModelFlash, null)
+            val thread2 = ThreadEntity("thread-2", 1000L, testModelFlash, null)
+            threadsFlow.value = listOf(thread1, thread2)
+
+            viewModel = createViewModel()
+
+            activeLiveSessionFlow.value =
+                ActiveLiveSession(
+                    threadId = "thread-1",
+                    status = LiveAgentStatus.Listening,
+                )
+
+            val stateOnThread1 = viewModel.uiState.value as AgentUiState.Loaded
+            assertEquals(LiveAgentStatus.Listening, stateOnThread1.liveStatus)
+            assertFalse(stateOnThread1.isAnotherThreadLiveBusy)
+
+            viewModel.onEvent(AgentUiEvent.OnThreadSelected("thread-2"))
+
+            val stateOnThread2 = viewModel.uiState.value as AgentUiState.Loaded
+            assertNull(stateOnThread2.liveStatus)
+            assertTrue(stateOnThread2.isAnotherThreadLiveBusy)
+        }
+
+    @Test
+    fun `OnStartLiveSession checks permission and assistant role before emitting LaunchAssistSession`() =
+        runTest {
+            val thread1 = ThreadEntity("thread-1", 2000L, testModelFlash, null)
+            threadsFlow.value = listOf(thread1)
+            every { checkAudioPermissionUseCase() } returns false
+            every { checkVoiceServiceActiveUseCase() } returns false
+
+            viewModel = createViewModel()
+
+            viewModel.onEvent(AgentUiEvent.OnStartLiveSession("com.example.chat"))
+            assertEquals(
+                LiveSetupPrompt.RequestAudioPermission("com.example.chat"),
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            every { checkAudioPermissionUseCase() } returns true
+            viewModel.onEvent(AgentUiEvent.OnAudioPermissionResult(isGranted = true))
+            assertEquals(
+                LiveSetupPrompt.SelectDigitalAssistant("com.example.chat"),
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            every { checkVoiceServiceActiveUseCase() } returns true
+            viewModel.onEvent(AgentUiEvent.OnAssistantSettingsReturned)
+            assertEquals(
+                LiveSetupPrompt.LaunchAssistSession("thread-1", "com.example.chat"),
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            viewModel.onEvent(AgentUiEvent.OnLiveSessionLaunchResult(isLaunched = true))
+            assertNull((viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt)
+        }
+
+    @Test
+    fun `Live setup failure events surface error prompts and dismiss clears prompt`() =
+        runTest {
+            val thread1 = ThreadEntity("thread-1", 2000L, testModelFlash, null)
+            threadsFlow.value = listOf(thread1)
+            viewModel = createViewModel()
+
+            viewModel.onEvent(AgentUiEvent.OnAudioPermissionResult(isGranted = false))
+            assertEquals(
+                LiveSetupPrompt.AudioPermissionDenied,
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            viewModel.onEvent(AgentUiEvent.OnAssistantSettingsUnavailable)
+            assertEquals(
+                LiveSetupPrompt.AssistantSettingsUnavailable,
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            viewModel.onEvent(AgentUiEvent.OnLiveSessionLaunchResult(isLaunched = false))
+            assertEquals(
+                LiveSetupPrompt.AssistLaunchFailed,
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            viewModel.onEvent(AgentUiEvent.OnDismissLiveSetupPrompt)
+            assertNull((viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt)
         }
 }

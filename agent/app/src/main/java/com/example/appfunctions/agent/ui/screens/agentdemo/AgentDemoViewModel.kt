@@ -25,8 +25,10 @@ import com.example.appfunctions.agent.data.SettingsRepository
 import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
+import com.example.appfunctions.agent.domain.ActiveLiveSession
 import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LiveAgentOrchestrator
 import com.example.appfunctions.agent.domain.LlmProviderFactory
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
@@ -35,6 +37,8 @@ import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
 import com.example.appfunctions.agent.domain.chat.GetChatHistoryUseCase
 import com.example.appfunctions.agent.domain.chat.ManageThreadsUseCase
 import com.example.appfunctions.agent.domain.chat.SendMessageUseCase
+import com.example.appfunctions.agent.domain.live.CheckAudioPermissionUseCase
+import com.example.appfunctions.agent.domain.live.CheckVoiceServiceActiveUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ConsumePendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ObserveActivePendingIntentsUseCase
@@ -60,6 +64,9 @@ class AgentDemoViewModel
         private val manageThreadsUseCase: ManageThreadsUseCase,
         private val sendMessageUseCase: SendMessageUseCase,
         private val agentOrchestrator: AgentOrchestrator,
+        private val liveAgentOrchestrator: LiveAgentOrchestrator,
+        private val checkAudioPermissionUseCase: CheckAudioPermissionUseCase,
+        private val checkVoiceServiceActiveUseCase: CheckVoiceServiceActiveUseCase,
         private val settingsRepository: SettingsRepository,
         private val llmProviderFactory: LlmProviderFactory,
         private val observeActivePendingIntentsUseCase: ObserveActivePendingIntentsUseCase,
@@ -73,6 +80,7 @@ class AgentDemoViewModel
 
         private val installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
         private val availableModels = MutableStateFlow<List<LlmModel>>(emptyList())
+        private val liveSetupPrompt = MutableStateFlow<LiveSetupPrompt?>(null)
 
         private var observationJob: Job? = null
 
@@ -124,26 +132,53 @@ class AgentDemoViewModel
                         manageThreadsUseCase.getThreads(),
                         settingsRepository.selectedProvider,
                         agentOrchestrator.status,
-                    ) { threads, provider, status ->
-                        Triple(threads, provider, status)
+                        liveAgentOrchestrator.activeSession,
+                    ) { threads, provider, status, activeLiveSession ->
+                        AgentStatusSnapshot(threads, provider, status, activeLiveSession)
                     },
                     savedStateHandle.getStateFlow<String?>(MainActivity.ARG_THREAD_ID, null),
                     installedApps,
                     availableModels,
+                    liveSetupPrompt,
                 ) {
-                        (threads, provider, status),
+                        snapshot,
                         targetThreadId,
                         apps,
                         models,
+                        setupPrompt,
                     ->
-                    ThreadConfig(threads, provider, status, targetThreadId, apps, models)
+                    ThreadConfig(
+                        threads = snapshot.threads,
+                        provider = snapshot.provider,
+                        status = snapshot.status,
+                        activeLiveSession = snapshot.activeLiveSession,
+                        targetThreadId = targetThreadId,
+                        installedApps = apps,
+                        availableModels = models,
+                        liveSetupPrompt = setupPrompt,
+                    )
                 }
-                    .collectLatest { (threads, _, status, targetThreadId, apps, models) ->
+                    .collectLatest { config ->
                         val currentThread =
-                            threads.find { it.threadId == targetThreadId } ?: threads.firstOrNull()
+                            config.threads.find { it.threadId == config.targetThreadId }
+                                ?: config.threads.firstOrNull()
 
                         val previousThreadId =
                             (_uiState.value as? AgentUiState.Loaded)?.currentThread?.threadId
+
+                        val activeLiveSession = config.activeLiveSession
+                        val liveStatusForCurrentThread =
+                            if (
+                                currentThread != null &&
+                                activeLiveSession?.threadId == currentThread.threadId
+                            ) {
+                                activeLiveSession.status
+                            } else {
+                                null
+                            }
+                        val isAnotherThreadLiveBusy =
+                            activeLiveSession != null &&
+                                activeLiveSession.threadId != currentThread?.threadId
 
                         val currentLoadedState = _uiState.value as? AgentUiState.Loaded
                         _uiState.value =
@@ -155,19 +190,21 @@ class AgentDemoViewModel
                                     } else {
                                         emptyList()
                                     },
-                                status = status,
-                                threads = threads,
+                                status = config.status,
+                                liveStatus = liveStatusForCurrentThread,
+                                isAnotherThreadLiveBusy = isAnotherThreadLiveBusy,
+                                liveSetupPrompt = config.liveSetupPrompt,
+                                threads = config.threads,
                                 activePendingActionIds =
                                     currentLoadedState?.activePendingActionIds ?: emptySet(),
-                                installedApps = apps,
-                                availableModels = models,
+                                installedApps = config.installedApps,
+                                availableModels = config.availableModels,
                             )
 
                         if (currentThread == null) {
                             observationJob?.cancel()
                             observationJob = null
                         } else if (observationJob == null || previousThreadId != currentThread.threadId) {
-                            // Start observing messages for the current thread if not already doing so
                             observationJob?.cancel()
                             observationJob =
                                 viewModelScope.launch {
@@ -236,20 +273,104 @@ class AgentDemoViewModel
                         launchPendingIntentUseCase(pendingIntent)
                     }
                 }
+                is AgentUiEvent.OnStartLiveSession -> {
+                    tryStartLiveSession(event.targetPackageName)
+                }
+                is AgentUiEvent.OnLiveSessionLaunchResult -> {
+                    liveSetupPrompt.value =
+                        if (event.isLaunched) {
+                            null
+                        } else {
+                            LiveSetupPrompt.AssistLaunchFailed
+                        }
+                }
+                is AgentUiEvent.OnAudioPermissionResult -> {
+                    val pendingTarget =
+                        savedStateHandle.get<String?>(KEY_PENDING_LIVE_TARGET_PACKAGE)
+                    if (event.isGranted) {
+                        liveSetupPrompt.value = null
+                        tryStartLiveSession(pendingTarget)
+                    } else {
+                        clearPendingLiveTarget()
+                        liveSetupPrompt.value = LiveSetupPrompt.AudioPermissionDenied
+                    }
+                }
+                AgentUiEvent.OnAssistantSettingsReturned -> {
+                    val pendingTarget =
+                        savedStateHandle.get<String?>(KEY_PENDING_LIVE_TARGET_PACKAGE)
+                    clearPendingLiveTarget()
+                    if (checkVoiceServiceActiveUseCase()) {
+                        val currentThread = (_uiState.value as? AgentUiState.Loaded)?.currentThread
+                        liveSetupPrompt.value =
+                            currentThread?.let {
+                                LiveSetupPrompt.LaunchAssistSession(
+                                    threadId = it.threadId,
+                                    targetPackageName = pendingTarget,
+                                )
+                            }
+                    } else {
+                        liveSetupPrompt.value = null
+                    }
+                }
+                AgentUiEvent.OnAssistantSettingsUnavailable -> {
+                    clearPendingLiveTarget()
+                    liveSetupPrompt.value = LiveSetupPrompt.AssistantSettingsUnavailable
+                }
+                AgentUiEvent.OnDismissLiveSetupPrompt -> {
+                    clearPendingLiveTarget()
+                    liveSetupPrompt.value = null
+                }
             }
+        }
+
+        private fun tryStartLiveSession(targetPackageName: String?) {
+            val currentThread = (_uiState.value as? AgentUiState.Loaded)?.currentThread ?: return
+            if (!checkAudioPermissionUseCase()) {
+                savedStateHandle[KEY_PENDING_LIVE_TARGET_PACKAGE] = targetPackageName
+                liveSetupPrompt.value = LiveSetupPrompt.RequestAudioPermission(targetPackageName)
+                return
+            }
+            if (!checkVoiceServiceActiveUseCase()) {
+                savedStateHandle[KEY_PENDING_LIVE_TARGET_PACKAGE] = targetPackageName
+                liveSetupPrompt.value = LiveSetupPrompt.SelectDigitalAssistant(targetPackageName)
+                return
+            }
+            clearPendingLiveTarget()
+            liveSetupPrompt.value =
+                LiveSetupPrompt.LaunchAssistSession(
+                    threadId = currentThread.threadId,
+                    targetPackageName = targetPackageName,
+                )
+        }
+
+        private fun clearPendingLiveTarget() {
+            savedStateHandle.remove<String?>(KEY_PENDING_LIVE_TARGET_PACKAGE)
         }
 
         private suspend fun createAndSelectThread(llmModel: LlmModel) {
             val threadId = manageThreadsUseCase.createThread(llmModel)
             savedStateHandle[MainActivity.ARG_THREAD_ID] = threadId
         }
+
+        private companion object {
+            const val KEY_PENDING_LIVE_TARGET_PACKAGE = "pending_live_target_package"
+        }
     }
+
+private data class AgentStatusSnapshot(
+    val threads: List<ThreadEntity>,
+    val provider: LlmProviderName,
+    val status: AgentStatus,
+    val activeLiveSession: ActiveLiveSession?,
+)
 
 private data class ThreadConfig(
     val threads: List<ThreadEntity>,
     val provider: LlmProviderName,
     val status: AgentStatus,
+    val activeLiveSession: ActiveLiveSession?,
     val targetThreadId: String?,
     val installedApps: List<AppInfo>,
     val availableModels: List<LlmModel>,
+    val liveSetupPrompt: LiveSetupPrompt?,
 )

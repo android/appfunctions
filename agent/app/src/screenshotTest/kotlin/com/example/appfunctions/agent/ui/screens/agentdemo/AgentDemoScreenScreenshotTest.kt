@@ -25,6 +25,7 @@ import com.example.appfunctions.agent.data.db.entities.MessageProcessingStatus
 import com.example.appfunctions.agent.data.db.entities.MessageRole
 import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
+import com.example.appfunctions.agent.domain.LiveAgentStatus
 
 private val previewFlashModel = LlmModel(LlmProviderName.GEMINI, "gemini-3-flash-preview")
 private val previewProModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.1-pro-preview")
@@ -350,5 +351,23 @@ fun AgentDemoScreenSidePanelPreview() {
             ),
         onEvent = {},
         initialSidePanelVisible = true,
+    )
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun AgentDemoScreenLiveActivePreview() {
+    val thread =
+        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
+    AgentDemoContent(
+        uiState =
+            AgentUiState.Loaded(
+                messages = emptyList(),
+                status = AgentStatus.Idle,
+                liveStatus = LiveAgentStatus.Listening,
+                currentThread = thread,
+            ),
+        onEvent = {},
     )
 }
