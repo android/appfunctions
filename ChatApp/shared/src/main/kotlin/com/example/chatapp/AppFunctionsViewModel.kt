@@ -19,9 +19,9 @@ import android.app.Application
 import androidx.annotation.RequiresApi
 import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionSearchSpec
-import com.example.chatapp.appfunctions.BaseChatAppFunctionService
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.chatapp.appfunctions.BaseChatAppFunctionService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
