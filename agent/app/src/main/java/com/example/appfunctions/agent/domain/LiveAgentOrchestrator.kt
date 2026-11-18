@@ -40,6 +40,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.first
@@ -203,7 +204,7 @@ class LiveAgentOrchestrator
                             }
 
                         try {
-                            session.events.firstOrNull { event ->
+                            session.events.buffer(EVENT_BUFFER_CAPACITY).firstOrNull { event ->
                                 if (!currentCoroutineContext().isActive) {
                                     true
                                 } else {
@@ -563,6 +564,7 @@ class LiveAgentOrchestrator
 
         companion object {
             private const val TAG = "LiveAgentOrchestrator"
+            private const val EVENT_BUFFER_CAPACITY = 64
             internal const val ERROR_SESSION_ALREADY_ACTIVE = "Another live session is active"
             private const val PENDING_INTENT_LAUNCHED_RESULT =
                 """{"status":"launched","message":"The action was executed and the target app UI was opened."}"""

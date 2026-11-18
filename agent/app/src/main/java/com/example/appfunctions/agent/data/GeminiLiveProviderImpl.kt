@@ -40,11 +40,9 @@ import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -178,7 +176,7 @@ class GeminiLiveProviderImpl
                                 emit(event)
                             }
                         }
-                    }.buffer(Channel.UNLIMITED)
+                    }
 
                 override suspend fun sendAudio(
                     pcmBytes: ByteArray,
