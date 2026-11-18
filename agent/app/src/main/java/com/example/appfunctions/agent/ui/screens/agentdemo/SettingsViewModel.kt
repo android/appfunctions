@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
 import com.example.appfunctions.agent.data.SettingsRepository
@@ -47,11 +48,13 @@ class SettingsViewModel
                 settingsRepository.selectedProvider,
                 settingsRepository.serviceTier,
                 settingsRepository.progressiveToolDisclosure,
-            ) { provider, serviceTier, progressiveToolDisclosure ->
+                settingsRepository.geminiLiveVoice,
+            ) { provider, serviceTier, progressiveToolDisclosure, geminiLiveVoice ->
                 SettingsUiState(
                     selectedProvider = provider,
                     serviceTier = serviceTier,
                     progressiveToolDisclosure = progressiveToolDisclosure,
+                    geminiLiveVoice = geminiLiveVoice,
                 )
             }
                 .stateIn(
@@ -87,5 +90,9 @@ class SettingsViewModel
 
         fun setProgressiveToolDisclosure(enabled: Boolean) {
             viewModelScope.launch { settingsRepository.setProgressiveToolDisclosure(enabled) }
+        }
+
+        fun setGeminiLiveVoice(voice: GeminiLiveVoice) {
+            viewModelScope.launch { settingsRepository.setGeminiLiveVoice(voice) }
         }
     }
