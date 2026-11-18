@@ -26,6 +26,7 @@ import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.withSession
 import io.ktor.websocket.CloseReason
+import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readReason
@@ -35,6 +36,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.toList
@@ -216,6 +218,29 @@ class GeminiLiveProviderImplTest {
                 fail("Expected CancellationException")
             } catch (e: CancellationException) {
                 assertEquals("Handshake cancelled", e.message)
+            }
+        }
+
+    @Test
+    fun `connect surfaces server CloseReason when DefaultWebSocketSession closes incoming channel`() =
+        runTest {
+            val closedIncoming = Channel<Frame>(Channel.UNLIMITED).apply { close() }
+            val wsSession = mockk<DefaultWebSocketSession>(relaxed = true)
+            every { wsSession.coroutineContext } returns coroutineContext
+            every { wsSession.incoming } returns closedIncoming
+            every { wsSession.closeReason } returns
+                CompletableDeferred(
+                    CloseReason(CloseReason.Codes.INTERNAL_ERROR, "Quota exceeded"),
+                )
+
+            val provider = createProvider { wsSession }
+
+            try {
+                provider.connect(apiKey = "key-123", tools = emptyList())
+                fail("Expected IllegalStateException")
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message!!.contains("code=1011"))
+                assertTrue(e.message!!.contains("Quota exceeded"))
             }
         }
 
@@ -404,6 +429,46 @@ class GeminiLiveProviderImplTest {
                     """{"serverContent":{"turnComplete":true}}""",
                 )
             assertEquals(listOf(LiveLlmEvent.TurnComplete), events)
+        }
+
+    @Test
+    fun `events emits all events when a single serverContent frame contains transcription, modelTurn audio, and turnComplete`() =
+        runTest {
+            val expectedPcm = byteArrayOf(11, 22, 33, 44)
+            val encodedPcm = Base64.getEncoder().encodeToString(expectedPcm)
+
+            val events =
+                collectSingleServerFrame(
+                    """
+                    {
+                      "serverContent": {
+                        "inputTranscription": { "text": "Hello" },
+                        "outputTranscription": { "text": "Hi there!" },
+                        "modelTurn": {
+                          "parts": [
+                            {
+                              "inlineData": {
+                                "mimeType": "audio/pcm;rate=24000",
+                                "data": "$encodedPcm"
+                              }
+                            }
+                          ]
+                        },
+                        "turnComplete": true
+                      }
+                    }
+                    """.trimIndent(),
+                )
+
+            assertEquals(
+                listOf(
+                    LiveLlmEvent.InputTranscription("Hello"),
+                    LiveLlmEvent.OutputTranscription("Hi there!"),
+                    LiveLlmEvent.AudioChunk(pcmBytes = expectedPcm, sampleRateHz = 24_000),
+                    LiveLlmEvent.TurnComplete,
+                ),
+                events,
+            )
         }
 
     @Test
