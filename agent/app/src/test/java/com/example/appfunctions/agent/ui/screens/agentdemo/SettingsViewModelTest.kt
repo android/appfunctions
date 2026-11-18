@@ -16,6 +16,7 @@
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
 import androidx.compose.runtime.snapshots.Snapshot
+import com.example.appfunctions.agent.data.GeminiLiveVoice
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +120,23 @@ class SettingsViewModelTest {
 
             val uiState = viewModel.uiState.value
             assertEquals(ServiceTier.PRIORITY, uiState.serviceTier)
+
+            job.cancel()
+        }
+
+    @Test
+    fun setGeminiLiveVoice_updatesRepository() =
+        runTest {
+            val job = backgroundScope.launch { viewModel.uiState.collect {} }
+
+            assertEquals(GeminiLiveVoice.ZEPHYR, viewModel.uiState.value.geminiLiveVoice)
+
+            viewModel.setGeminiLiveVoice(GeminiLiveVoice.AOEDE)
+
+            testScheduler.advanceUntilIdle()
+
+            val uiState = viewModel.uiState.value
+            assertEquals(GeminiLiveVoice.AOEDE, uiState.geminiLiveVoice)
 
             job.cancel()
         }
