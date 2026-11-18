@@ -436,4 +436,37 @@ class AppFunctionInstrumentationTest {
             functionState = states.singleOrNull { it.functionName == metadata.name }
             assertThat(functionState?.isEnabled).isFalse()
         }
+
+    @Test
+    fun testFetchSendMessageDetails_selfInvocation() =
+        runBlocking<Unit> {
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS }
+
+            val testRecipient = recipientsRepository.getAllRecipients().first()
+            val request =
+                ExecuteAppFunctionRequest(
+                    targetPackageName = context.packageName,
+                    ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                    AppFunctionData.Builder(
+                        metadata.parameters,
+                        metadata.components,
+                    )
+                        .setString("endpointValue", testRecipient.id)
+                        .setString("messageBody", "Test Preview")
+                        .build(),
+                )
+
+            val response = appFunctionManager.executeAppFunction(request)
+            val successResponse = assertIs<ExecuteAppFunctionResponse.Success>(response)
+            assertThat(successResponse).isNotNull()
+        }
 }

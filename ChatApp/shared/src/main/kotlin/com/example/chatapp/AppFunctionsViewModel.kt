@@ -17,8 +17,11 @@ package com.example.chatapp
 
 import android.app.Application
 import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionSearchSpec
+import androidx.appfunctions.ExecuteAppFunctionRequest
+import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.appfunctions.BaseChatAppFunctionService
@@ -242,5 +245,38 @@ class AppFunctionsViewModel
                 unregisterUpdateChatWallpaper()
                 unregisterSearchMessages()
             }
+        }
+
+        /**
+         * Invokes the app-private fetchSendMessageDetails AppFunction internally from within ChatApp.
+         *
+         * @param endpointValue The recipient or group identifier.
+         * @param messageBody The text message body.
+         * @return The execution response from AppFunctionManager.
+         */
+        @RequiresApi(36)
+        suspend fun invokeFetchSendMessageDetailsInternally(
+            endpointValue: String,
+            messageBody: String,
+        ): ExecuteAppFunctionResponse? {
+            if (appFunctionManager == null) return null
+            val packageName = getApplication<Application>().packageName
+            val searchSpec = AppFunctionSearchSpec(packageNames = setOf(packageName))
+            val metadata =
+                appFunctionManager.searchAppFunctions(searchSpec)
+                    .singleOrNull { it.id == BaseChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS }
+                    ?: return null
+
+            val request =
+                ExecuteAppFunctionRequest(
+                    targetPackageName = packageName,
+                    BaseChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                    AppFunctionData.Builder(metadata.parameters, metadata.components)
+                        .setString("endpointValue", endpointValue)
+                        .setString("messageBody", messageBody)
+                        .build(),
+                )
+
+            return appFunctionManager.executeAppFunction(request)
         }
     }
