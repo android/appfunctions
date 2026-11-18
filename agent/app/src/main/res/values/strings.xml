@@ -122,6 +122,15 @@
     <string name="agent_demo_confirm_action">Yes, go ahead</string>
     <string name="agent_demo_action_expired">Done</string>
     <string name="agent_demo_action_confirmation_needed">I can perform this action for you. Should I proceed?</string>
+    <string name="agent_demo_live_stop">End Live Voice Session</string>
+    <string name="agent_demo_live_connecting">Connecting…</string>
+    <string name="agent_demo_live_listening">Listening…</string>
+    <string name="live_session_title">Live Agent</string>
+    <string name="live_session_invoking_tool">Using %1$s…</string>
+    <string name="live_session_default_tool_target">AppFunction</string>
+    <string name="live_session_retry">Retry</string>
+    <string name="live_session_audio_permission_required">Microphone permission is required for Live voice sessions.</string>
+    <string name="live_session_no_model_available">No model available for %1$s. Check your API key in Settings.</string>
 
     <string name="debugging_copied_value">Copied value of %1$s</string>
     <string name="debugging_copy_value">Copy value</string>

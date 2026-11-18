@@ -96,14 +96,17 @@ if [[ $SDK_VERSION -ge 37 ]]; then
     echo "Flush allowlist changes"
     $ADB shell cmd app_function flush-allowlist-changes
   fi
-  # Allow audio focus AppOps for com.android.shell since ShellIdentityInstrumentation
-  # redirects permissionless AppOps checks to the shell UID on Android 17+.
-  $ADB shell cmd appops set --uid com.android.shell TAKE_AUDIO_FOCUS allow
-  $ADB shell cmd appops set com.android.shell TAKE_AUDIO_FOCUS allow
-  $ADB shell cmd appops set com.android.shell CONTROL_AUDIO allow
-  $ADB shell cmd appops set com.android.shell CONTROL_AUDIO_PARTIAL allow
 else
   echo "Skipping allowlist for SDK version $SDK_VERSION..."
+fi
+
+if [[ $SDK_VERSION -ge 35 ]]; then
+  # Allow audio focus AppOps for com.android.shell since ShellIdentityInstrumentation
+  # redirects permissionless AppOps checks to the shell UID under audio hardening.
+  for OP in TAKE_AUDIO_FOCUS CONTROL_AUDIO CONTROL_AUDIO_PARTIAL; do
+    $ADB shell cmd appops set --uid com.android.shell "$OP" allow 2>/dev/null || true
+    $ADB shell cmd appops set com.android.shell "$OP" allow 2>/dev/null || true
+  done
 fi
 
 echo "🛑 Stopping any existing AppFunction Testing Agent instances..."
@@ -124,4 +127,11 @@ if ! kill -0 $PID 2>/dev/null; then
     rm ./.instrumentation_output.txt
 else
     echo "✅ Instrumentation started successfully."
+fi
+
+CURRENT_VOICE_SERVICE=$($ADB shell settings get secure voice_interaction_service | tr -d '\r')
+if [[ "$CURRENT_VOICE_SERVICE" == "${PACKAGE_NAME}/"* ]]; then
+    echo "🔄 Rebinding active VoiceInteractionService after force-stop..."
+    $ADB shell settings delete secure voice_interaction_service >/dev/null
+    $ADB shell settings put secure voice_interaction_service "$CURRENT_VOICE_SERVICE"
 fi
