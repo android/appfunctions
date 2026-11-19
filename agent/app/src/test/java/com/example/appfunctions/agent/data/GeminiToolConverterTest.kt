@@ -24,7 +24,10 @@ import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -82,6 +85,177 @@ class GeminiToolConverterTest {
         val name = converter.getToolName(tool)
         val expectedGeminiName = "verylongpackagename_that_exceeds_sixtyfour_chars_my_function"
         assertEquals(expectedGeminiName, name)
+    }
+
+    @Test
+    fun getToolName_functionsOfOneService_returnsSharedServicePrefix() {
+        val names =
+            listOf("addNote", "updateNoteSettings", "getNoteFieldDescriptions").map { function ->
+                converter.getToolName(createTool("$NOTES_SERVICE#$function"))
+            }
+
+        assertEquals(
+            listOf(
+                "ExampleNotesAppFunctionService_addNote",
+                "ExampleNotesAppFunctionService_updateNoteSettings",
+                "ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+            ),
+            names,
+        )
+    }
+
+    @Test
+    fun getToolName_chatAppFunctions_returnsSharedServicePrefix() {
+        val functions =
+            listOf(
+                "searchContacts",
+                "fetchSendMessageDetails",
+                "sendMessage",
+                "makeCall",
+                "updateChatWallpaper",
+                "searchMessages",
+            )
+
+        val names = functions.map { converter.getToolName(createTool("$CHAT_SERVICE#$it")) }
+
+        assertEquals(functions.map { "BaseChatAppFunctionService_$it" }, names)
+    }
+
+    @Test
+    fun getToolName_otherToolsConvertedFirst_returnsSameName() {
+        val tools =
+            listOf(
+                createTool("$NOTES_SERVICE#addNote"),
+                createTool("$NOTES_SERVICE#getNoteFieldDescriptions"),
+                createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails"),
+                createTool("generateImage"),
+            )
+        val namesOfToolsAlone = tools.map { GeminiToolConverter().getToolName(it) }
+
+        tools.reversed().forEach { converter.convert(it) }
+        val namesAfterOtherTools = tools.map { converter.getToolName(it) }
+
+        assertEquals(namesOfToolsAlone, namesAfterOtherTools)
+    }
+
+    @Test
+    fun getToolName_functionNameFitsAfterPrefix_keepsFullFunctionName() {
+        // 26-character prefix + "_" + 37-character function name = 64 characters.
+        val tool = createTool("$CHAT_SERVICE#getConversationParticipantsWithStatus")
+
+        val name = converter.getToolName(tool)
+
+        assertEquals("BaseChatAppFunctionService_getConversationParticipantsWithStatus", name)
+    }
+
+    @Test
+    fun getToolName_functionNameTooLongToFit_returnsCutNameWithHash() {
+        val id = "$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails"
+
+        val name = converter.getToolName(createTool(id))
+
+        assertEquals(64, name.length)
+        assertEquals("BaseChatAppFunctionService_getConversationParticipantsW_", name.dropLast(8))
+        assertTrue(name.takeLast(8).matches(Regex("[0-9a-f]{8}")))
+        assertEquals(name, GeminiToolConverter().getToolName(createTool(id)))
+    }
+
+    @Test
+    fun getToolName_longFunctionNamesWithSameStart_returnsDistinctNames() {
+        val presenceDetailsName =
+            converter.getToolName(
+                createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails"),
+            )
+        val presenceHistoryName =
+            converter.getToolName(
+                createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceHistory"),
+            )
+
+        assertNotEquals(presenceDetailsName, presenceHistoryName)
+        assertEquals(presenceDetailsName.dropLast(8), presenceHistoryName.dropLast(8))
+    }
+
+    @Test
+    fun getToolName_hashWithLeadingZero_padsHashToEightDigits() {
+        // The hash code of this ID is 0x045b61e5.
+        val tool = createTool("$CHAT_SERVICE#getConversationParticipantsWithDeliveryStatus")
+
+        val name = converter.getToolName(tool)
+
+        assertEquals("BaseChatAppFunctionService_getConversationParticipantsW_045b61e5", name)
+    }
+
+    @Test
+    fun getToolName_classNameLongerThanPrefixLimit_usesClassNameAsPrefix() {
+        val service = "com.example.verbose.ExampleVeryLongNotesAppFunctionServiceName"
+
+        val names =
+            listOf("addNote", "updateNoteSettings", "getNoteFieldDescriptions").map { function ->
+                converter.getToolName(createTool("$service#$function"))
+            }
+
+        assertEquals("ExampleVeryLongNotesAppFunctionServiceName_addNote", names[0])
+        assertEquals("ExampleVeryLongNotesAppFunctionServiceName_updateNoteSettings", names[1])
+        assertEquals(64, names[2].length)
+        assertTrue(names[2].startsWith("ExampleVeryLongNotesAppFunctionServiceName_getNoteField_"))
+    }
+
+    @Test
+    fun getToolName_variousIds_returnsDistinctValidNames() {
+        val longClassNameService =
+            "com.example.huge.NotesAppFunctionServiceWithAnExtremelyLongClassNameExceedingTheLimit"
+        val ids =
+            listOf(
+                "$NOTES_SERVICE#addNote",
+                "$NOTES_SERVICE#updateNoteSettings",
+                "$NOTES_SERVICE#getNoteFieldDescriptions",
+                "$CHAT_SERVICE#sendMessage",
+                "$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails",
+                "$CHAT_SERVICE#getConversationParticipantsWithPresenceHistory",
+                "$CHAT_SERVICE#getConversationParticipantsWithDeliveryStatus",
+                "com.example.verbose.ExampleVeryLongNotesAppFunctionServiceName#getNoteFieldDescriptions",
+                "$longClassNameService#addNote",
+                "$longClassNameService#getNoteFieldDescriptions",
+                "com.example.notes.NotesApp\$FunctionService#add-note",
+                "com.example.notes.NoteFunctions#createNote",
+                "generateImage",
+                "com.example.verylongpackagename.that.exceeds.sixtyfour.chars.my_function",
+            )
+
+        val names = ids.map { converter.getToolName(createTool(it)) }
+
+        ids.zip(names).forEach { (id, name) ->
+            assertTrue("Invalid name $name for $id", name.matches(VALID_NAME))
+        }
+        assertEquals(ids.size, names.toSet().size)
+    }
+
+    @Test
+    fun getToolName_servicePartFitsInPrefix_keepsFullName() {
+        val shortServiceName = converter.getToolName(createTool("com.example.notes.NoteFunctions#createNote"))
+        // The service part has exactly 32 characters, the maximum prefix length.
+        val maxServiceName = converter.getToolName(createTool("com.example.notes.NotesFunctions#createNote"))
+
+        assertEquals("com_example_notes_NoteFunctions_createNote", shortServiceName)
+        assertEquals("com_example_notes_NotesFunctions_createNote", maxServiceName)
+    }
+
+    @Test
+    fun getToolName_idWithoutSeparatorAndLastPartTooLong_returnsLast64Chars() {
+        val tool = createTool("com.example.${"a".repeat(70)}")
+
+        val name = converter.getToolName(tool)
+
+        assertEquals("a".repeat(64), name)
+    }
+
+    @Test
+    fun convert_serviceFunctionId_usesToolNameAsName() {
+        val tool = createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails")
+
+        val schema = converter.convert(tool)
+
+        assertEquals(converter.getToolName(tool), schema["name"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -519,5 +693,28 @@ class GeminiToolConverterTest {
             )
 
         assertEquals(expectedJson, schema)
+    }
+
+    private fun createTool(id: String): AppFunctionMetadata =
+        AppFunctionMetadata(
+            id = id,
+            packageName = "com.example",
+            isEnabled = true,
+            schema = null,
+            parameters = emptyList(),
+            response =
+                AppFunctionResponseMetadata(
+                    valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                    description = "",
+                ),
+            components = AppFunctionComponentsMetadata(emptyMap()),
+            description = "",
+            deprecation = null,
+        )
+
+    private companion object {
+        const val NOTES_SERVICE = "com.example.app.feature.notes.ExampleNotesAppFunctionService"
+        const val CHAT_SERVICE = "com.example.chatapp.appfunctions.BaseChatAppFunctionService"
+        val VALID_NAME = Regex("[a-zA-Z_][a-zA-Z0-9_]{0,63}")
     }
 }

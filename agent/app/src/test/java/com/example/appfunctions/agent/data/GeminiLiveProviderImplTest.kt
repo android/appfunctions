@@ -529,6 +529,94 @@ class GeminiLiveProviderImplTest {
         }
 
     @Test
+    fun `events emits ToolCallRequest for service-prefixed tool name and sendToolResponses sends the same name`() =
+        runTest {
+            val service = "com.example.notes.appfunctions.ExampleNotesAppFunctionService"
+            val createNoteTool = createSampleNoteTool(id = "$service#createNote")
+            val fieldsTool = createSampleNoteTool(id = "$service#getNoteFieldDescriptions")
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFrames.trySend(
+                Frame.Text(
+                    """
+                    {
+                      "toolCall": {
+                        "functionCalls": [
+                          {
+                            "id": "call-1",
+                            "name": "ExampleNotesAppFunctionService_createNote",
+                            "args": { "title": "Shopping" }
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            )
+            incomingFrames.close()
+
+            val sentFrames = mutableListOf<String>()
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFrames,
+                        onSendText = { sentFrames.add(it) },
+                    )
+                }
+
+            val receivedEvents = mutableListOf<LiveLlmEvent>()
+            provider.withSession(apiKey = "key-123", tools = listOf(createNoteTool, fieldsTool)) { session ->
+                receivedEvents.addAll(session.events.toList())
+                session.sendToolResponses(
+                    listOf(
+                        ToolOutput(
+                            functionId = createNoteTool.id,
+                            callId = "call-1",
+                            result = """{"noteId":"n-1"}""",
+                        ),
+                    ),
+                )
+            }
+
+            val declarations =
+                Json
+                    .parseToJsonElement(sentFrames.first())
+                    .jsonObject["setup"]!!
+                    .jsonObject["tools"]!!
+                    .jsonArray
+                    .first()
+                    .jsonObject["functionDeclarations"]!!
+                    .jsonArray
+            assertEquals(
+                listOf(
+                    "ExampleNotesAppFunctionService_createNote",
+                    "ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                ),
+                declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
+            )
+
+            val toolCall = (receivedEvents.single() as LiveLlmEvent.ToolCallRequest).calls.single()
+            assertEquals("$service#createNote", toolCall.functionId)
+            assertEquals("call-1", toolCall.callId)
+            assertEquals("Shopping", toolCall.arguments["title"])
+
+            val functionResponse =
+                Json
+                    .parseToJsonElement(sentFrames.last())
+                    .jsonObject["toolResponse"]!!
+                    .jsonObject["functionResponses"]!!
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("call-1", functionResponse["id"]!!.jsonPrimitive.content)
+            assertEquals(
+                "ExampleNotesAppFunctionService_createNote",
+                functionResponse["name"]!!.jsonPrimitive.content,
+            )
+        }
+
+    @Test
     fun `events recovers from malformed JSON frame mid-session and emits subsequent valid events`() =
         runTest {
             val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
@@ -655,9 +743,9 @@ class GeminiLiveProviderImplTest {
         }
     }
 
-    private fun createSampleNoteTool(): AppFunctionMetadata =
+    private fun createSampleNoteTool(id: String = "com.example.notes.createNote"): AppFunctionMetadata =
         AppFunctionMetadata(
-            id = "com.example.notes.createNote",
+            id = id,
             packageName = "com.example.notes",
             isEnabled = true,
             schema = null,

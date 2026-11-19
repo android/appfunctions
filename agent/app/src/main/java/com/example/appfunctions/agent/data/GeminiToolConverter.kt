@@ -100,25 +100,52 @@ class GeminiToolConverter
             }
         }
 
+        /**
+         * Returns the Gemini function name for [tool]: at most [MAX_NAME_LENGTH] characters that
+         * depend only on the function ID, so the name doesn't change with the other declared tools.
+         *
+         * App function IDs have the form `<service>#<function>`. All functions of a service share
+         * one prefix, so that the model doesn't mix up their names: the trailing parts of the
+         * service name that fit in [MAX_SERVICE_PREFIX_LENGTH] characters, or its class name if
+         * that is longer. A function name too long to fit after the prefix is cut and followed by a
+         * hash of the ID. Other IDs keep as many trailing parts as fit.
+         */
         private fun getGeminiFunctionName(tool: AppFunctionMetadata): String {
-            val baseName = tool.id.replace(INVALID_NAME_CHARS, TOOL_ID_SEPARATOR)
-            val components = baseName.split(TOOL_ID_SEPARATOR)
+            val serviceName = tool.id.substringBeforeLast(FUNCTION_ID_SEPARATOR, missingDelimiterValue = "")
+            if (serviceName.isEmpty()) {
+                val baseName = tool.id.toValidName()
+                return keepTrailingParts(baseName, MAX_NAME_LENGTH).ifEmpty { baseName.takeLast(MAX_NAME_LENGTH) }
+            }
+            val validServiceName = serviceName.toValidName()
+            val prefix =
+                keepTrailingParts(validServiceName, MAX_SERVICE_PREFIX_LENGTH)
+                    .ifEmpty { validServiceName.substringAfterLast(TOOL_ID_SEPARATOR) }
+            val functionName = tool.id.substringAfterLast(FUNCTION_ID_SEPARATOR).toValidName()
+            val name = prefix + TOOL_ID_SEPARATOR + functionName
+            if (name.length <= MAX_NAME_LENGTH) {
+                return name
+            }
+            val hash = tool.id.hashCode().toUInt().toString(radix = 16).padStart(HASH_LENGTH, '0')
+            return name.take(MAX_NAME_LENGTH - TOOL_ID_SEPARATOR.length - HASH_LENGTH) + TOOL_ID_SEPARATOR + hash
+        }
+
+        private fun String.toValidName(): String = replace(INVALID_NAME_CHARS, TOOL_ID_SEPARATOR)
+
+        /**
+         * Returns as many trailing [TOOL_ID_SEPARATOR]-separated parts of [name] as fit in
+         * [maxLength] characters, or an empty string if not even the last part fits.
+         */
+        private fun keepTrailingParts(
+            name: String,
+            maxLength: Int,
+        ): String {
             var result = ""
-
-            // Build from right to left, keeping the most specific parts of the package/id
-            for (i in components.indices.reversed()) {
-                val component = components[i]
+            for (part in name.split(TOOL_ID_SEPARATOR).asReversed()) {
                 val separator = if (result.isEmpty()) "" else TOOL_ID_SEPARATOR
-
-                val newLength = result.length + separator.length + component.length
-                if (newLength <= MAX_NAME_LENGTH) {
-                    result = component + separator + result
-                } else {
+                if (result.length + separator.length + part.length > maxLength) {
                     break
                 }
-            }
-            if (result.isEmpty()) {
-                result = baseName.takeLast(MAX_NAME_LENGTH)
+                result = part + separator + result
             }
             return result
         }
@@ -297,5 +324,10 @@ class GeminiToolConverter
             private const val KEY_ENUMS = "enums"
             private val INVALID_NAME_CHARS = Regex("[^a-zA-Z0-9_]")
             private const val MAX_NAME_LENGTH = 64
+            private const val FUNCTION_ID_SEPARATOR = '#'
+
+            // Half of the name, leaving at least 31 characters for the function name.
+            private const val MAX_SERVICE_PREFIX_LENGTH = MAX_NAME_LENGTH / 2
+            private const val HASH_LENGTH = 8
         }
     }
