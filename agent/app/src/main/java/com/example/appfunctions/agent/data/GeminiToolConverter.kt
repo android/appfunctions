@@ -108,7 +108,8 @@ class GeminiToolConverter
          * one prefix, so that the model doesn't mix up their names: the trailing parts of the
          * service name that fit in [MAX_SERVICE_PREFIX_LENGTH] characters, or its class name if
          * that is longer. A function name too long to fit after the prefix is cut and followed by a
-         * hash of the ID. Other IDs keep as many trailing parts as fit.
+         * hash of the ID. The class name is cut to its first [NAME_LENGTH_BEFORE_HASH] characters,
+         * so that it also fits before the hash. Other IDs keep as many trailing parts as fit.
          */
         private fun getGeminiFunctionName(tool: AppFunctionMetadata): String {
             val serviceName = tool.id.substringBeforeLast(FUNCTION_ID_SEPARATOR, missingDelimiterValue = "")
@@ -119,14 +120,14 @@ class GeminiToolConverter
             val validServiceName = serviceName.toValidName()
             val prefix =
                 keepTrailingParts(validServiceName, MAX_SERVICE_PREFIX_LENGTH)
-                    .ifEmpty { validServiceName.substringAfterLast(TOOL_ID_SEPARATOR) }
+                    .ifEmpty { validServiceName.substringAfterLast(TOOL_ID_SEPARATOR).take(NAME_LENGTH_BEFORE_HASH) }
             val functionName = tool.id.substringAfterLast(FUNCTION_ID_SEPARATOR).toValidName()
             val name = prefix + TOOL_ID_SEPARATOR + functionName
             if (name.length <= MAX_NAME_LENGTH) {
                 return name
             }
             val hash = tool.id.hashCode().toUInt().toString(radix = 16).padStart(HASH_LENGTH, '0')
-            return name.take(MAX_NAME_LENGTH - TOOL_ID_SEPARATOR.length - HASH_LENGTH) + TOOL_ID_SEPARATOR + hash
+            return name.take(NAME_LENGTH_BEFORE_HASH) + TOOL_ID_SEPARATOR + hash
         }
 
         private fun String.toValidName(): String = replace(INVALID_NAME_CHARS, TOOL_ID_SEPARATOR)
@@ -326,8 +327,10 @@ class GeminiToolConverter
             private const val MAX_NAME_LENGTH = 64
             private const val FUNCTION_ID_SEPARATOR = '#'
 
-            // Half of the name, leaving at least 31 characters for the function name.
+            // Half of the name, leaving at least 31 characters for the function name unless the
+            // class name alone is longer.
             private const val MAX_SERVICE_PREFIX_LENGTH = MAX_NAME_LENGTH / 2
             private const val HASH_LENGTH = 8
+            private const val NAME_LENGTH_BEFORE_HASH = MAX_NAME_LENGTH - TOOL_ID_SEPARATOR.length - HASH_LENGTH
         }
     }

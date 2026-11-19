@@ -201,6 +201,21 @@ class GeminiToolConverterTest {
     }
 
     @Test
+    fun getToolName_classNameTooLongToFitBeforeHash_usesCutClassNameAsPrefix() {
+        // The class name has 57 characters, 2 more than fit before the hash of a cut name.
+        val service = "com.example.verbose.ExampleExtremelyLongNotesAppFunctionServiceImplementation"
+
+        val names =
+            listOf("share", "shareNote").map { function ->
+                converter.getToolName(createTool("$service#$function"))
+            }
+
+        assertEquals("ExampleExtremelyLongNotesAppFunctionServiceImplementati_share", names[0])
+        assertEquals(64, names[1].length)
+        assertTrue(names[1].startsWith("ExampleExtremelyLongNotesAppFunctionServiceImplementati_"))
+    }
+
+    @Test
     fun getToolName_variousIds_returnsDistinctValidNames() {
         val longClassNameService =
             "com.example.huge.NotesAppFunctionServiceWithAnExtremelyLongClassNameExceedingTheLimit"
