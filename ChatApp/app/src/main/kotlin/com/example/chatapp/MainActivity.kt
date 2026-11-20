@@ -15,10 +15,12 @@
  */
 package com.example.chatapp
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.tooling.preview.Preview
@@ -33,13 +35,28 @@ import com.example.chatapp.uicomponents.AppFunctionsScreen
 import com.example.chatapp.uicomponents.CallScreen
 import com.example.chatapp.uicomponents.ChatScreen
 import com.example.chatapp.uicomponents.RecipientsScreen
+import androidx.appfunctions.AppFunctionManager
+import androidx.appfunctions.ExperimentalAppFunctionsApi
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.example.chatapp.appfunctions.AppendDraftMessageSignature
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalAppFunctionsApi::class)
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    private val appFunctionManager by lazy { AppFunctionManager.getInstance(this) }
+    private val appendDraftAdapter by lazy {
+        appFunctionManager?.getHandleAppFunctionRequestAdapter<AppendDraftMessageSignature>()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= 37) {
+            setupActivityScopedAppFunctions()
+        }
         setContent {
             ChatAppTheme {
                 val navController = rememberNavController()
@@ -114,6 +131,22 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    @RequiresApi(37)
+    private fun setupActivityScopedAppFunctions() {
+        val manager = appFunctionManager ?: return
+        val adapter = appendDraftAdapter ?: return
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                manager.handleAppFunction(
+                    adapter.adapt { _ ->
+                        true
+                    },
+                )
             }
         }
     }

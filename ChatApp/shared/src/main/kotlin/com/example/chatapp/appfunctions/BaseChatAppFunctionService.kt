@@ -68,7 +68,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @return List of [ContactSearchResult] objects matching the query.
      * @throws AppFunctionInvalidArgumentException If query is empty or blank, an invalid contactType is provided, or if no matching contact or group is found. If thrown, suggest the user clarify the recipient or group name.
      */
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun searchContacts(
         query: String,
         @AppFunctionStringValueConstraint(enumValues = ["INDIVIDUAL", "GROUP", "ANY"])
@@ -122,7 +122,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @throws AppFunctionElementNotFoundException If no contact or group matches endpointValue. If thrown, call "searchContacts" to find the correct ID.
      */
     @OptIn(ExperimentalAppFunctionsApi::class)
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun fetchSendMessageDetails(
         endpointValue: String,
         messageBody: String,
@@ -203,7 +203,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @throws AppFunctionElementNotFoundException If no contact or group matches endpointValue. If thrown, call "searchContacts" to find the correct ID.
      * @throws AppFunctionAppUnknownException If sending fails due to a repository error. If thrown, suggest the user retry later.
      */
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun sendMessage(
         endpointValue: String,
         messageBody: String,
@@ -235,34 +235,6 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
             "Message sent to: $displayName."
         }
 
-    /** Prepares message for review, returns PendingIntent to open chat with draft. */
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
-    suspend fun reviewSendMessage(
-        endpointValue: String,
-        messageBody: String,
-    ): PendingIntent =
-        withContext(Dispatchers.IO) {
-            val recipientId =
-                recipientsRepository.getRecipientById(endpointValue)?.id
-                    ?: recipientsRepository.getGroupById(endpointValue)?.id
-                    ?: throw AppFunctionElementNotFoundException(
-                        "No contact or group found for endpointValue: $endpointValue",
-                    )
-
-            val intent =
-                Intent().setClassName(this@BaseChatAppFunctionService, "com.example.chatapp.MainActivity").apply {
-                    putExtra("nav_route", "chat/$recipientId?draft=${Uri.encode(messageBody)}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                }
-
-            PendingIntent.getActivity(
-                this@BaseChatAppFunctionService,
-                0,
-                intent,
-                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        }
-
     /**
      * Initiate a voice call with an individual contact or group.
      *
@@ -270,7 +242,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @return A [PendingIntent] that launches the call activity in the application UI.
      * @throws AppFunctionElementNotFoundException If no recipient exists for endpointValue. If thrown, call "searchContacts" to find the correct ID.
      */
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun makeCall(endpointValue: String): PendingIntent =
         withContext(Dispatchers.IO) {
             val recipient =
@@ -296,7 +268,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @param chatId The unique identifier for the recipient or chat group.
      * @param wallpaperUri The URI of the image file to set as the chat wallpaper.
      */
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun updateChatWallpaper(
         chatId: String,
         wallpaperUri: Uri,
@@ -326,7 +298,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
      * @return List of [MessagesSearchResult] matching the query.
      * @throws AppFunctionInvalidArgumentException If the query is blank.
      */
-    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun searchMessages(
         query: String,
         endpointValue: String? = null,

@@ -136,12 +136,4 @@ class AppFunctionsViewModelTest {
             assertNotNull(result)
         }
 
-    @Test
-    @SdkSuppress(minSdkVersion = 36)
-    fun registerReviewSendMessage_enablesFunction() =
-        runTest {
-            viewModel.registerReviewSendMessage()
-            val state = viewModel.uiState.value
-            assertNotNull(state)
-        }
 }
