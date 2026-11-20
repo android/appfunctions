@@ -35,7 +35,9 @@ import com.example.chatapp.data.RecipientsRepository
 import com.example.chatapp.data.WallpaperRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import javax.inject.Inject
@@ -60,7 +62,6 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
 
     /**
      * Search for message recipients or chat groups by name or email.
-     * Required workflow: Call this before "send" or "makeCall" to obtain a valid endpointValue (unique ID).
      *
      * @param query Search string for contact name, email, or group name. Throws [AppFunctionInvalidArgumentException] if empty.
      * @param contactType Filter results by entity type. Accepts "INDIVIDUAL", "GROUP", or "ANY".
@@ -72,46 +73,46 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
         query: String,
         @AppFunctionStringValueConstraint(enumValues = ["INDIVIDUAL", "GROUP", "ANY"])
         contactType: String,
-    ): List<ContactSearchResult> {
-        if (query.isBlank()) {
-            throw AppFunctionInvalidArgumentException("Query cannot be empty")
-        }
-        val recipients =
-            when (contactType) {
-                "INDIVIDUAL" -> {
-                    recipientsRepository.searchRecipients(query, 3)
-                }
-                "GROUP" -> {
-                    recipientsRepository.searchGroups(query, 3).map {
-                        ContactSearchResult(
-                            contactDisplayName = it.name,
-                            contactType = "GROUP",
-                            endpointValue = it.id,
-                            endpointDisplayName = it.name,
+    ): List<ContactSearchResult> =
+        withContext(Dispatchers.IO) {
+            if (query.isBlank()) {
+                throw AppFunctionInvalidArgumentException("Query cannot be empty")
+            }
+            val recipients =
+                when (contactType) {
+                    "INDIVIDUAL" -> {
+                        recipientsRepository.searchRecipients(query, 3)
+                    }
+                    "GROUP" -> {
+                        recipientsRepository.searchGroups(query, 3).map {
+                            ContactSearchResult(
+                                contactDisplayName = it.name,
+                                contactType = "GROUP",
+                                endpointValue = it.id,
+                                endpointDisplayName = it.name,
+                            )
+                        }
+                    }
+                    "ANY" -> {
+                        recipientsRepository.searchAny(query, maxCount = 3)
+                    }
+                    else -> {
+                        throw AppFunctionInvalidArgumentException(
+                            "Invalid contactType: $contactType. Must be INDIVIDUAL, GROUP, or ANY.",
                         )
                     }
                 }
-                "ANY" -> {
-                    recipientsRepository.searchAny(query, maxCount = 3)
-                }
-                else -> {
-                    throw AppFunctionInvalidArgumentException(
-                        "Invalid contactType: $contactType. Must be INDIVIDUAL, GROUP, or ANY.",
-                    )
-                }
-            }
 
-        if (recipients.isEmpty()) {
-            throw AppFunctionInvalidArgumentException(
-                "$contactType with name $query not found. Ask the user to clarify the name",
-            )
+            if (recipients.isEmpty()) {
+                throw AppFunctionInvalidArgumentException(
+                    "$contactType with name $query not found. Ask the user to clarify the name",
+                )
+            }
+            recipients
         }
-        return recipients
-    }
 
     /**
      * Fetch details for sending a message before execution.
-     * Required workflow: Call "searchContacts" first to obtain a valid endpointValue.
      *
      * @param endpointValue The unique identifier for the recipient or group obtained from searchContacts.
      * @param messageBody The text content of the message to send. Cannot be empty or blank.
@@ -126,73 +127,73 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
         endpointValue: String,
         messageBody: String,
         imageUris: List<Uri>? = null,
-    ): ConfirmationPreview {
-        if (messageBody.isBlank()) {
-            throw AppFunctionInvalidArgumentException("Message body cannot be empty")
+    ): ConfirmationPreview =
+        withContext(Dispatchers.IO) {
+            if (messageBody.isBlank()) {
+                throw AppFunctionInvalidArgumentException("Message body cannot be empty")
+            }
+            val displayName =
+                recipientsRepository.getRecipientById(endpointValue)?.name
+                    ?: recipientsRepository.getGroupById(endpointValue)?.name
+                    ?: throw AppFunctionElementNotFoundException(
+                        "No contact or group found for endpointValue: $endpointValue",
+                    )
+
+            val surfaceId = "surface_$endpointValue"
+            val catalogId =
+                "https://developers.google.com/connected-apps/a2ui/v0_9/comms_catalog_preview.json"
+
+            val createSurface =
+                JSONObject().apply {
+                    put("version", "v0.9")
+                    put(
+                        "createSurface",
+                        JSONObject().apply {
+                            put("surfaceId", surfaceId)
+                            put("catalogId", catalogId)
+                        },
+                    )
+                }
+
+            val confirmationComponent =
+                JSONObject().apply {
+                    put("component", "MessageConfirmationComponent")
+                    put("id", "root")
+                    put("contactDisplayName", displayName)
+                    put("endpointDisplayName", "ChatApp")
+                    put("messageBody", messageBody)
+                    put("editMessageUri", buildEditMessageUri(endpointValue, messageBody))
+                }
+
+            val updateComponents =
+                JSONObject().apply {
+                    put("version", "v0.9")
+                    put(
+                        "updateComponents",
+                        JSONObject().apply {
+                            put("surfaceId", surfaceId)
+                            put("components", JSONArray().put(confirmationComponent).toString())
+                        },
+                    )
+                }
+
+            val a2uiJsonPayload =
+                JSONArray().apply {
+                    put(createSurface)
+                    put(updateComponents)
+                }.toString()
+
+            val a2uiResource =
+                AppFunctionTextResource(
+                    mimeType = "application/a2ui+json",
+                    content = a2uiJsonPayload,
+                )
+
+            ConfirmationPreview(resources = listOf(a2uiResource))
         }
-        val displayName =
-            recipientsRepository.getRecipientById(endpointValue)?.name
-                ?: recipientsRepository.getGroupById(endpointValue)?.name
-                ?: throw AppFunctionElementNotFoundException(
-                    "No contact or group found for endpointValue: $endpointValue",
-                )
-
-        val surfaceId = "surface_$endpointValue"
-        val catalogId =
-            "https://developers.google.com/connected-apps/a2ui/v0_9/comms_catalog_preview.json"
-
-        val createSurface =
-            JSONObject().apply {
-                put("version", "v0.9")
-                put(
-                    "createSurface",
-                    JSONObject().apply {
-                        put("surfaceId", surfaceId)
-                        put("catalogId", catalogId)
-                    },
-                )
-            }
-
-        val confirmationComponent =
-            JSONObject().apply {
-                put("component", "MessageConfirmationComponent")
-                put("id", "root")
-                put("contactDisplayName", displayName)
-                put("endpointDisplayName", "ChatApp")
-                put("messageBody", messageBody)
-                put("editMessageUri", buildEditMessageUri(endpointValue, messageBody))
-            }
-
-        val updateComponents =
-            JSONObject().apply {
-                put("version", "v0.9")
-                put(
-                    "updateComponents",
-                    JSONObject().apply {
-                        put("surfaceId", surfaceId)
-                        put("components", JSONArray().put(confirmationComponent).toString())
-                    },
-                )
-            }
-
-        val a2uiJsonPayload =
-            JSONArray().apply {
-                put(createSurface)
-                put(updateComponents)
-            }.toString()
-
-        val a2uiResource =
-            AppFunctionTextResource(
-                mimeType = "application/a2ui+json",
-                content = a2uiJsonPayload,
-            )
-
-        return ConfirmationPreview(resources = listOf(a2uiResource))
-    }
 
     /**
      * Send a text message with optional image attachments to an individual contact or group.
-     * Required workflow: Call "searchContacts" first to obtain a valid endpointValue.
      *
      * @param endpointValue The unique identifier for the recipient or group obtained from searchContacts.
      * @param messageBody The text content of the message to send. Cannot be empty or blank.
@@ -207,85 +208,87 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
         endpointValue: String,
         messageBody: String,
         imageUris: List<Uri>? = null,
-    ): String {
-        if (messageBody.isBlank()) {
-            throw AppFunctionInvalidArgumentException("Message body cannot be empty")
-        }
-        val displayName =
-            recipientsRepository.getRecipientById(endpointValue)?.name
-                ?: recipientsRepository.getGroupById(endpointValue)?.name
-                ?: throw AppFunctionElementNotFoundException(
-                    "No contact or group found for endpointValue: $endpointValue",
+    ): String =
+        withContext(Dispatchers.IO) {
+            if (messageBody.isBlank()) {
+                throw AppFunctionInvalidArgumentException("Message body cannot be empty")
+            }
+            val displayName =
+                recipientsRepository.getRecipientById(endpointValue)?.name
+                    ?: recipientsRepository.getGroupById(endpointValue)?.name
+                    ?: throw AppFunctionElementNotFoundException(
+                        "No contact or group found for endpointValue: $endpointValue",
+                    )
+
+            try {
+                messageRepository.send(
+                    text = messageBody,
+                    recipientIds = listOf(endpointValue),
+                    imageUris = imageUris?.map { it.toString() },
                 )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw AppFunctionAppUnknownException("Failed to send message: ${e.message}")
+            }
 
-        try {
-            messageRepository.send(
-                text = messageBody,
-                recipientIds = listOf(endpointValue),
-                imageUris = imageUris?.map { it.toString() },
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            throw AppFunctionAppUnknownException("Failed to send message: ${e.message}")
+            "Message sent to: $displayName."
         }
-
-        return "Message sent to: $displayName."
-    }
 
     /** Prepares message for review, returns PendingIntent to open chat with draft. */
     @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
     suspend fun reviewSendMessage(
         endpointValue: String,
         messageBody: String,
-    ): PendingIntent {
-        val recipientId =
-            recipientsRepository.getRecipientById(endpointValue)?.id
-                ?: recipientsRepository.getGroupById(endpointValue)?.id
-                ?: throw AppFunctionElementNotFoundException(
-                    "No contact or group found for endpointValue: $endpointValue",
-                )
+    ): PendingIntent =
+        withContext(Dispatchers.IO) {
+            val recipientId =
+                recipientsRepository.getRecipientById(endpointValue)?.id
+                    ?: recipientsRepository.getGroupById(endpointValue)?.id
+                    ?: throw AppFunctionElementNotFoundException(
+                        "No contact or group found for endpointValue: $endpointValue",
+                    )
 
-        val intent =
-            Intent().setClassName(this, "com.example.chatapp.MainActivity").apply {
-                putExtra("nav_route", "chat/$recipientId?draft=${Uri.encode(messageBody)}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
+            val intent =
+                Intent().setClassName(this@BaseChatAppFunctionService, "com.example.chatapp.MainActivity").apply {
+                    putExtra("nav_route", "chat/$recipientId?draft=${Uri.encode(messageBody)}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
 
-        return PendingIntent.getActivity(
-            this,
-            0,
-            intent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
+            PendingIntent.getActivity(
+                this@BaseChatAppFunctionService,
+                0,
+                intent,
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
 
     /**
      * Initiate a voice call with an individual contact or group.
-     * Required workflow: Call "searchContacts" first to obtain a valid endpointValue.
      *
      * @param endpointValue The unique identifier for the recipient or group obtained from searchContacts.
      * @return A [PendingIntent] that launches the call activity in the application UI.
      * @throws AppFunctionElementNotFoundException If no recipient exists for endpointValue. If thrown, call "searchContacts" to find the correct ID.
      */
     @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
-    suspend fun makeCall(endpointValue: String): PendingIntent {
-        val recipient =
-            recipientsRepository.getRecipientById(endpointValue)
-                ?: throw AppFunctionElementNotFoundException(
-                    "No recipient exists for endpointValue: $endpointValue",
-                )
+    suspend fun makeCall(endpointValue: String): PendingIntent =
+        withContext(Dispatchers.IO) {
+            val recipient =
+                recipientsRepository.getRecipientById(endpointValue)
+                    ?: throw AppFunctionElementNotFoundException(
+                        "No recipient exists for endpointValue: $endpointValue",
+                    )
 
-        callManager.startCall(recipient.id)
+            callManager.startCall(recipient.id)
 
-        return PendingIntent.getActivity(
-            this,
-            0,
-            Intent().setClassName(this, "com.example.chatapp.MainActivity")
-                .apply { putExtra("nav_route", "call/${recipient.id}") },
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
+            PendingIntent.getActivity(
+                this@BaseChatAppFunctionService,
+                0,
+                Intent().setClassName(this@BaseChatAppFunctionService, "com.example.chatapp.MainActivity")
+                    .apply { putExtra("nav_route", "call/${recipient.id}") },
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
 
     /**
      * Updates the wallpaper image for a specific chat conversation.
@@ -297,22 +300,23 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
     suspend fun updateChatWallpaper(
         chatId: String,
         wallpaperUri: Uri,
-    ): Boolean {
-        val resolvedId =
-            recipientsRepository.getRecipientById(chatId)?.id
-                ?: recipientsRepository.getGroupById(chatId)?.id
-                ?: recipientsRepository.searchAny(chatId, maxCount = 1).firstOrNull()?.endpointValue
-                ?: chatId
-        val inputStream =
-            try {
-                contentResolver.openInputStream(wallpaperUri)
-            } catch (e: Exception) {
-                throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream: ${e.message}")
-            } ?: throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream")
-        return inputStream.use { stream ->
-            wallpaperRepository.setWallpaper(resolvedId, stream)
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            val resolvedId =
+                recipientsRepository.getRecipientById(chatId)?.id
+                    ?: recipientsRepository.getGroupById(chatId)?.id
+                    ?: recipientsRepository.searchAny(chatId, maxCount = 1).firstOrNull()?.endpointValue
+                    ?: chatId
+            val inputStream =
+                try {
+                    contentResolver.openInputStream(wallpaperUri)
+                } catch (e: Exception) {
+                    throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream: ${e.message}")
+                } ?: throw AppFunctionInvalidArgumentException("Cannot open wallpaper stream")
+            inputStream.use { stream ->
+                wallpaperRepository.setWallpaper(resolvedId, stream)
+            }
         }
-    }
 
     /**
      * Search for messages containing a query string, optionally filtered by a specific recipient.
@@ -326,45 +330,46 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
     suspend fun searchMessages(
         query: String,
         endpointValue: String? = null,
-    ): List<MessagesSearchResult> {
-        if (query.isBlank()) {
-            throw AppFunctionInvalidArgumentException("Query cannot be empty")
-        }
-        val targetIds =
-            if (endpointValue != null) {
-                listOf(endpointValue)
-            } else {
-                val individuals = recipientsRepository.getAllRecipients().map { it.id }
-                val groups = recipientsRepository.getAllGroups().map { it.id }
-                individuals + groups
+    ): List<MessagesSearchResult> =
+        withContext(Dispatchers.IO) {
+            if (query.isBlank()) {
+                throw AppFunctionInvalidArgumentException("Query cannot be empty")
+            }
+            val targetIds =
+                if (endpointValue != null) {
+                    listOf(endpointValue)
+                } else {
+                    val individuals = recipientsRepository.getAllRecipients().map { it.id }
+                    val groups = recipientsRepository.getAllGroups().map { it.id }
+                    individuals + groups
+                }
+
+            val results = mutableListOf<MessagesSearchResult>()
+
+            for (id in targetIds) {
+                val messages = messageRepository.getMessages(id).first()
+                val matchingMessages =
+                    messages.filter { it.content.contains(query, ignoreCase = true) }
+                if (matchingMessages.isNotEmpty()) {
+                    results.add(
+                        MessagesSearchResult(
+                            endpointValue = id,
+                            messages =
+                                matchingMessages.map {
+                                    val senderDisplayName = getSenderDisplayName(it, id)
+                                    Message(
+                                        messageBody = it.content,
+                                        timestamp = it.sentAt,
+                                        senderDisplayName = senderDisplayName,
+                                    )
+                                },
+                        ),
+                    )
+                }
             }
 
-        val results = mutableListOf<MessagesSearchResult>()
-
-        for (id in targetIds) {
-            val messages = messageRepository.getMessages(id).first()
-            val matchingMessages =
-                messages.filter { it.content.contains(query, ignoreCase = true) }
-            if (matchingMessages.isNotEmpty()) {
-                results.add(
-                    MessagesSearchResult(
-                        endpointValue = id,
-                        messages =
-                            matchingMessages.map {
-                                val senderDisplayName = getSenderDisplayName(it, id)
-                                Message(
-                                    messageBody = it.content,
-                                    timestamp = it.sentAt,
-                                    senderDisplayName = senderDisplayName,
-                                )
-                            },
-                    ),
-                )
-            }
+            results
         }
-
-        return results
-    }
 
     private fun buildEditMessageUri(
         endpointValue: String,
