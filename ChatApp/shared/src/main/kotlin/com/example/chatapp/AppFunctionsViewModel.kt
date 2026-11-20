@@ -225,6 +225,22 @@ class AppFunctionsViewModel
         }
 
         /**
+         * Registers (enables) the reviewSendMessage capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerReviewSendMessage() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_REVIEW_SEND_MESSAGE, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the reviewSendMessage capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterReviewSendMessage() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_REVIEW_SEND_MESSAGE, enabled = false)
+        }
+
+        /**
          * Handles user authentication state changes to dynamically register or unregister
          * app capabilities with the OS at runtime.
          */
@@ -237,6 +253,7 @@ class AppFunctionsViewModel
                 registerMakeCall()
                 registerUpdateChatWallpaper()
                 registerSearchMessages()
+                registerReviewSendMessage()
             } else {
                 unregisterSearchContacts()
                 unregisterFetchSendMessageDetails()
@@ -244,6 +261,7 @@ class AppFunctionsViewModel
                 unregisterMakeCall()
                 unregisterUpdateChatWallpaper()
                 unregisterSearchMessages()
+                unregisterReviewSendMessage()
             }
         }
 

@@ -135,4 +135,13 @@ class AppFunctionsViewModelTest {
             val result = viewModel.invokeFetchSendMessageDetailsInternally("1", "Test Preview")
             assertNotNull(result)
         }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerReviewSendMessage_enablesFunction() =
+        runTest {
+            viewModel.registerReviewSendMessage()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
 }

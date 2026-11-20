@@ -233,6 +233,33 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
         return "Message sent to: $displayName."
     }
 
+    /** Prepares message for review, returns PendingIntent to open chat with draft. */
+    @AppFunctionDeclaration(isEnabled = false, isDescribedByKDoc = true)
+    suspend fun reviewSendMessage(
+        endpointValue: String,
+        messageBody: String,
+    ): PendingIntent {
+        val recipientId =
+            recipientsRepository.getRecipientById(endpointValue)?.id
+                ?: recipientsRepository.getGroupById(endpointValue)?.id
+                ?: throw AppFunctionElementNotFoundException(
+                    "No contact or group found for endpointValue: $endpointValue",
+                )
+
+        val intent =
+            Intent().setClassName(this, "com.example.chatapp.MainActivity").apply {
+                putExtra("nav_route", "chat/$recipientId?draft=${Uri.encode(messageBody)}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+
+        return PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     /**
      * Initiate a voice call with an individual contact or group.
      * Required workflow: Call "searchContacts" first to obtain a valid endpointValue.
@@ -379,5 +406,7 @@ abstract class BaseChatAppFunctionService : AppFunctionService() {
             "com.example.chatapp.appfunctions.ChatAppFunctionService#updateChatWallpaper"
         const val FUNCTION_ID_SEARCH_MESSAGES =
             "com.example.chatapp.appfunctions.ChatAppFunctionService#searchMessages"
+        const val FUNCTION_ID_REVIEW_SEND_MESSAGE =
+            "com.example.chatapp.appfunctions.ChatAppFunctionService#reviewSendMessage"
     }
 }
