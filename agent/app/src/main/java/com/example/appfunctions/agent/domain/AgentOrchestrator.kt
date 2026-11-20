@@ -372,6 +372,7 @@ class AgentOrchestrator
             capturedAttachments: MutableList<MessageAttachment>,
         ): ExecuteToolCallsResult {
             val results = mutableListOf<ToolOutput>()
+            val attachments = mutableListOf<MessageAttachment>()
             val exploredApps = mutableListOf<String>()
             val discoveredTools = mutableListOf<AppFunctionMetadata>()
             var invokedAppFunction = false
@@ -467,12 +468,10 @@ class AgentOrchestrator
                                 functionId = toolCall.functionId,
                                 callId = toolCall.callId,
                                 result = executionResult.formattedJson + resultImages.skipped.toNotes(),
-                                images = resultImages.loaded.map { it.image },
+                                images = resultImages.images,
                             ),
                         )
-                        resultImages.loaded.mapTo(capturedAttachments) {
-                            MessageAttachment(uri = it.displayUri, mimeType = it.image.mimeType)
-                        }
+                        executionResult.toAttachment()?.let(attachments::add)
                     }
 
                     is ExecuteAppFunctionResult.ToolsDiscovered -> {
@@ -533,6 +532,12 @@ class AgentOrchestrator
             }
             if (!invokedAppFunction) {
                 toolDiscoveryStatus(exploredApps, discoveredTools)?.let { _status.value = it }
+            }
+            // The reply shows only the images of the latest turn that produced any, not the
+            // intermediate ones of an iterative flow (e.g. generate → inspect → generate again).
+            if (attachments.isNotEmpty()) {
+                capturedAttachments.clear()
+                capturedAttachments += attachments
             }
             return ExecuteToolCallsResult.Success(results)
         }

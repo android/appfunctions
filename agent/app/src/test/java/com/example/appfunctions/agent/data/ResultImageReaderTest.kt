@@ -23,13 +23,10 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
 import androidx.test.core.app.ApplicationProvider
-import com.example.appfunctions.agent.domain.ToolOutputImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -42,9 +39,9 @@ import java.io.FileNotFoundException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class ResultImageStoreTest {
+class ResultImageReaderTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
-    private val resultImageStore = ResultImageStoreImpl(context)
+    private val resultImageReader = ResultImageReaderImpl(context)
     private lateinit var imageProvider: ImageProvider
 
     @Before
@@ -57,7 +54,7 @@ class ResultImageStoreTest {
         runTest {
             val uri = imageProvider.addFile("photo.webp", PHOTO_BYTES, type = "Image/WebP")
 
-            val image = resultImageStore.read(uri, mimeType = null, maxBytes = MAX_BYTES)
+            val image = resultImageReader.read(uri, mimeType = null, maxBytes = MAX_BYTES)
 
             assertEquals("image/webp", image.mimeType)
             assertArrayEquals(PHOTO_BYTES, image.data)
@@ -69,7 +66,7 @@ class ResultImageStoreTest {
             val photoUri = imageProvider.addFile("photo.png", PHOTO_BYTES, type = "image/png")
             val settingsUri = imageProvider.addFile("settings.preferences_pb", "api_key".toByteArray(), type = "application/octet-stream")
 
-            assertEquals("image/png", resultImageStore.read(photoUri, mimeType = "image/jpeg", maxBytes = MAX_BYTES).mimeType)
+            assertEquals("image/png", resultImageReader.read(photoUri, mimeType = "image/jpeg", maxBytes = MAX_BYTES).mimeType)
             assertEquals("it is not an image (application/octet-stream)", readFailureReason(settingsUri, mimeType = "image/png"))
         }
 
@@ -78,7 +75,7 @@ class ResultImageStoreTest {
         runTest {
             val uri = imageProvider.addFile("photo", PHOTO_BYTES, type = null)
 
-            val image = resultImageStore.read(uri, mimeType = "IMAGE/JPEG", maxBytes = MAX_BYTES)
+            val image = resultImageReader.read(uri, mimeType = "IMAGE/JPEG", maxBytes = MAX_BYTES)
 
             assertEquals("image/jpeg", image.mimeType)
             assertArrayEquals(PHOTO_BYTES, image.data)
@@ -90,7 +87,7 @@ class ResultImageStoreTest {
             val bytes = ByteArray(MAX_BYTES) { it.toByte() }
             val uri = imageProvider.addFile("large.png", bytes, type = "image/png")
 
-            val image = resultImageStore.read(uri, mimeType = null, maxBytes = MAX_BYTES)
+            val image = resultImageReader.read(uri, mimeType = null, maxBytes = MAX_BYTES)
 
             assertArrayEquals(bytes, image.data)
         }
@@ -168,43 +165,20 @@ class ResultImageStoreTest {
             val uri = imageProvider.addFailure("photo.png", type = "image/png", CancellationException("Cancelled"))
 
             try {
-                resultImageStore.read(uri, mimeType = null, maxBytes = MAX_BYTES)
+                resultImageReader.read(uri, mimeType = null, maxBytes = MAX_BYTES)
                 fail("Expected the CancellationException to be rethrown")
             } catch (e: CancellationException) {
                 assertEquals("Cancelled", e.message)
             }
         }
 
-    @Test
-    fun `saveSnapshot reports a copy that can't be written`() =
-        runTest {
-            // A file where the snapshot directory should be makes writing the copy fail.
-            File(context.cacheDir, "result_images").writeText("not a directory")
-
-            try {
-                resultImageStore.saveSnapshot(ToolOutputImage(mimeType = "image/png", data = PHOTO_BYTES))
-                fail("Expected a ResultImageException when the copy can't be written")
-            } catch (e: ResultImageException) {
-                assertTrue(e.reason, e.reason.startsWith("it could not be copied"))
-            }
-        }
-
-    @Test
-    fun `isAgentUri is true only for content URIs of the FileProvider of the agent`() {
-        val agentAuthority = "${context.packageName}.fileprovider"
-
-        assertTrue(resultImageStore.isAgentUri("content://$agentAuthority/cache/result_images/photo.png".toUri()))
-        assertFalse(resultImageStore.isAgentUri(imageProvider.uriOf("photo.png")))
-        assertFalse(resultImageStore.isAgentUri("https://$agentAuthority/cache/result_images/photo.png".toUri()))
-    }
-
-    /** Reads [uri] and returns why the store rejected it, or null if it didn't. */
+    /** Reads [uri] and returns why the reader rejected it, or null if it didn't. */
     private suspend fun readFailureReason(
         uri: Uri,
         mimeType: String? = null,
     ): String? =
         try {
-            resultImageStore.read(uri, mimeType, MAX_BYTES)
+            resultImageReader.read(uri, mimeType, MAX_BYTES)
             null
         } catch (e: ResultImageException) {
             e.reason

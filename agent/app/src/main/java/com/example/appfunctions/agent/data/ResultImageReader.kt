@@ -18,22 +18,18 @@ package com.example.appfunctions.agent.data
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
-import android.webkit.MimeTypeMap
-import androidx.core.content.FileProvider
 import com.example.appfunctions.agent.domain.ToolOutputImage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Reads images that AppFunctions return as content URIs and keeps copies the chat can show later. */
-interface ResultImageStore {
+/** Reads images that AppFunctions return as content URIs. */
+interface ResultImageReader {
     /**
      * Reads the image at [uri].
      *
@@ -50,17 +46,6 @@ interface ResultImageStore {
         mimeType: String?,
         maxBytes: Int,
     ): ToolOutputImage
-
-    /**
-     * Copies [image] into the agent's cache.
-     *
-     * @return The `content://` URI of the copy, served by the agent's FileProvider.
-     * @throws ResultImageException If the copy can't be written.
-     */
-    suspend fun saveSnapshot(image: ToolOutputImage): Uri
-
-    /** Whether [uri] is served by the agent's own FileProvider. */
-    fun isAgentUri(uri: Uri): Boolean
 }
 
 /**
@@ -73,15 +58,13 @@ class ResultImageException(
     cause: Throwable? = null,
 ) : Exception(reason, cause)
 
-/** Default [ResultImageStore] backed by the [ContentResolver] and the agent's [FileProvider]. */
+/** Default [ResultImageReader] backed by the [ContentResolver]. */
 @Singleton
-class ResultImageStoreImpl
+class ResultImageReaderImpl
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
-    ) : ResultImageStore {
-        private val authority = "${context.packageName}.fileprovider"
-
+    ) : ResultImageReader {
         override suspend fun read(
             uri: Uri,
             mimeType: String?,
@@ -117,27 +100,8 @@ class ResultImageStoreImpl
                 }
             }
 
-        override suspend fun saveSnapshot(image: ToolOutputImage): Uri =
-            withContext(Dispatchers.IO) {
-                try {
-                    val directory = File(context.cacheDir, SNAPSHOT_DIRECTORY).apply { mkdirs() }
-                    val extension =
-                        MimeTypeMap.getSingleton().getExtensionFromMimeType(image.mimeType)
-                            ?: DEFAULT_EXTENSION
-                    val file = File(directory, "${UUID.randomUUID()}.$extension")
-                    file.writeBytes(image.data)
-                    FileProvider.getUriForFile(context, authority, file)
-                } catch (e: IOException) {
-                    throw ResultImageException("it could not be copied (${e.message})", e)
-                }
-            }
-
-        override fun isAgentUri(uri: Uri): Boolean = uri.scheme == ContentResolver.SCHEME_CONTENT && uri.authority == authority
-
         private companion object {
             const val IMAGE_MIME_TYPE_PREFIX = "image/"
-            const val SNAPSHOT_DIRECTORY = "result_images"
-            const val DEFAULT_EXTENSION = "img"
             const val BYTES_PER_MIB = 1024 * 1024
         }
     }

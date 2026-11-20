@@ -32,30 +32,22 @@ import androidx.appfunctions.metadata.AppFunctionOneOfTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.core.net.toUri
 import com.example.appfunctions.agent.data.ResultImageException
-import com.example.appfunctions.agent.data.ResultImageStore
+import com.example.appfunctions.agent.data.ResultImageReader
 import com.example.appfunctions.agent.domain.ToolOutputImage
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 
 /**
- * Use case to load the images a function returned, so that they can be shown in the chat and sent
- * to the model.
+ * Use case to load the images a function returned, so that they can be sent to the model.
  *
  * Images come from every [AppFunctionUriGrant] with [Intent.FLAG_GRANT_READ_URI_PERMISSION] in the
- * return value, at any depth, and from a top-level `content://` `imageUri` field (with an optional
- * `mimeType`), the convention of the agent's `generateImage` tool. Only images are used, at most
- * [MAX_IMAGES] per result and [MAX_IMAGE_BYTES] each. Images that the agent doesn't store itself
- * are copied into its cache, so the chat keeps showing what the model saw after the grant ends or
- * the function's app changes the file.
+ * return value, at any depth, and from a `content://` URI in the `imageUri` field read by
+ * [ExecuteAppFunctionResult.Data.toAttachment], the convention of the agent's `generateImage` tool.
+ * Only images are used, at most [MAX_IMAGES] per result and [MAX_IMAGE_BYTES] each.
  */
 class LoadResultImagesUseCase
     @Inject
     constructor(
-        private val resultImageStore: ResultImageStore,
+        private val resultImageReader: ResultImageReader,
     ) {
         /**
          * Loads the images in [result].
@@ -78,11 +70,11 @@ class LoadResultImagesUseCase
                     skipped += SkippedResultImage(uri = null, reason = "the result could not be read (${e.message})")
                     emptyList()
                 }
-            val candidates = (uriGrants + findImageUriField(result.formattedJson)).distinctBy { it.uri }
+            val candidates = (uriGrants + findImageUriField(result)).distinctBy { it.uri }
 
-            val loaded = mutableListOf<ResultImage>()
+            val images = mutableListOf<ToolOutputImage>()
             for (candidate in candidates) {
-                if (loaded.size == MAX_IMAGES) {
+                if (images.size == MAX_IMAGES) {
                     skipped +=
                         SkippedResultImage(
                             uri = candidate.uri.toString(),
@@ -91,20 +83,13 @@ class LoadResultImagesUseCase
                     continue
                 }
                 try {
-                    val image = resultImageStore.read(candidate.uri, candidate.mimeType, MAX_IMAGE_BYTES)
-                    val displayUri =
-                        if (resultImageStore.isAgentUri(candidate.uri)) {
-                            candidate.uri
-                        } else {
-                            resultImageStore.saveSnapshot(image)
-                        }
-                    loaded += ResultImage(displayUri = displayUri.toString(), image = image)
+                    images += resultImageReader.read(candidate.uri, candidate.mimeType, MAX_IMAGE_BYTES)
                 } catch (e: ResultImageException) {
                     Log.w(TAG, "Image ${candidate.uri} returned by ${function.id} not loaded: ${e.reason}", e)
                     skipped += SkippedResultImage(uri = candidate.uri.toString(), reason = e.reason)
                 }
             }
-            return ResultImages(loaded = loaded, skipped = skipped)
+            return ResultImages(images = images, skipped = skipped)
         }
 
         private fun findReadableUriGrants(
@@ -182,20 +167,13 @@ class LoadResultImagesUseCase
             }
         }
 
-        private fun findImageUriField(formattedJson: String): List<ImageCandidate> {
-            val json =
-                try {
-                    Json.parseToJsonElement(formattedJson) as? JsonObject
-                } catch (_: SerializationException) {
-                    // A result that isn't JSON, e.g. a plain string, has no imageUri field.
-                    null
-                } ?: return emptyList()
-            val uri = (json[IMAGE_URI_FIELD] as? JsonPrimitive)?.contentOrNull?.toUri()
-            if (uri?.scheme != ContentResolver.SCHEME_CONTENT) {
+        private fun findImageUriField(result: ExecuteAppFunctionResult.Data): List<ImageCandidate> {
+            val attachment = result.toAttachment() ?: return emptyList()
+            val uri = attachment.uri.toUri()
+            if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
                 return emptyList()
             }
-            val mimeType = (json[MIME_TYPE_FIELD] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
-            return listOf(ImageCandidate(uri = uri, mimeType = mimeType))
+            return listOf(ImageCandidate(uri = uri, mimeType = attachment.mimeType))
         }
 
         private fun AppFunctionDataTypeMetadata.resolve(components: AppFunctionComponentsMetadata): AppFunctionDataTypeMetadata =
@@ -218,7 +196,7 @@ class LoadResultImagesUseCase
                 else -> null
             }
 
-        /** An image URI found in a result, with the MIME type the result declared for it, if any. */
+        /** An image URI found in a result, with the MIME type the result gives for it, if any. */
         private data class ImageCandidate(
             val uri: Uri,
             val mimeType: String?,
@@ -232,8 +210,6 @@ class LoadResultImagesUseCase
             const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
             private const val TAG = "LoadResultImagesUseCase"
-            private const val IMAGE_URI_FIELD = "imageUri"
-            private const val MIME_TYPE_FIELD = "mimeType"
             private val URI_GRANT_QUALIFIED_NAME = AppFunctionUriGrant::class.java.name
         }
     }
@@ -241,23 +217,12 @@ class LoadResultImagesUseCase
 /**
  * The images of a function result.
  *
- * @property loaded The images that were loaded.
+ * @property images The images that were loaded.
  * @property skipped The images that couldn't be used.
  */
 data class ResultImages(
-    val loaded: List<ResultImage>,
+    val images: List<ToolOutputImage>,
     val skipped: List<SkippedResultImage>,
-)
-
-/**
- * An image loaded from a function result.
- *
- * @property displayUri A `content://` URI of the agent's storage to show the image with.
- * @property image The image itself, to send to the model.
- */
-data class ResultImage(
-    val displayUri: String,
-    val image: ToolOutputImage,
 )
 
 /**

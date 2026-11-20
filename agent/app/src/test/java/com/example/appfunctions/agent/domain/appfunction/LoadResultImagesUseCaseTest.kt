@@ -33,8 +33,7 @@ import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import androidx.core.net.toUri
-import com.example.appfunctions.agent.data.FakeResultImageStore
-import com.example.appfunctions.agent.data.FakeResultImageStore.Companion.snapshotUri
+import com.example.appfunctions.agent.data.FakeResultImageReader
 import com.example.appfunctions.agent.domain.ToolOutputImage
 import com.example.appfunctions.agent.domain.appfunction.LoadResultImagesUseCase.Companion.MAX_IMAGES
 import com.example.appfunctions.agent.domain.appfunction.LoadResultImagesUseCase.Companion.MAX_IMAGE_BYTES
@@ -51,8 +50,8 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class LoadResultImagesUseCaseTest {
-    private val resultImageStore = FakeResultImageStore()
-    private val loadResultImagesUseCase = LoadResultImagesUseCase(resultImageStore)
+    private val resultImageReader = FakeResultImageReader()
+    private val loadResultImagesUseCase = LoadResultImagesUseCase(resultImageReader)
 
     private val components = AppFunctionComponentsMetadata()
     private val uriType = objectType("android.net.Uri", "uri" to AppFunctionStringTypeMetadata(isNullable = false))
@@ -75,23 +74,20 @@ class LoadResultImagesUseCaseTest {
     @Test
     fun `invoke loads a URI grant returned as the value`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(1), photo(1))
             val function = function(returnType = uriGrantType)
 
-            val images = loadResultImagesUseCase(function, result(function, uriGrant(photoUri(1))))
+            val resultImages = loadResultImagesUseCase(function, result(function, uriGrant(photoUri(1))))
 
-            assertEquals(
-                ResultImages(loaded = listOf(ResultImage(snapshotUri(1), photo(1))), skipped = emptyList()),
-                images,
-            )
-            // A grant has no MIME type, so the store asks the provider for it.
-            assertEquals(listOf(photoUri(1) to null), resultImageStore.reads)
+            assertEquals(ResultImages(images = listOf(photo(1)), skipped = emptyList()), resultImages)
+            // A grant has no MIME type, so the reader asks the provider for it.
+            assertEquals(listOf(photoUri(1) to null), resultImageReader.reads)
         }
 
     @Test
     fun `invoke loads a URI grant in a property of the value`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(1), photo(1))
             val function = function(returnType = photoType)
             val value =
                 AppFunctionData.Builder(photoType, components)
@@ -99,34 +95,28 @@ class LoadResultImagesUseCaseTest {
                     .setAppFunctionData("image", uriGrant(photoUri(1)))
                     .build()
 
-            val images = loadResultImagesUseCase(function, result(function, value))
+            val resultImages = loadResultImagesUseCase(function, result(function, value))
 
-            assertEquals(
-                ResultImages(loaded = listOf(ResultImage(snapshotUri(1), photo(1))), skipped = emptyList()),
-                images,
-            )
+            assertEquals(ResultImages(images = listOf(photo(1)), skipped = emptyList()), resultImages)
         }
 
     @Test
     fun `invoke loads every URI grant in a list`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
-            resultImageStore.addImage(photoUri(2), photo(2))
+            resultImageReader.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(2), photo(2))
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(albumFunction, albumResult(uriGrant(photoUri(1)), uriGrant(photoUri(2))))
 
-            assertEquals(
-                listOf(ResultImage(snapshotUri(1), photo(1)), ResultImage(snapshotUri(2), photo(2))),
-                images.loaded,
-            )
-            assertEquals(emptyList<SkippedResultImage>(), images.skipped)
+            assertEquals(listOf(photo(1), photo(2)), resultImages.images)
+            assertEquals(emptyList<SkippedResultImage>(), resultImages.skipped)
         }
 
     @Test
     fun `invoke finds URI grants in types referenced from the components`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(1), photo(1))
             val referencedAlbumType =
                 objectType(
                     ALBUM,
@@ -145,16 +135,16 @@ class LoadResultImagesUseCaseTest {
                     .setAppFunctionDataList("photos", listOf(uriGrant(photoUri(1))))
                     .build()
 
-            val images = loadResultImagesUseCase(function, result(function, value))
+            val resultImages = loadResultImagesUseCase(function, result(function, value))
 
-            assertEquals(listOf(ResultImage(snapshotUri(1), photo(1))), images.loaded)
-            assertEquals(emptyList<SkippedResultImage>(), images.skipped)
+            assertEquals(listOf(photo(1)), resultImages.images)
+            assertEquals(emptyList<SkippedResultImage>(), resultImages.skipped)
         }
 
     @Test
     fun `invoke finds URI grants in the matching type of a oneOf value`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(1), photo(1))
             val videoType = objectType("com.example.photos.Video", "preview" to uriGrantType)
             val mediaType =
                 AppFunctionOneOfTypeMetadata(
@@ -168,16 +158,16 @@ class LoadResultImagesUseCaseTest {
                     .setAppFunctionData("preview", uriGrant(photoUri(1)))
                     .build()
 
-            val images = loadResultImagesUseCase(function, result(function, video))
+            val resultImages = loadResultImagesUseCase(function, result(function, video))
 
-            assertEquals(listOf(ResultImage(snapshotUri(1), photo(1))), images.loaded)
-            assertEquals(emptyList<SkippedResultImage>(), images.skipped)
+            assertEquals(listOf(photo(1)), resultImages.images)
+            assertEquals(emptyList<SkippedResultImage>(), resultImages.skipped)
         }
 
     @Test
     fun `invoke finds URI grants in every type of an allOf value`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(1), photo(1))
             val sharedType = objectType("com.example.photos.Shared", "sharedBy" to AppFunctionStringTypeMetadata(isNullable = false))
             val sharedPhotoType =
                 AppFunctionAllOfTypeMetadata(
@@ -193,19 +183,19 @@ class LoadResultImagesUseCaseTest {
                     .setAppFunctionData("image", uriGrant(photoUri(1)))
                     .build()
 
-            val images = loadResultImagesUseCase(function, result(function, value))
+            val resultImages = loadResultImagesUseCase(function, result(function, value))
 
-            assertEquals(listOf(ResultImage(snapshotUri(1), photo(1))), images.loaded)
-            assertEquals(emptyList<SkippedResultImage>(), images.skipped)
+            assertEquals(listOf(photo(1)), resultImages.images)
+            assertEquals(emptyList<SkippedResultImage>(), resultImages.skipped)
         }
 
     @Test
     fun `invoke ignores a URI grant without read permission`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
-            resultImageStore.addImage(photoUri(2), photo(2))
+            resultImageReader.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(2), photo(2))
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(
                     albumFunction,
                     albumResult(
@@ -214,15 +204,15 @@ class LoadResultImagesUseCaseTest {
                     ),
                 )
 
-            assertEquals(listOf(ResultImage(snapshotUri(1), photo(2))), images.loaded)
-            assertEquals(emptyList<SkippedResultImage>(), images.skipped)
-            assertEquals(listOf(photoUri(2) to null), resultImageStore.reads)
+            assertEquals(listOf(photo(2)), resultImages.images)
+            assertEquals(emptyList<SkippedResultImage>(), resultImages.skipped)
+            assertEquals(listOf(photoUri(2) to null), resultImageReader.reads)
         }
 
     @Test
     fun `invoke loads an image returned more than once only once`() =
         runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
+            resultImageReader.addImage(photoUri(1), photo(1))
             val editedPhotoType =
                 objectType(
                     "com.example.photos.EditedPhoto",
@@ -236,25 +226,25 @@ class LoadResultImagesUseCaseTest {
                     .setAppFunctionData("image", uriGrant(photoUri(1)))
                     .build()
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(
                     function,
                     result(function, value, formattedJson = JSONObject().put("imageUri", photoUri(1)).toString()),
                 )
 
-            assertEquals(listOf(ResultImage(snapshotUri(1), photo(1))), images.loaded)
-            assertEquals(emptyList<SkippedResultImage>(), images.skipped)
-            assertEquals(listOf(photoUri(1) to null), resultImageStore.reads)
+            assertEquals(listOf(photo(1)), resultImages.images)
+            assertEquals(emptyList<SkippedResultImage>(), resultImages.skipped)
+            assertEquals(listOf(photoUri(1) to null), resultImageReader.reads)
         }
 
     @Test
-    fun `invoke skips the images the store can't read with the reason`() =
+    fun `invoke skips the images the reader can't read with the reason`() =
         runTest {
-            resultImageStore.addFailure(photoUri(1), "it is not an image (text/plain)")
-            resultImageStore.addFailure(photoUri(2), "the agent has no read access to it")
-            resultImageStore.addImage(photoUri(3), photo(3))
+            resultImageReader.addFailure(photoUri(1), "it is not an image (text/plain)")
+            resultImageReader.addFailure(photoUri(2), "the agent has no read access to it")
+            resultImageReader.addImage(photoUri(3), photo(3))
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(
                     albumFunction,
                     albumResult(uriGrant(photoUri(1)), uriGrant(photoUri(2)), uriGrant(photoUri(3))),
@@ -262,14 +252,14 @@ class LoadResultImagesUseCaseTest {
 
             assertEquals(
                 ResultImages(
-                    loaded = listOf(ResultImage(snapshotUri(1), photo(3))),
+                    images = listOf(photo(3)),
                     skipped =
                         listOf(
                             SkippedResultImage(photoUri(1), "it is not an image (text/plain)"),
                             SkippedResultImage(photoUri(2), "the agent has no read access to it"),
                         ),
                 ),
-                images,
+                resultImages,
             )
         }
 
@@ -278,16 +268,16 @@ class LoadResultImagesUseCaseTest {
         runTest {
             val largestImage = ToolOutputImage(mimeType = "image/png", data = ByteArray(MAX_IMAGE_BYTES))
             val tooLargeImage = ToolOutputImage(mimeType = "image/png", data = ByteArray(MAX_IMAGE_BYTES + 1))
-            resultImageStore.addImage(photoUri(1), largestImage)
-            resultImageStore.addImage(photoUri(2), tooLargeImage)
+            resultImageReader.addImage(photoUri(1), largestImage)
+            resultImageReader.addImage(photoUri(2), tooLargeImage)
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(albumFunction, albumResult(uriGrant(photoUri(1)), uriGrant(photoUri(2))))
 
-            assertEquals(listOf(ResultImage(snapshotUri(1), largestImage)), images.loaded)
+            assertEquals(listOf(largestImage), resultImages.images)
             assertEquals(
                 listOf(SkippedResultImage(photoUri(2), "it is larger than $MAX_IMAGE_BYTES bytes")),
-                images.skipped,
+                resultImages.skipped,
             )
         }
 
@@ -295,12 +285,12 @@ class LoadResultImagesUseCaseTest {
     fun `invoke skips the images over MAX_IMAGES without reading them`() =
         runTest {
             val numbers = 1..MAX_IMAGES + 1
-            numbers.forEach { resultImageStore.addImage(photoUri(it), photo(it)) }
+            numbers.forEach { resultImageReader.addImage(photoUri(it), photo(it)) }
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(albumFunction, albumResult(*numbers.map { uriGrant(photoUri(it)) }.toTypedArray()))
 
-            assertEquals((1..MAX_IMAGES).map { ResultImage(snapshotUri(it), photo(it)) }, images.loaded)
+            assertEquals((1..MAX_IMAGES).map { photo(it) }, resultImages.images)
             assertEquals(
                 listOf(
                     SkippedResultImage(
@@ -308,87 +298,74 @@ class LoadResultImagesUseCaseTest {
                         "the limit of $MAX_IMAGES images per result was reached",
                     ),
                 ),
-                images.skipped,
+                resultImages.skipped,
             )
-            assertEquals((1..MAX_IMAGES).map { photoUri(it) to null }, resultImageStore.reads)
+            assertEquals((1..MAX_IMAGES).map { photoUri(it) to null }, resultImageReader.reads)
         }
 
     @Test
     fun `invoke doesn't count images that fail to load toward MAX_IMAGES`() =
         runTest {
-            resultImageStore.addFailure(photoUri(1), "it was not found")
+            resultImageReader.addFailure(photoUri(1), "it was not found")
             val loadable = 2..MAX_IMAGES + 1
-            loadable.forEach { resultImageStore.addImage(photoUri(it), photo(it)) }
+            loadable.forEach { resultImageReader.addImage(photoUri(it), photo(it)) }
 
-            val images =
+            val resultImages =
                 loadResultImagesUseCase(
                     albumFunction,
                     albumResult(*(1..MAX_IMAGES + 1).map { uriGrant(photoUri(it)) }.toTypedArray()),
                 )
 
-            assertEquals(loadable.map { photo(it) }, images.loaded.map { it.image })
-            assertEquals(listOf(SkippedResultImage(photoUri(1), "it was not found")), images.skipped)
+            assertEquals(loadable.map { photo(it) }, resultImages.images)
+            assertEquals(listOf(SkippedResultImage(photoUri(1), "it was not found")), resultImages.skipped)
         }
 
     @Test
-    fun `invoke uses an imageUri of the agent without copying it`() =
+    fun `invoke loads the image of an imageUri with its mimeType`() =
         runTest {
-            resultImageStore.addImage(GENERATED_IMAGE_URI, photo(1))
+            val generatedImage = ToolOutputImage(mimeType = "image/jpeg", data = byteArrayOf(1, 2, 3))
+            resultImageReader.addImage(GENERATED_IMAGE_URI, generatedImage)
 
-            val images =
-                loadResultImagesUseCase(stringFunction, imageUriResult(GENERATED_IMAGE_URI, mimeType = "image/png"))
+            val resultImages =
+                loadResultImagesUseCase(stringFunction, imageUriResult(GENERATED_IMAGE_URI, mimeType = "image/jpeg"))
 
-            assertEquals(
-                ResultImages(loaded = listOf(ResultImage(GENERATED_IMAGE_URI, photo(1))), skipped = emptyList()),
-                images,
-            )
-            assertEquals(listOf(GENERATED_IMAGE_URI to "image/png"), resultImageStore.reads)
-            assertEquals(emptyList<ToolOutputImage>(), resultImageStore.snapshots)
-        }
-
-    @Test
-    fun `invoke copies an imageUri of another app`() =
-        runTest {
-            resultImageStore.addImage(photoUri(1), photo(1))
-
-            val images = loadResultImagesUseCase(stringFunction, imageUriResult(photoUri(1), mimeType = "image/png"))
-
-            assertEquals(listOf(ResultImage(snapshotUri(1), photo(1))), images.loaded)
-            assertEquals(listOf(photo(1)), resultImageStore.snapshots)
+            assertEquals(ResultImages(images = listOf(generatedImage), skipped = emptyList()), resultImages)
+            assertEquals(listOf(GENERATED_IMAGE_URI to "image/jpeg"), resultImageReader.reads)
         }
 
     @Test
     fun `invoke ignores an imageUri that is not a content URI`() =
         runTest {
             for (imageUri in listOf("https://example.com/dog.png", "file:///sdcard/dog.png", "dog.png")) {
-                val images = loadResultImagesUseCase(stringFunction, imageUriResult(imageUri, mimeType = "image/png"))
+                val resultImages = loadResultImagesUseCase(stringFunction, imageUriResult(imageUri, mimeType = "image/png"))
 
-                assertEquals(ResultImages(loaded = emptyList(), skipped = emptyList()), images)
+                assertEquals(ResultImages(images = emptyList(), skipped = emptyList()), resultImages)
             }
-            assertEquals(emptyList<Pair<String, String?>>(), resultImageStore.reads)
+            assertEquals(emptyList<Pair<String, String?>>(), resultImageReader.reads)
         }
 
     @Test
-    fun `invoke lets the store find the type of an imageUri without a mimeType`() =
+    fun `invoke declares PNG for an imageUri without a mimeType`() =
         runTest {
-            resultImageStore.addImage(GENERATED_IMAGE_URI, photo(1))
+            resultImageReader.addImage(GENERATED_IMAGE_URI, photo(1))
 
             loadResultImagesUseCase(stringFunction, imageUriResult(GENERATED_IMAGE_URI, mimeType = null))
             loadResultImagesUseCase(stringFunction, imageUriResult(GENERATED_IMAGE_URI, mimeType = " "))
 
-            assertEquals(listOf(GENERATED_IMAGE_URI to null, GENERATED_IMAGE_URI to null), resultImageStore.reads)
+            // The default type of an attachment. The reader uses it only if the provider reports none.
+            assertEquals(listOf(GENERATED_IMAGE_URI to "image/png", GENERATED_IMAGE_URI to "image/png"), resultImageReader.reads)
         }
 
     @Test
     fun `invoke returns no images for a result without any`() =
         runTest {
-            val noImages = ResultImages(loaded = emptyList(), skipped = emptyList())
+            val noImages = ResultImages(images = emptyList(), skipped = emptyList())
 
             assertEquals(noImages, loadResultImagesUseCase(stringFunction, stringResult("""{"title":"Sunset"}""")))
             // Results that aren't a JSON object have no imageUri field.
             assertEquals(noImages, loadResultImagesUseCase(stringFunction, stringResult("Done")))
             assertEquals(noImages, loadResultImagesUseCase(stringFunction, stringResult("""["$GENERATED_IMAGE_URI"]""")))
-            assertEquals(emptyList<Pair<String, String?>>(), resultImageStore.reads)
+            assertEquals(emptyList<Pair<String, String?>>(), resultImageReader.reads)
         }
 
     @Test
@@ -414,9 +391,9 @@ class LoadResultImagesUseCaseTest {
             val function = function(returnType = draftType)
             val value = AppFunctionData.Builder(draftType, components).setString("title", "Sunset").build()
 
-            val images = loadResultImagesUseCase(function, result(function, value))
+            val resultImages = loadResultImagesUseCase(function, result(function, value))
 
-            assertEquals(ResultImages(loaded = emptyList(), skipped = emptyList()), images)
+            assertEquals(ResultImages(images = emptyList(), skipped = emptyList()), resultImages)
         }
 
     @Test
@@ -429,10 +406,10 @@ class LoadResultImagesUseCaseTest {
                     .setString(PROPERTY_RETURN_VALUE, "Sunset")
                     .build()
 
-            val images = loadResultImagesUseCase(function, ExecuteAppFunctionResult.Data(data, "Sunset"))
+            val resultImages = loadResultImagesUseCase(function, ExecuteAppFunctionResult.Data(data, "Sunset"))
 
-            assertEquals(emptyList<ResultImage>(), images.loaded)
-            val skipped = images.skipped.single()
+            assertEquals(emptyList<ToolOutputImage>(), resultImages.images)
+            val skipped = resultImages.skipped.single()
             assertNull(skipped.uri)
             assertTrue(skipped.reason, skipped.reason.startsWith("the result could not be read"))
         }
@@ -522,6 +499,6 @@ class LoadResultImagesUseCaseTest {
         const val PHOTOS_PKG = "com.example.photos"
         const val URI_GRANT = "androidx.appfunctions.AppFunctionUriGrant"
         const val ALBUM = "com.example.photos.Album"
-        const val GENERATED_IMAGE_URI = "content://${FakeResultImageStore.AGENT_AUTHORITY}/cache/generated_1.png"
+        const val GENERATED_IMAGE_URI = "content://com.example.appfunctions.agent.fileprovider/cache/generated_1.png"
     }
 }

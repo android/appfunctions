@@ -15,15 +15,23 @@
  */
 package com.example.appfunctions.agent.domain
 
+import android.content.Intent
 import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.AppFunctionName
+import androidx.appfunctions.AppFunctionUriGrant
+import androidx.appfunctions.ExecuteAppFunctionResponse.Success.Companion.PROPERTY_RETURN_VALUE
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
+import androidx.appfunctions.metadata.AppFunctionIntTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
+import androidx.appfunctions.metadata.AppFunctionResponseMetadata
+import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import androidx.core.net.toUri
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_FUNCTION_DECLARATIONS
 import com.example.appfunctions.agent.data.AgentInternalTools.Companion.EXPAND_TOOL_DESCRIPTION
-import com.example.appfunctions.agent.data.FakeResultImageStore
+import com.example.appfunctions.agent.data.FakeResultImageReader
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
 import com.example.appfunctions.agent.data.ServiceTier
@@ -79,7 +87,7 @@ class AgentOrchestratorTest {
     private val resolveRemoteFileToLocalUriUseCase: ResolveRemoteFileToLocalUriUseCase = mockk()
     private val convertInputToAppFunctionDataUseCase: ConvertInputToAppFunctionDataUseCase = mockk()
     private val executeAppFunctionUseCase: ExecuteAppFunctionUseCase = mockk()
-    private val resultImageStore = FakeResultImageStore()
+    private val resultImageReader = FakeResultImageReader()
     private val sendMessageUseCase: SendMessageUseCase = mockk(relaxed = true)
     private val savePendingIntentUseCase: SavePendingIntentUseCase = mockk(relaxed = true)
 
@@ -103,7 +111,7 @@ class AgentOrchestratorTest {
                 resolveRemoteFileToLocalUriUseCase = resolveRemoteFileToLocalUriUseCase,
                 convertInputToAppFunctionDataUseCase = convertInputToAppFunctionDataUseCase,
                 executeAppFunctionUseCase = executeAppFunctionUseCase,
-                loadResultImagesUseCase = LoadResultImagesUseCase(resultImageStore),
+                loadResultImagesUseCase = LoadResultImagesUseCase(resultImageReader),
                 savePendingIntentUseCase = savePendingIntentUseCase,
             )
     }
@@ -411,7 +419,7 @@ class AgentOrchestratorTest {
         }
 
     @Test
-    fun `observeAndProcessMessages extracts attachments when tool returns imageUri and mimeType`() {
+    fun `observeAndProcessMessages sends the image of an imageUri to the model and attaches the imageUri`() {
         runTest {
             val threadId = "thread_1"
             val message = createUserMessage(threadId, "generate image of a dog")
@@ -423,7 +431,8 @@ class AgentOrchestratorTest {
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
             val testUri =
                 "content://com.example.appfunctions.agent.fileprovider/cache/test.jpg"
-            resultImageStore.addImage(testUri, ToolOutputImage(mimeType = "image/jpeg", data = byteArrayOf(1, 2, 3)))
+            val generatedImage = ToolOutputImage(mimeType = "image/jpeg", data = byteArrayOf(1, 2, 3))
+            resultImageReader.addImage(testUri, generatedImage)
 
             val toolCall =
                 LlmResponsePart.ToolCall(
@@ -432,17 +441,37 @@ class AgentOrchestratorTest {
                     arguments = mapOf("prompt" to "dog"),
                     callId = "call_1",
                 )
+            val toolResultJson =
+                """{"imageUri":"content://com.example.appfunctions.agent.fileprovider/cache/test.jpg",""" +
+                    """"mimeType":"image/jpeg","prompt":"dog"}"""
             setupTwoStepToolCallAndExecution(
                 llmProvider = llmProvider,
                 toolCall = toolCall,
                 secondResponseText = "Here is your image!",
-                toolResultJson =
-                    """{"imageUri":"content://com.example.appfunctions.agent.fileprovider/cache/test.jpg",""" +
-                        """"mimeType":"image/jpeg","prompt":"dog"}""",
+                toolResultJson = toolResultJson,
             )
 
             agentOrchestrator.observeAndProcessMessages(threadId)
 
+            coVerify {
+                llmProvider.generateResponse(
+                    previousInteractionId = "interaction_1",
+                    input =
+                        LlmInput.ToolResponse(
+                            listOf(
+                                ToolOutput(
+                                    functionId = "generateImage",
+                                    callId = "call_1",
+                                    result = toolResultJson,
+                                    images = listOf(generatedImage),
+                                ),
+                            ),
+                        ),
+                    tools = any(),
+                    apiKey = any(),
+                    modelName = any(),
+                )
+            }
             coVerify {
                 sendMessageUseCase(
                     threadId = threadId,
@@ -458,22 +487,24 @@ class AgentOrchestratorTest {
     }
 
     @Test
-    fun `observeAndProcessMessages sends the images of a tool result to the model and attaches their copies`() =
+    fun `observeAndProcessMessages sends the images of URI grants to the model without attaching them`() =
         runTest {
             val threadId = "thread_1"
             val message = createUserMessage(threadId, "show my last photo")
             val thread = createThread(threadId)
             val llmProvider = mockk<LlmProvider>()
-            mockAppFunctions(listOf(createMockTool(PHOTOS_PKG, GET_LAST_PHOTO)))
+            val getLastPhotoTool = createUriGrantTool(PHOTOS_PKG, GET_LAST_PHOTO)
+            mockAppFunctions(listOf(getLastPhotoTool))
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
             val photo = ToolOutputImage(mimeType = "image/png", data = byteArrayOf(1, 2, 3))
-            resultImageStore.addImage(PHOTO_URI, photo)
-            val toolResultJson = """{"imageUri":"$PHOTO_URI"}"""
+            resultImageReader.addImage(PHOTO_URI, photo)
+            val toolResultJson = """{"uri":{"uri":"$PHOTO_URI"},"modeFlags":1}"""
             setupTwoStepToolCallAndExecution(
                 llmProvider = llmProvider,
                 toolCall = LlmResponsePart.ToolCall(PHOTOS_PKG, GET_LAST_PHOTO, emptyMap(), "call_1"),
                 secondResponseText = "Here is your last photo.",
                 toolResultJson = toolResultJson,
+                toolResultData = uriGrantData(getLastPhotoTool, PHOTO_URI),
             )
 
             agentOrchestrator.observeAndProcessMessages(threadId)
@@ -497,7 +528,7 @@ class AgentOrchestratorTest {
                     modelName = any(),
                 )
             }
-            // The chat shows the copy of the agent, which outlives the grant of the photos app.
+            // The chat shows only the imageUri of a result, the convention of the agent's generateImage tool.
             coVerify {
                 sendMessageUseCase(
                     threadId = threadId,
@@ -506,8 +537,94 @@ class AgentOrchestratorTest {
                     processingStatus = MessageProcessingStatus.PROCESSED,
                     pendingIntentId = null,
                     targetPackageName = null,
-                    attachments =
-                        listOf(MessageAttachment(uri = FakeResultImageStore.snapshotUri(1), mimeType = "image/png")),
+                    attachments = emptyList(),
+                )
+            }
+        }
+
+    @Test
+    fun `observeAndProcessMessages attaches only the images of the latest turn that returned any`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "generate a dog, then give it a hat")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            mockAppFunctions(listOf(generateImageTool))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+            resultImageReader.addImage(generatedImageUri(1), ToolOutputImage(mimeType = "image/png", data = byteArrayOf(1)))
+            resultImageReader.addImage(generatedImageUri(2), ToolOutputImage(mimeType = "image/png", data = byteArrayOf(2)))
+            every {
+                convertInputToAppFunctionDataUseCase(any(), any(), any())
+            } returns Result.success(AppFunctionData.EMPTY)
+            coEvery {
+                executeAppFunctionUseCase(any(), any(), any())
+            } returnsMany listOf(generatedImageResult(generatedImageUri(1)), generatedImageResult(generatedImageUri(2)))
+            mockLlmResponses(
+                llmProvider,
+                mutableListOf(),
+                mutableListOf(),
+                mutableListOf(),
+                success("i1", generateImageCall("c1")),
+                success("i2", generateImageCall("c2")),
+                LlmResponse.Success("i3", listOf(LlmResponsePart.Text("Here is your dog with a hat."))),
+            )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Here is your dog with a hat.",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = null,
+                    targetPackageName = null,
+                    attachments = listOf(MessageAttachment(uri = generatedImageUri(2), mimeType = "image/png")),
+                )
+            }
+        }
+
+    @Test
+    fun `observeAndProcessMessages keeps the images of an earlier turn when a later turn returns none`() =
+        runTest {
+            val threadId = "thread_1"
+            val message = createUserMessage(threadId, "generate a dog and make it my wallpaper")
+            val thread = createThread(threadId)
+            val llmProvider = mockk<LlmProvider>()
+            val setWallpaperTool = createMockTool(WALLPAPER_PKG, SET_WALLPAPER)
+            mockAppFunctions(listOf(generateImageTool, setWallpaperTool))
+            setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
+            resultImageReader.addImage(generatedImageUri(1), ToolOutputImage(mimeType = "image/png", data = byteArrayOf(1)))
+            every {
+                convertInputToAppFunctionDataUseCase(any(), any(), any())
+            } returns Result.success(AppFunctionData.EMPTY)
+            coEvery {
+                executeAppFunctionUseCase(function = generateImageTool, parameters = any(), threadId = any())
+            } returns generatedImageResult(generatedImageUri(1))
+            coEvery {
+                executeAppFunctionUseCase(function = setWallpaperTool, parameters = any(), threadId = any())
+            } returns ExecuteAppFunctionResult.Data(AppFunctionData.EMPTY, """{"ok":true}""")
+            mockLlmResponses(
+                llmProvider,
+                mutableListOf(),
+                mutableListOf(),
+                mutableListOf(),
+                success("i1", generateImageCall("c1")),
+                success("i2", LlmResponsePart.ToolCall(WALLPAPER_PKG, SET_WALLPAPER, emptyMap(), "c2")),
+                LlmResponse.Success("i3", listOf(LlmResponsePart.Text("Your dog is now your wallpaper."))),
+            )
+
+            agentOrchestrator.observeAndProcessMessages(threadId)
+
+            coVerify {
+                sendMessageUseCase(
+                    threadId = threadId,
+                    role = MessageRole.ASSISTANT,
+                    textContent = "Your dog is now your wallpaper.",
+                    processingStatus = MessageProcessingStatus.PROCESSED,
+                    pendingIntentId = null,
+                    targetPackageName = null,
+                    attachments = listOf(MessageAttachment(uri = generatedImageUri(1), mimeType = "image/png")),
                 )
             }
         }
@@ -521,7 +638,7 @@ class AgentOrchestratorTest {
             val llmProvider = mockk<LlmProvider>()
             mockAppFunctions(listOf(createMockTool(PHOTOS_PKG, GET_LAST_PHOTO)))
             setupDefaultMocks(threadId, message, thread, llmProvider = llmProvider)
-            resultImageStore.addFailure(PHOTO_URI, "it is not an image (text/plain)")
+            resultImageReader.addFailure(PHOTO_URI, "it is not an image (text/plain)")
             val toolResultJson = """{"imageUri":"$PHOTO_URI"}"""
             setupTwoStepToolCallAndExecution(
                 llmProvider = llmProvider,
@@ -552,6 +669,7 @@ class AgentOrchestratorTest {
                     modelName = any(),
                 )
             }
+            // The attachment comes from the imageUri of the result, whether or not the model gets the image.
             coVerify {
                 sendMessageUseCase(
                     threadId = threadId,
@@ -560,7 +678,7 @@ class AgentOrchestratorTest {
                     processingStatus = MessageProcessingStatus.PROCESSED,
                     pendingIntentId = null,
                     targetPackageName = null,
-                    attachments = emptyList(),
+                    attachments = listOf(MessageAttachment(uri = PHOTO_URI, mimeType = "image/png")),
                 )
             }
         }
@@ -871,6 +989,26 @@ class AgentOrchestratorTest {
     private val expandFunctionDeclarationsTool by lazy {
         createMockTool(AgentInternalTools.INTERNAL_TOOL_PACKAGE, EXPAND_FUNCTION_DECLARATIONS)
     }
+    private val generateImageTool by lazy { createMockTool(AgentInternalTools.INTERNAL_TOOL_PACKAGE, GENERATE_IMAGE) }
+
+    /** The type of an [AppFunctionUriGrant] in the metadata of a function. */
+    private val uriGrantType =
+        AppFunctionObjectTypeMetadata(
+            properties =
+                mapOf(
+                    "uri" to
+                        AppFunctionObjectTypeMetadata(
+                            properties = mapOf("uri" to AppFunctionStringTypeMetadata(isNullable = false)),
+                            required = listOf("uri"),
+                            qualifiedName = "android.net.Uri",
+                            isNullable = false,
+                        ),
+                    "modeFlags" to AppFunctionIntTypeMetadata(isNullable = false),
+                ),
+            required = listOf("uri", "modeFlags"),
+            qualifiedName = AppFunctionUriGrant::class.java.name,
+            isNullable = false,
+        )
 
     /** Progressive requests get the discovery tools; others get the app functions. */
     private fun mockProgressiveTools() {
@@ -947,6 +1085,23 @@ class AgentOrchestratorTest {
             callId = "c2",
         )
 
+    private fun generateImageCall(callId: String) =
+        LlmResponsePart.ToolCall(
+            packageName = AgentInternalTools.INTERNAL_TOOL_PACKAGE,
+            functionId = GENERATE_IMAGE,
+            arguments = mapOf("prompt" to "a dog"),
+            callId = callId,
+        )
+
+    /** The result of the agent's generateImage tool for the image at [imageUri]. */
+    private fun generatedImageResult(imageUri: String) =
+        ExecuteAppFunctionResult.Data(
+            data = AppFunctionData.EMPTY,
+            formattedJson = """{"imageUri":"$imageUri","mimeType":"image/png","prompt":"a dog"}""",
+        )
+
+    private fun generatedImageUri(number: Int) = "content://com.example.appfunctions.agent.fileprovider/cache/generated_$number.png"
+
     private fun createUserMessage(
         threadId: String,
         textContent: String,
@@ -993,6 +1148,33 @@ class AgentOrchestratorTest {
         return tool
     }
 
+    /** A function of [packageName] that returns an [AppFunctionUriGrant]. */
+    private fun createUriGrantTool(
+        packageName: String,
+        id: String,
+    ): AppFunctionMetadata {
+        val tool = createMockTool(packageName, id)
+        every { tool.response } returns AppFunctionResponseMetadata(valueType = uriGrantType, description = "")
+        return tool
+    }
+
+    /** The data [tool] returns for a grant to read [uri]. */
+    private fun uriGrantData(
+        tool: AppFunctionMetadata,
+        uri: String,
+    ): AppFunctionData {
+        val uriGrant =
+            AppFunctionData.serialize(
+                uriGrantType,
+                tool.components,
+                AppFunctionUriGrant(uri.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                AppFunctionUriGrant::class.java,
+            )
+        return AppFunctionData.Builder(tool.response, tool.components)
+            .setAppFunctionData(PROPERTY_RETURN_VALUE, uriGrant)
+            .build()
+    }
+
     private fun mockAppFunctions(tools: List<AppFunctionMetadata>) {
         every { getAppFunctionsUseCase(any()) } returns
             flowOf(tools.groupBy(AppFunctionMetadata::packageMetadata))
@@ -1024,6 +1206,7 @@ class AgentOrchestratorTest {
         toolCall: LlmResponsePart.ToolCall,
         secondResponseText: String,
         toolResultJson: String,
+        toolResultData: AppFunctionData = AppFunctionData.EMPTY,
     ) {
         val firstResponse =
             LlmResponse.Success(
@@ -1064,7 +1247,7 @@ class AgentOrchestratorTest {
             executeAppFunctionUseCase(any(), any(), any())
         } returns
             ExecuteAppFunctionResult.Data(
-                data = AppFunctionData.EMPTY,
+                data = toolResultData,
                 formattedJson = toolResultJson,
             )
     }
@@ -1075,5 +1258,8 @@ class AgentOrchestratorTest {
         const val PHOTOS_PKG = "com.example.photos"
         const val GET_LAST_PHOTO = "getLastPhoto"
         const val PHOTO_URI = "content://com.example.photos.provider/photos/1"
+        const val GENERATE_IMAGE = "generateImage"
+        const val WALLPAPER_PKG = "com.example.wallpaper"
+        const val SET_WALLPAPER = "setWallpaper"
     }
 }

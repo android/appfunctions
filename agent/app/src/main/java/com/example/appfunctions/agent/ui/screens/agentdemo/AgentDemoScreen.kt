@@ -845,7 +845,7 @@ fun MessageBubble(
                     Spacer(modifier = Modifier.height(6.dp))
                     AsyncImage(
                         model = attachment.uri,
-                        contentDescription = stringResource(R.string.agent_demo_image_attachment),
+                        contentDescription = "Generated Image",
                         modifier =
                             Modifier
                                 .fillMaxWidth(0.85f)
