@@ -37,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +45,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -96,6 +98,7 @@ class AndroidLiveAudioSession
         private var playbackJob: Job? = null
 
         private val audioQueue = ConcurrentLinkedQueue<QueuedAudioChunk>()
+        private val playbackWakeup = Channel<Unit>(Channel.CONFLATED)
 
         private val focusChangeListener =
             AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -246,7 +249,9 @@ class AndroidLiveAudioSession
                                         }
                                     }
                                 } else {
-                                    delay(PLAYBACK_POLL_DELAY_MS)
+                                    withTimeoutOrNull(PLAYBACK_POLL_DELAY_MS) {
+                                        playbackWakeup.receive()
+                                    }
                                 }
                             }
                         }
@@ -310,12 +315,14 @@ class AndroidLiveAudioSession
             if (isReleased.get() || !hasAudioFocus.get()) return
             val effectiveRate = if (sampleRateHz > 0) sampleRateHz else config.outputSampleRateHz
             audioQueue.add(QueuedAudioChunk(pcmBytes = pcmBytes, sampleRateHz = effectiveRate))
+            playbackWakeup.trySend(Unit)
         }
 
         /** Clears any queued model audio and flushes the playback track when interrupted. */
         override fun stopAudio() {
             audioQueue.clear()
             flushRequested.set(true)
+            playbackWakeup.trySend(Unit)
         }
 
         /**
@@ -375,14 +382,17 @@ class AndroidLiveAudioSession
             attributes: AudioAttributes,
             sampleRateHz: Int,
         ): AudioTrack {
+            // Allocate at least ~500ms of 16-bit mono PCM capacity (sampleRateHz bytes) so
+            // AudioFlinger can buffer bursts of incoming WebSocket chunks without underrunning
+            // across network jitter.
             val minTrackBuf =
                 (
                     AudioTrack.getMinBufferSize(
                         sampleRateHz,
                         AudioFormat.CHANNEL_OUT_MONO,
                         AudioFormat.ENCODING_PCM_16BIT,
-                    ) * 2
-                ).coerceAtLeast(DEFAULT_READ_BUFFER_SIZE)
+                    ) * 4
+                ).coerceAtLeast(sampleRateHz.coerceAtLeast(DEFAULT_READ_BUFFER_SIZE))
             val track = audioTrackFactory(attributes, sampleRateHz, minTrackBuf)
             track.play()
             return track

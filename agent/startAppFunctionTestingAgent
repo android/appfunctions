@@ -96,6 +96,12 @@ if [[ $SDK_VERSION -ge 37 ]]; then
     echo "Flush allowlist changes"
     $ADB shell cmd app_function flush-allowlist-changes
   fi
+  # Allow audio focus AppOps for com.android.shell since ShellIdentityInstrumentation
+  # redirects permissionless AppOps checks to the shell UID on Android 17+.
+  $ADB shell cmd appops set --uid com.android.shell TAKE_AUDIO_FOCUS allow
+  $ADB shell cmd appops set com.android.shell TAKE_AUDIO_FOCUS allow
+  $ADB shell cmd appops set com.android.shell CONTROL_AUDIO allow
+  $ADB shell cmd appops set com.android.shell CONTROL_AUDIO_PARTIAL allow
 else
   echo "Skipping allowlist for SDK version $SDK_VERSION..."
 fi

@@ -31,6 +31,7 @@ import com.example.appfunctions.agent.domain.toArgumentsMap
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.websocket.CloseReason
+import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.close
@@ -45,6 +46,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -213,12 +215,18 @@ class GeminiLiveProviderImpl
         }
 
         private suspend fun WebSocketSession.receiveNextFrame(): FrameReadResult {
-            while (isActive) {
+            while (currentCoroutineContext().isActive) {
                 val frame =
                     try {
                         incoming.receive()
                     } catch (_: ClosedReceiveChannelException) {
-                        return FrameReadResult.NormalClose
+                        val reason =
+                            (this as? DefaultWebSocketSession)?.let { session ->
+                                withTimeoutOrNull(CLOSE_REASON_TIMEOUT_MS) {
+                                    session.closeReason.await()
+                                }
+                            }
+                        return reason.toCloseResult()
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -231,114 +239,107 @@ class GeminiLiveProviderImpl
                 when (frame) {
                     is Frame.Text -> return FrameReadResult.JsonText(frame.readText())
                     is Frame.Binary -> return FrameReadResult.JsonText(frame.readBytes().decodeToString())
-                    is Frame.Close -> {
-                        val reason = frame.readReason()
-                        return if (reason != null && reason.code != CloseReason.Codes.NORMAL.code) {
-                            Log.w(
-                                TAG,
-                                "Gemini Live WebSocket closed by server: code=${reason.code}, message=${reason.message}",
-                            )
-                            FrameReadResult.ErrorClose(
-                                message =
-                                    "WebSocket closed by server (code=${reason.code}): ${reason.message}",
-                            )
-                        } else {
-                            FrameReadResult.NormalClose
-                        }
-                    }
+                    is Frame.Close -> return frame.readReason().toCloseResult()
                     else -> continue
                 }
             }
             return FrameReadResult.NormalClose
         }
 
+        private fun CloseReason?.toCloseResult(): FrameReadResult =
+            if (this != null && code != CloseReason.Codes.NORMAL.code) {
+                Log.w(
+                    TAG,
+                    "Gemini Live WebSocket closed by server: code=$code, message=$message",
+                )
+                FrameReadResult.ErrorClose(
+                    message = "WebSocket closed by server (code=$code): $message",
+                )
+            } else {
+                FrameReadResult.NormalClose
+            }
+
         private fun parseServerMessage(
             serverJson: JsonObject,
             tools: List<AppFunctionMetadata>,
         ): List<LiveLlmEvent> {
-            return when {
-                KEY_SERVER_CONTENT in serverJson -> {
-                    val serverContent = serverJson[KEY_SERVER_CONTENT]?.jsonObject
-                    if (serverContent != null) {
-                        parseServerContent(serverContent)
-                    } else {
-                        listOf(
-                            LiveLlmEvent.Error(
-                                message =
-                                    "Invalid '$KEY_SERVER_CONTENT' payload in server message: $serverJson",
-                                isFatal = false,
-                            ),
-                        )
-                    }
+            val events = mutableListOf<LiveLlmEvent>()
+            if (KEY_SERVER_CONTENT in serverJson) {
+                val serverContent = serverJson[KEY_SERVER_CONTENT]?.jsonObject
+                if (serverContent != null) {
+                    events.addAll(parseServerContent(serverContent))
+                } else {
+                    events.add(
+                        LiveLlmEvent.Error(
+                            message =
+                                "Invalid '$KEY_SERVER_CONTENT' payload in server message: $serverJson",
+                            isFatal = false,
+                        ),
+                    )
                 }
-                KEY_TOOL_CALL in serverJson -> {
-                    val toolCallObj = serverJson[KEY_TOOL_CALL]?.jsonObject
-                    if (toolCallObj != null) {
-                        parseToolCall(toolCallObj, tools)
-                    } else {
-                        listOf(
-                            LiveLlmEvent.Error(
-                                message =
-                                    "Invalid '$KEY_TOOL_CALL' payload in server message: $serverJson",
-                                isFatal = false,
-                            ),
-                        )
-                    }
-                }
-                else -> emptyList()
             }
+            if (KEY_TOOL_CALL in serverJson) {
+                val toolCallObj = serverJson[KEY_TOOL_CALL]?.jsonObject
+                if (toolCallObj != null) {
+                    events.addAll(parseToolCall(toolCallObj, tools))
+                } else {
+                    events.add(
+                        LiveLlmEvent.Error(
+                            message =
+                                "Invalid '$KEY_TOOL_CALL' payload in server message: $serverJson",
+                            isFatal = false,
+                        ),
+                    )
+                }
+            }
+            return events
         }
 
         private fun parseServerContent(serverContent: JsonObject): List<LiveLlmEvent> {
-            return when {
-                serverContent[KEY_INTERRUPTED]?.jsonPrimitive?.booleanOrNull == true -> {
-                    listOf(LiveLlmEvent.Interrupted)
+            val events = mutableListOf<LiveLlmEvent>()
+            if (KEY_INPUT_TRANSCRIPTION in serverContent) {
+                val text =
+                    serverContent[KEY_INPUT_TRANSCRIPTION]
+                        ?.jsonObject
+                        ?.get(KEY_TEXT)
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                if (!text.isNullOrEmpty()) {
+                    events.add(LiveLlmEvent.InputTranscription(text))
                 }
-                serverContent[KEY_TURN_COMPLETE]?.jsonPrimitive?.booleanOrNull == true -> {
-                    listOf(LiveLlmEvent.TurnComplete)
-                }
-                KEY_INPUT_TRANSCRIPTION in serverContent -> {
-                    val text =
-                        serverContent[KEY_INPUT_TRANSCRIPTION]
-                            ?.jsonObject
-                            ?.get(KEY_TEXT)
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                    if (!text.isNullOrEmpty()) {
-                        listOf(LiveLlmEvent.InputTranscription(text))
-                    } else {
-                        emptyList()
-                    }
-                }
-                KEY_OUTPUT_TRANSCRIPTION in serverContent -> {
-                    val text =
-                        serverContent[KEY_OUTPUT_TRANSCRIPTION]
-                            ?.jsonObject
-                            ?.get(KEY_TEXT)
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                    if (!text.isNullOrEmpty()) {
-                        listOf(LiveLlmEvent.OutputTranscription(text))
-                    } else {
-                        emptyList()
-                    }
-                }
-                KEY_MODEL_TURN in serverContent -> {
-                    val modelTurn = serverContent[KEY_MODEL_TURN]?.jsonObject
-                    if (modelTurn != null) {
-                        parseModelTurn(modelTurn)
-                    } else {
-                        listOf(
-                            LiveLlmEvent.Error(
-                                message =
-                                    "Invalid '$KEY_MODEL_TURN' payload in serverContent: $serverContent",
-                                isFatal = false,
-                            ),
-                        )
-                    }
-                }
-                else -> emptyList()
             }
+            if (KEY_OUTPUT_TRANSCRIPTION in serverContent) {
+                val text =
+                    serverContent[KEY_OUTPUT_TRANSCRIPTION]
+                        ?.jsonObject
+                        ?.get(KEY_TEXT)
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                if (!text.isNullOrEmpty()) {
+                    events.add(LiveLlmEvent.OutputTranscription(text))
+                }
+            }
+            if (KEY_MODEL_TURN in serverContent) {
+                val modelTurn = serverContent[KEY_MODEL_TURN]?.jsonObject
+                if (modelTurn != null) {
+                    events.addAll(parseModelTurn(modelTurn))
+                } else {
+                    events.add(
+                        LiveLlmEvent.Error(
+                            message =
+                                "Invalid '$KEY_MODEL_TURN' payload in serverContent: $serverContent",
+                            isFatal = false,
+                        ),
+                    )
+                }
+            }
+            if (serverContent[KEY_INTERRUPTED]?.jsonPrimitive?.booleanOrNull == true) {
+                events.add(LiveLlmEvent.Interrupted)
+            }
+            if (serverContent[KEY_TURN_COMPLETE]?.jsonPrimitive?.booleanOrNull == true) {
+                events.add(LiveLlmEvent.TurnComplete)
+            }
+            return events
         }
 
         private fun parseModelTurn(modelTurn: JsonObject): List<LiveLlmEvent> {
@@ -658,6 +659,7 @@ class GeminiLiveProviderImpl
             private const val GEMINI_LIVE_WS_URL =
                 "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
             private const val CLOSE_REASON_CLIENT_ENDED = "Session ended by client"
+            private const val CLOSE_REASON_TIMEOUT_MS = 200L
 
             private const val KEY_SETUP = "setup"
             private const val KEY_SETUP_COMPLETE = "setupComplete"
