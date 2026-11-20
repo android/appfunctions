@@ -23,6 +23,7 @@ import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
 import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
+import com.example.appfunctions.agent.domain.ToolOutput
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -37,6 +38,7 @@ import io.mockk.mockkStatic
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -218,6 +220,119 @@ class GeminiProviderImplTest {
                 listOf(LlmResponsePart.UnknownToolCall(name = "unknown_function", callId = "call_456")),
                 (response as LlmResponse.Success).parts,
             )
+        }
+
+    @Test
+    fun generateResponse_serviceFunctionIds_roundTripsDeclaredToolNames() =
+        runBlocking {
+            val notesService = "com.example.app.feature.notes.ExampleNotesAppFunctionService"
+            val tools =
+                listOf("addNote", "updateNoteSettings", "getNoteFieldDescriptions").map { function ->
+                    AppFunctionMetadata(
+                        id = "$notesService#$function",
+                        packageName = "com.example.app",
+                        isEnabled = true,
+                        schema = null,
+                        parameters = emptyList(),
+                        response =
+                            AppFunctionResponseMetadata(
+                                valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                                description = "",
+                            ),
+                        components = AppFunctionComponentsMetadata(emptyMap()),
+                        description = "",
+                        deprecation = null,
+                    )
+                }
+            val responseJson =
+                buildJsonObject {
+                    put("id", "interaction_123")
+                    put(
+                        "steps",
+                        kotlinx.serialization.json.buildJsonArray {
+                            add(
+                                buildJsonObject {
+                                    put("type", "function_call")
+                                    put("name", "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions")
+                                    put("id", "call_456")
+                                },
+                            )
+                        },
+                    )
+                }
+                    .toString()
+            val capturedRequestBodies = mutableListOf<String>()
+            val httpClient =
+                createCapturingHttpClient(HttpStatusCode.OK, responseJson, capturedRequestBodies)
+            val provider = GeminiProviderImpl(httpClient, toolConverter)
+
+            val response =
+                provider.generateResponse(
+                    previousInteractionId = null,
+                    input = LlmInput.UserMessage("Which fields does a note have?"),
+                    tools = tools,
+                    apiKey = "test_key",
+                    modelName = "test_model",
+                )
+            provider.generateResponse(
+                previousInteractionId = "interaction_123",
+                input =
+                    LlmInput.ToolResponse(
+                        listOf(
+                            ToolOutput(
+                                functionId = "$notesService#getNoteFieldDescriptions",
+                                callId = "call_456",
+                                result = """{"fields":["title","body"]}""",
+                            ),
+                        ),
+                    ),
+                tools = tools,
+                apiKey = "test_key",
+                modelName = "test_model",
+            )
+
+            val declaredNames =
+                Json
+                    .parseToJsonElement(capturedRequestBodies[0])
+                    .jsonObject["tools"]!!
+                    .jsonArray
+                    .map { it.jsonObject["name"]!!.jsonPrimitive.content }
+            assertEquals(
+                listOf(
+                    "com_example_app_feature_notes_ExampleNotesAppFunctionService_addNote",
+                    "com_example_app_feature_notes_ExampleNotesAppFunctionService_updateNoteSettings",
+                    "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                ),
+                declaredNames,
+            )
+            assertEquals(
+                LlmResponse.Success(
+                    interactionId = "interaction_123",
+                    parts =
+                        listOf(
+                            LlmResponsePart.ToolCall(
+                                packageName = "com.example.app",
+                                functionId = "$notesService#getNoteFieldDescriptions",
+                                arguments = emptyMap(),
+                                callId = "call_456",
+                            ),
+                        ),
+                ),
+                response,
+            )
+            val functionResult =
+                Json
+                    .parseToJsonElement(capturedRequestBodies[1])
+                    .jsonObject["input"]!!
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("function_result", functionResult["type"]!!.jsonPrimitive.content)
+            assertEquals(
+                "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                functionResult["name"]!!.jsonPrimitive.content,
+            )
+            assertEquals("call_456", functionResult["call_id"]!!.jsonPrimitive.content)
         }
 
     @Test
