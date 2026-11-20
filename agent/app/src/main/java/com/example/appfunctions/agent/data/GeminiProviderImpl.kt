@@ -21,6 +21,7 @@ import com.example.appfunctions.agent.domain.LlmInput
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
+import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.appfunction.findToolByName
 import com.example.appfunctions.agent.domain.appfunction.resolveToolName
 import com.example.appfunctions.agent.domain.appfunction.selectDistinctTools
@@ -36,6 +37,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -45,6 +48,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.time.LocalDate
+import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -162,7 +166,7 @@ class GeminiProviderImpl
                                                 if (output.callId.isNotEmpty()) {
                                                     put("call_id", output.callId)
                                                 }
-                                                put("result", output.result)
+                                                put("result", functionResult(output, modelName))
                                             },
                                         )
                                     }
@@ -183,7 +187,7 @@ class GeminiProviderImpl
                     }
                 }
 
-            Log.d(TAG, "Gemini Request Body: $requestBody")
+            Log.d(TAG, "Gemini Request Body: ${requestBody.redactImageData()}")
 
             val response: HttpResponse =
                 try {
@@ -293,6 +297,70 @@ class GeminiProviderImpl
             )
         }
 
+        /**
+         * Builds the result of a `function_result`: the result text, followed by the images the
+         * function returned. An image the model doesn't take in function results is replaced by a
+         * note, because it would make the API reject the whole request: Gemini takes images in
+         * function results only from Gemini 3 on, and only as PNG, JPEG or WebP.
+         */
+        private fun functionResult(
+            output: ToolOutput,
+            modelName: String,
+        ): JsonElement {
+            if (output.images.isEmpty()) {
+                return JsonPrimitive(output.result)
+            }
+            if (PRE_GEMINI_3_MODEL_NAME.containsMatchIn(modelName)) {
+                // Older models get the plain string result that every model takes, with a note per image.
+                val notes =
+                    output.images.joinToString(separator = "") { image ->
+                        "\nAn image of type ${image.mimeType} was not attached because the model doesn't support images " +
+                            "in function results."
+                    }
+                return JsonPrimitive(output.result + notes)
+            }
+            return buildJsonArray {
+                add(textContent(output.result))
+                for (image in output.images) {
+                    if (image.mimeType in SUPPORTED_IMAGE_MIME_TYPES) {
+                        add(
+                            buildJsonObject {
+                                put(KEY_TYPE, VALUE_IMAGE)
+                                put(KEY_MIME_TYPE, image.mimeType)
+                                put(KEY_DATA, Base64.getEncoder().encodeToString(image.data))
+                            },
+                        )
+                    } else {
+                        add(textContent("An image of type ${image.mimeType} was not attached because the model doesn't support it."))
+                    }
+                }
+            }
+        }
+
+        private fun textContent(text: String): JsonObject =
+            buildJsonObject {
+                put(KEY_TYPE, VALUE_TEXT)
+                put(KEY_TEXT, text)
+            }
+
+        /**
+         * Returns a copy of this JSON to log, with the base64 data of each image replaced by its
+         * length, so that logging a request doesn't copy megabytes of image data.
+         */
+        private fun JsonElement.redactImageData(): JsonElement =
+            when (this) {
+                is JsonArray -> JsonArray(map { it.redactImageData() })
+                is JsonObject -> {
+                    val data = this[KEY_DATA]
+                    if (this[KEY_TYPE] == JsonPrimitive(VALUE_IMAGE) && data is JsonPrimitive) {
+                        JsonObject(this + (KEY_DATA to JsonPrimitive("<${data.content.length} base64 characters>")))
+                    } else {
+                        JsonObject(mapValues { (_, value) -> value.redactImageData() })
+                    }
+                }
+                else -> this
+            }
+
         private fun getSystemInstruction(): String {
             val currentDate = LocalDate.now().toString()
             return """
@@ -336,5 +404,14 @@ class GeminiProviderImpl
             private const val KEY_ARGUMENTS = "arguments"
             private const val HEADER_API_REVISION = "Api-Revision"
             private const val VALUE_API_REVISION = "2026-05-20"
+            private const val VALUE_IMAGE = "image"
+            private const val KEY_MIME_TYPE = "mime_type"
+            private const val KEY_DATA = "data"
+
+            /** Image formats Gemini accepts in function results. */
+            private val SUPPORTED_IMAGE_MIME_TYPES = setOf("image/png", "image/jpeg", "image/webp")
+
+            /** Names of Gemini 1 and 2 models, which don't accept images in function results. */
+            private val PRE_GEMINI_3_MODEL_NAME = Regex("^gemini-[12][.-]")
         }
     }

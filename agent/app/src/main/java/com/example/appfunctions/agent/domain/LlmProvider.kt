@@ -60,9 +60,31 @@ sealed class LlmInput {
     data class ToolResponse(val outputs: List<ToolOutput>) : LlmInput()
 }
 
-/** Represents the result of a tool execution to be sent back to the LLM. */
+/**
+ * Represents the result of a tool execution to be sent back to the LLM.
+ *
+ * @property images Images the tool returned, for the model to see together with [result].
+ */
 data class ToolOutput(
     val functionId: String,
     val callId: String,
     val result: String,
+    val images: List<ToolOutputImage> = emptyList(),
 )
+
+/**
+ * An image returned by a tool.
+ *
+ * @property mimeType The MIME type of [data], e.g. `image/png`.
+ * @property data The encoded image.
+ */
+class ToolOutputImage(
+    val mimeType: String,
+    val data: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean = other is ToolOutputImage && mimeType == other.mimeType && data.contentEquals(other.data)
+
+    override fun hashCode(): Int = 31 * mimeType.hashCode() + data.contentHashCode()
+
+    override fun toString(): String = "ToolOutputImage(mimeType=$mimeType, size=${data.size})"
+}
