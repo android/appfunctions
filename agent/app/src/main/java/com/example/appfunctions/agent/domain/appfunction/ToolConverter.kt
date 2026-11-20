@@ -15,7 +15,10 @@
  */
 package com.example.appfunctions.agent.domain.appfunction
 
+import android.util.Log
 import androidx.appfunctions.metadata.AppFunctionMetadata
+
+private const val TAG = "ToolConverter"
 
 /** Interface for converting AppFunctionMetadata to a tool schema representation T. */
 interface ToolConverter<T> {
@@ -28,12 +31,23 @@ interface ToolConverter<T> {
 
 /**
  * Deduplicates [tools] by their converted tool name, prioritizing functions whose ID starts with
- * their package name.
+ * their package name. Logs a warning for each tool that is dropped because its name is taken.
  */
-fun ToolConverter<*>.selectDistinctTools(tools: List<AppFunctionMetadata>): List<AppFunctionMetadata> =
-    tools
-        .sortedByDescending { it.id.startsWith(it.packageName) }
-        .distinctBy { getToolName(it) }
+fun ToolConverter<*>.selectDistinctTools(tools: List<AppFunctionMetadata>): List<AppFunctionMetadata> {
+    val toolsByName = LinkedHashMap<String, AppFunctionMetadata>()
+    for (tool in tools.sortedByDescending { it.id.startsWith(it.packageName) }) {
+        val name = getToolName(tool)
+        val keptTool = toolsByName.getOrPut(name) { tool }
+        if (keptTool != tool) {
+            Log.w(
+                TAG,
+                "Dropping tool ${tool.packageName}/${tool.id}: its name '$name' is already used by " +
+                    "${keptTool.packageName}/${keptTool.id}",
+            )
+        }
+    }
+    return toolsByName.values.toList()
+}
 
 /** Finds the [AppFunctionMetadata] in [tools] matching a converted tool [name]. */
 fun ToolConverter<*>.findToolByName(

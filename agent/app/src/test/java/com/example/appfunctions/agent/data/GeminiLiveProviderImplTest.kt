@@ -26,6 +26,7 @@ import com.example.appfunctions.agent.domain.LiveLlmEvent
 import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.withSession
 import io.ktor.websocket.CloseReason
+import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readReason
@@ -35,6 +36,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.toList
@@ -216,6 +218,29 @@ class GeminiLiveProviderImplTest {
                 fail("Expected CancellationException")
             } catch (e: CancellationException) {
                 assertEquals("Handshake cancelled", e.message)
+            }
+        }
+
+    @Test
+    fun `connect surfaces server CloseReason when DefaultWebSocketSession closes incoming channel`() =
+        runTest {
+            val closedIncoming = Channel<Frame>(Channel.UNLIMITED).apply { close() }
+            val wsSession = mockk<DefaultWebSocketSession>(relaxed = true)
+            every { wsSession.coroutineContext } returns coroutineContext
+            every { wsSession.incoming } returns closedIncoming
+            every { wsSession.closeReason } returns
+                CompletableDeferred(
+                    CloseReason(CloseReason.Codes.INTERNAL_ERROR, "Quota exceeded"),
+                )
+
+            val provider = createProvider { wsSession }
+
+            try {
+                provider.connect(apiKey = "key-123", tools = emptyList())
+                fail("Expected IllegalStateException")
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message!!.contains("code=1011"))
+                assertTrue(e.message!!.contains("Quota exceeded"))
             }
         }
 
@@ -407,6 +432,46 @@ class GeminiLiveProviderImplTest {
         }
 
     @Test
+    fun `events emits all events when a single serverContent frame contains transcription, modelTurn audio, and turnComplete`() =
+        runTest {
+            val expectedPcm = byteArrayOf(11, 22, 33, 44)
+            val encodedPcm = Base64.getEncoder().encodeToString(expectedPcm)
+
+            val events =
+                collectSingleServerFrame(
+                    """
+                    {
+                      "serverContent": {
+                        "inputTranscription": { "text": "Hello" },
+                        "outputTranscription": { "text": "Hi there!" },
+                        "modelTurn": {
+                          "parts": [
+                            {
+                              "inlineData": {
+                                "mimeType": "audio/pcm;rate=24000",
+                                "data": "$encodedPcm"
+                              }
+                            }
+                          ]
+                        },
+                        "turnComplete": true
+                      }
+                    }
+                    """.trimIndent(),
+                )
+
+            assertEquals(
+                listOf(
+                    LiveLlmEvent.InputTranscription("Hello"),
+                    LiveLlmEvent.OutputTranscription("Hi there!"),
+                    LiveLlmEvent.AudioChunk(pcmBytes = expectedPcm, sampleRateHz = 24_000),
+                    LiveLlmEvent.TurnComplete,
+                ),
+                events,
+            )
+        }
+
+    @Test
     fun `events emits ToolCallRequest and sendToolResponses sends mapped functionResponses`() =
         runTest {
             val tool = createSampleNoteTool()
@@ -526,6 +591,94 @@ class GeminiLiveProviderImplTest {
             assertTrue((events[0] as LiveLlmEvent.Error).message.contains("hallucinated_tool"))
             assertTrue((events[1] as LiveLlmEvent.Error).message.contains("id"))
             assertTrue((events[2] as LiveLlmEvent.Error).message.contains("name"))
+        }
+
+    @Test
+    fun `events emits ToolCallRequest for service-prefixed tool name and sendToolResponses sends the same name`() =
+        runTest {
+            val service = "com.example.notes.appfunctions.ExampleNotesAppFunctionService"
+            val createNoteTool = createSampleNoteTool(id = "$service#createNote")
+            val fieldsTool = createSampleNoteTool(id = "$service#getNoteFieldDescriptions")
+            val incomingFrames = Channel<Frame>(Channel.UNLIMITED)
+            incomingFrames.trySend(Frame.Text("""{"setupComplete":{}}"""))
+            incomingFrames.trySend(
+                Frame.Text(
+                    """
+                    {
+                      "toolCall": {
+                        "functionCalls": [
+                          {
+                            "id": "call-1",
+                            "name": "com_example_notes_appfunctions_ExampleNotesAppFunctionService_createNote",
+                            "args": { "title": "Shopping" }
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            )
+            incomingFrames.close()
+
+            val sentFrames = mutableListOf<String>()
+            val provider =
+                createProvider {
+                    createMockWebSocketSession(
+                        context = coroutineContext,
+                        incomingFrames = incomingFrames,
+                        onSendText = { sentFrames.add(it) },
+                    )
+                }
+
+            val receivedEvents = mutableListOf<LiveLlmEvent>()
+            provider.withSession(apiKey = "key-123", tools = listOf(createNoteTool, fieldsTool)) { session ->
+                receivedEvents.addAll(session.events.toList())
+                session.sendToolResponses(
+                    listOf(
+                        ToolOutput(
+                            functionId = createNoteTool.id,
+                            callId = "call-1",
+                            result = """{"noteId":"n-1"}""",
+                        ),
+                    ),
+                )
+            }
+
+            val declarations =
+                Json
+                    .parseToJsonElement(sentFrames.first())
+                    .jsonObject["setup"]!!
+                    .jsonObject["tools"]!!
+                    .jsonArray
+                    .first()
+                    .jsonObject["functionDeclarations"]!!
+                    .jsonArray
+            assertEquals(
+                listOf(
+                    "com_example_notes_appfunctions_ExampleNotesAppFunctionService_createNote",
+                    "com_example_notes_appfunctions_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                ),
+                declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
+            )
+
+            val toolCall = (receivedEvents.single() as LiveLlmEvent.ToolCallRequest).calls.single()
+            assertEquals("$service#createNote", toolCall.functionId)
+            assertEquals("call-1", toolCall.callId)
+            assertEquals("Shopping", toolCall.arguments["title"])
+
+            val functionResponse =
+                Json
+                    .parseToJsonElement(sentFrames.last())
+                    .jsonObject["toolResponse"]!!
+                    .jsonObject["functionResponses"]!!
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("call-1", functionResponse["id"]!!.jsonPrimitive.content)
+            assertEquals(
+                "com_example_notes_appfunctions_ExampleNotesAppFunctionService_createNote",
+                functionResponse["name"]!!.jsonPrimitive.content,
+            )
         }
 
     @Test
@@ -655,9 +808,9 @@ class GeminiLiveProviderImplTest {
         }
     }
 
-    private fun createSampleNoteTool(): AppFunctionMetadata =
+    private fun createSampleNoteTool(id: String = "com.example.notes.createNote"): AppFunctionMetadata =
         AppFunctionMetadata(
-            id = "com.example.notes.createNote",
+            id = id,
             packageName = "com.example.notes",
             isEnabled = true,
             schema = null,
