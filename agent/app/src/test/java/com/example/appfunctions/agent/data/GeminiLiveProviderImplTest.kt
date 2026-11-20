@@ -544,7 +544,7 @@ class GeminiLiveProviderImplTest {
                         "functionCalls": [
                           {
                             "id": "call-1",
-                            "name": "ExampleNotesAppFunctionService_createNote",
+                            "name": "com_example_notes_appfunctions_ExampleNotesAppFunctionService_createNote",
                             "args": { "title": "Shopping" }
                           }
                         ]
@@ -590,8 +590,8 @@ class GeminiLiveProviderImplTest {
                     .jsonArray
             assertEquals(
                 listOf(
-                    "ExampleNotesAppFunctionService_createNote",
-                    "ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                    "com_example_notes_appfunctions_ExampleNotesAppFunctionService_createNote",
+                    "com_example_notes_appfunctions_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
                 ),
                 declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
             )
@@ -611,7 +611,7 @@ class GeminiLiveProviderImplTest {
                     .jsonObject
             assertEquals("call-1", functionResponse["id"]!!.jsonPrimitive.content)
             assertEquals(
-                "ExampleNotesAppFunctionService_createNote",
+                "com_example_notes_appfunctions_ExampleNotesAppFunctionService_createNote",
                 functionResponse["name"]!!.jsonPrimitive.content,
             )
         }

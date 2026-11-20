@@ -15,12 +15,19 @@
  */
 package com.example.appfunctions.agent.domain.appfunction
 
+import android.util.Log
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
 import androidx.appfunctions.metadata.AppFunctionStringTypeMetadata
+import io.mockk.every
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 
 class ToolConverterTest {
@@ -30,6 +37,17 @@ class ToolConverterTest {
 
             override fun getToolName(tool: AppFunctionMetadata): String = tool.id.substringAfterLast('.')
         }
+
+    @Before
+    fun setUp() {
+        mockkStatic(Log::class)
+        every { Log.w(any<String>(), any<String>()) } returns 0
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(Log::class)
+    }
 
     @Test
     fun selectDistinctTools_prioritizesIdStartingWithPackageNameAndDeduplicatesByToolName() {
@@ -43,6 +61,40 @@ class ToolConverterTest {
             fakeConverter.selectDistinctTools(listOf(legacyTool, canonicalTool, otherTool))
 
         assertEquals(listOf(canonicalTool, otherTool), distinct)
+    }
+
+    @Test
+    fun selectDistinctTools_toolNameAlreadyUsed_logsWarningWithDroppedAndKeptTool() {
+        val droppedTool =
+            createTool(packageName = "com.example.legacynotes", id = "legacy.createNote")
+        val keptTool =
+            createTool(packageName = "com.example.notes", id = "com.example.notes.createNote")
+
+        fakeConverter.selectDistinctTools(listOf(droppedTool, keptTool))
+
+        verify(exactly = 1) { Log.w(any<String>(), any<String>()) }
+        verify {
+            Log.w(
+                "ToolConverter",
+                match<String> { message ->
+                    listOf(droppedTool.packageName, droppedTool.id, keptTool.packageName, keptTool.id)
+                        .all { it in message }
+                },
+            )
+        }
+    }
+
+    @Test
+    fun selectDistinctTools_distinctToolNames_logsNoWarning() {
+        val createNote =
+            createTool(packageName = "com.example.notes", id = "com.example.notes.createNote")
+        val deleteNote =
+            createTool(packageName = "com.example.notes", id = "com.example.notes.deleteNote")
+
+        val distinct = fakeConverter.selectDistinctTools(listOf(createNote, deleteNote))
+
+        assertEquals(listOf(createNote, deleteNote), distinct)
+        verify(exactly = 0) { Log.w(any<String>(), any<String>()) }
     }
 
     @Test

@@ -64,7 +64,8 @@ class GeminiToolConverterTest {
 
     @Test
     fun getToolName_longName_returnsTruncatedName() {
-        val longPackageName = "com.example.verylongpackagename.that.exceeds.sixtyfour.chars"
+        val longPackageName =
+            "com.example.verylongpackagename.that.exceeds.onehundredtwentyeight.chars.which.is.the.maximum.length.of.gemini.function.names"
         val tool =
             AppFunctionMetadata(
                 id = "$longPackageName.my_function",
@@ -83,12 +84,30 @@ class GeminiToolConverterTest {
             )
 
         val name = converter.getToolName(tool)
-        val expectedGeminiName = "verylongpackagename_that_exceeds_sixtyfour_chars_my_function"
+        val expectedGeminiName =
+            "verylongpackagename_that_exceeds_onehundredtwentyeight_chars_which_is_the_maximum_length_of_gemini_function_names_my_function"
         assertEquals(expectedGeminiName, name)
     }
 
     @Test
     fun getToolName_functionsOfOneService_returnsSharedServicePrefix() {
+        val names =
+            listOf("addNote", "getNoteFieldDescriptions", "getConversationParticipantsWithPresenceDetails").map { function ->
+                converter.getToolName(createTool("$LONG_SERVICE#$function"))
+            }
+
+        assertEquals(
+            listOf(
+                "${LONG_SERVICE_PREFIX}_addNote",
+                "${LONG_SERVICE_PREFIX}_getNoteFieldDescriptions",
+                "${LONG_SERVICE_PREFIX}_getConversationPartici_4a3868d1",
+            ),
+            names,
+        )
+    }
+
+    @Test
+    fun getToolName_serviceThatFitsInPrefix_returnsFullSanitizedIds() {
         val names =
             listOf("addNote", "updateNoteSettings", "getNoteFieldDescriptions").map { function ->
                 converter.getToolName(createTool("$NOTES_SERVICE#$function"))
@@ -96,9 +115,9 @@ class GeminiToolConverterTest {
 
         assertEquals(
             listOf(
-                "ExampleNotesAppFunctionService_addNote",
-                "ExampleNotesAppFunctionService_updateNoteSettings",
-                "ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                "com_example_app_feature_notes_ExampleNotesAppFunctionService_addNote",
+                "com_example_app_feature_notes_ExampleNotesAppFunctionService_updateNoteSettings",
+                "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
             ),
             names,
         )
@@ -118,7 +137,7 @@ class GeminiToolConverterTest {
 
         val names = functions.map { converter.getToolName(createTool("$CHAT_SERVICE#$it")) }
 
-        assertEquals(functions.map { "BaseChatAppFunctionService_$it" }, names)
+        assertEquals(functions.map { "com_example_chatapp_appfunctions_BaseChatAppFunctionService_$it" }, names)
     }
 
     @Test
@@ -127,7 +146,7 @@ class GeminiToolConverterTest {
             listOf(
                 createTool("$NOTES_SERVICE#addNote"),
                 createTool("$NOTES_SERVICE#getNoteFieldDescriptions"),
-                createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails"),
+                createTool("$LONG_SERVICE#getConversationParticipantsWithPresenceDetails"),
                 createTool("generateImage"),
             )
         val namesOfToolsAlone = tools.map { GeminiToolConverter().getToolName(it) }
@@ -140,22 +159,22 @@ class GeminiToolConverterTest {
 
     @Test
     fun getToolName_functionNameFitsAfterPrefix_keepsFullFunctionName() {
-        // 26-character prefix + "_" + 37-character function name = 64 characters.
-        val tool = createTool("$CHAT_SERVICE#getConversationParticipantsWithStatus")
+        // 96-character prefix + "_" + 31-character function name = 128 characters.
+        val tool = createTool("$LONG_SERVICE#getConversationParticipantsList")
 
         val name = converter.getToolName(tool)
 
-        assertEquals("BaseChatAppFunctionService_getConversationParticipantsWithStatus", name)
+        assertEquals("${LONG_SERVICE_PREFIX}_getConversationParticipantsList", name)
     }
 
     @Test
     fun getToolName_functionNameTooLongToFit_returnsCutNameWithHash() {
-        val id = "$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails"
+        val id = "$LONG_SERVICE#getConversationParticipantsWithPresenceDetails"
 
         val name = converter.getToolName(createTool(id))
 
-        assertEquals(64, name.length)
-        assertEquals("BaseChatAppFunctionService_getConversationParticipantsW_", name.dropLast(8))
+        assertEquals(128, name.length)
+        assertEquals("${LONG_SERVICE_PREFIX}_getConversationPartici_", name.dropLast(8))
         assertTrue(name.takeLast(8).matches(Regex("[0-9a-f]{8}")))
         assertEquals(name, GeminiToolConverter().getToolName(createTool(id)))
     }
@@ -164,11 +183,11 @@ class GeminiToolConverterTest {
     fun getToolName_longFunctionNamesWithSameStart_returnsDistinctNames() {
         val presenceDetailsName =
             converter.getToolName(
-                createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails"),
+                createTool("$LONG_SERVICE#getConversationParticipantsWithPresenceDetails"),
             )
         val presenceHistoryName =
             converter.getToolName(
-                createTool("$CHAT_SERVICE#getConversationParticipantsWithPresenceHistory"),
+                createTool("$LONG_SERVICE#getConversationParticipantsWithPresenceHistory"),
             )
 
         assertNotEquals(presenceDetailsName, presenceHistoryName)
@@ -177,42 +196,45 @@ class GeminiToolConverterTest {
 
     @Test
     fun getToolName_hashWithLeadingZero_padsHashToEightDigits() {
-        // The hash code of this ID is 0x045b61e5.
-        val tool = createTool("$CHAT_SERVICE#getConversationParticipantsWithDeliveryStatus")
+        // The hash code of this ID is 0x009e03f6.
+        val tool = createTool("$LONG_SERVICE#fetchChatParticipantsWithNicknames")
 
         val name = converter.getToolName(tool)
 
-        assertEquals("BaseChatAppFunctionService_getConversationParticipantsW_045b61e5", name)
+        assertEquals("${LONG_SERVICE_PREFIX}_fetchChatParticipantsW_009e03f6", name)
     }
 
     @Test
     fun getToolName_classNameLongerThanPrefixLimit_usesClassNameAsPrefix() {
-        val service = "com.example.verbose.ExampleVeryLongNotesAppFunctionServiceName"
+        // The class name has 106 characters, more than the 96 kept of a service name.
+        val className = "Example${"VeryLong".repeat(12)}Svc"
+        val service = "com.example.verbose.$className"
 
         val names =
             listOf("addNote", "updateNoteSettings", "getNoteFieldDescriptions").map { function ->
                 converter.getToolName(createTool("$service#$function"))
             }
 
-        assertEquals("ExampleVeryLongNotesAppFunctionServiceName_addNote", names[0])
-        assertEquals("ExampleVeryLongNotesAppFunctionServiceName_updateNoteSettings", names[1])
-        assertEquals(64, names[2].length)
-        assertTrue(names[2].startsWith("ExampleVeryLongNotesAppFunctionServiceName_getNoteField_"))
+        assertEquals("${className}_addNote", names[0])
+        assertEquals("${className}_updateNoteSettings", names[1])
+        assertEquals(128, names[2].length)
+        assertTrue(names[2].startsWith("${className}_getNoteField_"))
     }
 
     @Test
     fun getToolName_classNameTooLongToFitBeforeHash_usesCutClassNameAsPrefix() {
-        // The class name has 57 characters, 2 more than fit before the hash of a cut name.
-        val service = "com.example.verbose.ExampleExtremelyLongNotesAppFunctionServiceImplementation"
+        // The class name has 121 characters, 2 more than fit before the hash of a cut name.
+        val cutClassName = "Example${"VeryLong".repeat(14)}"
+        val service = "com.example.verbose.${cutClassName}Ab"
 
         val names =
             listOf("share", "shareNote").map { function ->
                 converter.getToolName(createTool("$service#$function"))
             }
 
-        assertEquals("ExampleExtremelyLongNotesAppFunctionServiceImplementati_share", names[0])
-        assertEquals(64, names[1].length)
-        assertTrue(names[1].startsWith("ExampleExtremelyLongNotesAppFunctionServiceImplementati_"))
+        assertEquals("${cutClassName}_share", names[0])
+        assertEquals(128, names[1].length)
+        assertTrue(names[1].startsWith("${cutClassName}_"))
     }
 
     @Test
@@ -228,13 +250,19 @@ class GeminiToolConverterTest {
                 "$CHAT_SERVICE#getConversationParticipantsWithPresenceDetails",
                 "$CHAT_SERVICE#getConversationParticipantsWithPresenceHistory",
                 "$CHAT_SERVICE#getConversationParticipantsWithDeliveryStatus",
+                "$LONG_SERVICE#getConversationParticipantsWithPresenceDetails",
+                "$LONG_SERVICE#getConversationParticipantsWithPresenceHistory",
+                "$LONG_SERVICE#fetchChatParticipantsWithNicknames",
                 "com.example.verbose.ExampleVeryLongNotesAppFunctionServiceName#getNoteFieldDescriptions",
+                "com.example.verbose.Example${"VeryLong".repeat(12)}Svc#getNoteFieldDescriptions",
+                "com.example.verbose.Example${"VeryLong".repeat(14)}Ab#shareNote",
                 "$longClassNameService#addNote",
                 "$longClassNameService#getNoteFieldDescriptions",
                 "com.example.notes.NotesApp\$FunctionService#add-note",
                 "com.example.notes.NoteFunctions#createNote",
                 "generateImage",
                 "com.example.verylongpackagename.that.exceeds.sixtyfour.chars.my_function",
+                "com.example.${"a".repeat(134)}",
             )
 
         val names = ids.map { converter.getToolName(createTool(it)) }
@@ -248,20 +276,24 @@ class GeminiToolConverterTest {
     @Test
     fun getToolName_servicePartFitsInPrefix_keepsFullName() {
         val shortServiceName = converter.getToolName(createTool("com.example.notes.NoteFunctions#createNote"))
-        // The service part has exactly 32 characters, the maximum prefix length.
-        val maxServiceName = converter.getToolName(createTool("com.example.notes.NotesFunctions#createNote"))
+        // The service part has exactly 96 characters, the maximum prefix length.
+        val maxService = "com.example.enterprise.productivity.workspace.notes.sync.appfunctionz.ExampleNotesAppFunctionSvc"
+        val maxServiceName = converter.getToolName(createTool("$maxService#createNote"))
 
         assertEquals("com_example_notes_NoteFunctions_createNote", shortServiceName)
-        assertEquals("com_example_notes_NotesFunctions_createNote", maxServiceName)
+        assertEquals(
+            "com_example_enterprise_productivity_workspace_notes_sync_appfunctionz_ExampleNotesAppFunctionSvc_createNote",
+            maxServiceName,
+        )
     }
 
     @Test
-    fun getToolName_idWithoutSeparatorAndLastPartTooLong_returnsLast64Chars() {
-        val tool = createTool("com.example.${"a".repeat(70)}")
+    fun getToolName_idWithoutSeparatorAndLastPartTooLong_returnsLast128Chars() {
+        val tool = createTool("com.example.${"a".repeat(134)}")
 
         val name = converter.getToolName(tool)
 
-        assertEquals("a".repeat(64), name)
+        assertEquals("a".repeat(128), name)
     }
 
     @Test
@@ -730,6 +762,10 @@ class GeminiToolConverterTest {
     private companion object {
         const val NOTES_SERVICE = "com.example.app.feature.notes.ExampleNotesAppFunctionService"
         const val CHAT_SERVICE = "com.example.chatapp.appfunctions.BaseChatAppFunctionService"
-        val VALID_NAME = Regex("[a-zA-Z_][a-zA-Z0-9_]{0,63}")
+
+        // 100 characters, more than the 96 kept whole, so the prefix drops its first part.
+        const val LONG_SERVICE = "com.example.enterprise.productivity.workspace.notes.sync.appfunctions.ExampleNotesAppFunctionService"
+        const val LONG_SERVICE_PREFIX = "example_enterprise_productivity_workspace_notes_sync_appfunctions_ExampleNotesAppFunctionService"
+        val VALID_NAME = Regex("[a-zA-Z_][a-zA-Z0-9_]{0,127}")
     }
 }

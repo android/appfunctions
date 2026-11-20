@@ -324,12 +324,16 @@ class GeminiToolConverter
             private const val KEY_ITEMS = "items"
             private const val KEY_ENUMS = "enums"
             private val INVALID_NAME_CHARS = Regex("[^a-zA-Z0-9_]")
-            private const val MAX_NAME_LENGTH = 64
+
+            // Gemini accepts function names of up to 128 characters.
+            private const val MAX_NAME_LENGTH = 128
             private const val FUNCTION_ID_SEPARATOR = '#'
 
-            // Half of the name, leaving at least 31 characters for the function name unless the
-            // class name alone is longer.
-            private const val MAX_SERVICE_PREFIX_LENGTH = MAX_NAME_LENGTH / 2
+            // Service names of up to 96 characters are kept whole, leaving at least 31 characters for
+            // the function name unless the class name alone is longer.
+            private const val RESERVED_FUNCTION_NAME_LENGTH = 31
+            private const val MAX_SERVICE_PREFIX_LENGTH =
+                MAX_NAME_LENGTH - TOOL_ID_SEPARATOR.length - RESERVED_FUNCTION_NAME_LENGTH
             private const val HASH_LENGTH = 8
             private const val NAME_LENGTH_BEFORE_HASH = MAX_NAME_LENGTH - TOOL_ID_SEPARATOR.length - HASH_LENGTH
         }

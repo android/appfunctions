@@ -253,7 +253,7 @@ class GeminiProviderImplTest {
                             add(
                                 buildJsonObject {
                                     put("type", "function_call")
-                                    put("name", "ExampleNotesAppFunctionService_getNoteFieldDescriptions")
+                                    put("name", "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions")
                                     put("id", "call_456")
                                 },
                             )
@@ -299,9 +299,9 @@ class GeminiProviderImplTest {
                     .map { it.jsonObject["name"]!!.jsonPrimitive.content }
             assertEquals(
                 listOf(
-                    "ExampleNotesAppFunctionService_addNote",
-                    "ExampleNotesAppFunctionService_updateNoteSettings",
-                    "ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                    "com_example_app_feature_notes_ExampleNotesAppFunctionService_addNote",
+                    "com_example_app_feature_notes_ExampleNotesAppFunctionService_updateNoteSettings",
+                    "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
                 ),
                 declaredNames,
             )
@@ -329,7 +329,7 @@ class GeminiProviderImplTest {
                     .jsonObject
             assertEquals("function_result", functionResult["type"]!!.jsonPrimitive.content)
             assertEquals(
-                "ExampleNotesAppFunctionService_getNoteFieldDescriptions",
+                "com_example_app_feature_notes_ExampleNotesAppFunctionService_getNoteFieldDescriptions",
                 functionResult["name"]!!.jsonPrimitive.content,
             )
             assertEquals("call_456", functionResult["call_id"]!!.jsonPrimitive.content)
