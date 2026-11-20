@@ -17,10 +17,10 @@
 <AppFunctionAppMetadata xmlns:appfn="http://schemas.android.com/apk/androidx.appfunctions"
     appfn:description="Provides functions for managing chat conversations, searching contacts, sending messages, and initiating voice calls.
 Operational Patterns:
-  - Always call 'searchContacts' first to resolve contact or group names to an 'endpointValue' before calling 'send' or 'makeCall'.
-  - Passing a blank query string to 'searchContacts' retrieves the most recently contacted entities.
+  - Always call 'searchContacts' first to resolve contact or group names to an 'endpointValue' before calling 'sendMessage', 'fetchSendMessageDetails', 'reviewSendMessage', or 'makeCall'.
+  - Query string passed to 'searchContacts' must not be empty or blank.
 Constraints:
-  - Message content cannot be empty or blank when calling 'send'.
+  - Message content cannot be empty or blank when calling 'sendMessage', 'fetchSendMessageDetails', or 'reviewSendMessage'.
   - Calls and messages must use valid endpointValue identifiers returned by 'searchContacts'.
-  - Image attachments are supported in 'send' via a list of content URIs."
+  - Image attachments are supported in 'sendMessage' via a list of content URIs."
     appfn:displayDescription="@string/app_function_app_display_description"/>
