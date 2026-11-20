@@ -66,6 +66,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -729,6 +730,45 @@ class LiveAgentOrchestratorTest {
                     "AppFunctionPermissionRequiredException - Contacts permission denied",
                 outputs[1].result,
             )
+        }
+
+    @Test
+    fun `activeSession reflects running session status and ignores rejected concurrent session`() =
+        runTest {
+            val orchestrator = createOrchestrator()
+            val eventChannel = Channel<LiveLlmEvent>(Channel.UNLIMITED)
+            stubLiveConnection(eventChannel.receiveAsFlow())
+
+            assertNull(orchestrator.activeSession.value)
+
+            val job =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    orchestrator.runSession("thread-1").collect {}
+                }
+            advanceUntilIdle()
+
+            assertEquals(
+                ActiveLiveSession(threadId = "thread-1", status = LiveAgentStatus.Listening),
+                orchestrator.activeSession.value,
+            )
+
+            // A concurrent runSession fails fast without overwriting activeSession.
+            val concurrentStatuses = mutableListOf<LiveAgentStatus>()
+            orchestrator.runSession("thread-2").toList(concurrentStatuses)
+            assertEquals(
+                listOf(LiveAgentStatus.Error(LiveAgentOrchestrator.ERROR_SESSION_ALREADY_ACTIVE)),
+                concurrentStatuses,
+            )
+            assertEquals(
+                ActiveLiveSession(threadId = "thread-1", status = LiveAgentStatus.Listening),
+                orchestrator.activeSession.value,
+            )
+
+            eventChannel.close()
+            advanceUntilIdle()
+            job.join()
+
+            assertNull(orchestrator.activeSession.value)
         }
 
     private fun stubLiveConnection(
