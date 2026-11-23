@@ -226,10 +226,7 @@ class LiveVoiceOverlayStateHolder
                         return@launch
                     }
 
-                    val resolvedThreadId =
-                        requestedThreadId
-                            ?: resolveOrCreateDefaultThreadId(requestedTargetPackageName)
-                            ?: return@launch
+                    val resolvedThreadId = requestedThreadId ?: createLiveThreadId()
 
                     localSessionState.value =
                         LocalOverlaySessionState.Running(
@@ -269,29 +266,10 @@ class LiveVoiceOverlayStateHolder
                 }
         }
 
-        private suspend fun resolveOrCreateDefaultThreadId(requestedTargetPackageName: String?): String? {
-            val existingThread = manageThreadsUseCase.getThreads().first().firstOrNull()
-            if (existingThread != null) {
-                return existingThread.threadId
-            }
-
+        private suspend fun createLiveThreadId(): String {
             val selectedProvider = settingsRepository.selectedProvider.first()
-            val apiKey = settingsRepository.getApiKey(selectedProvider).first()
-            val defaultModel =
-                llmProviderFactory
-                    .getProvider(selectedProvider)
-                    .getAvailableModels(apiKey)
-                    .firstOrNull()
-            if (defaultModel == null) {
-                localSessionState.value =
-                    LocalOverlaySessionState.Failed(
-                        threadId = null,
-                        targetPackageName = requestedTargetPackageName,
-                        error = LiveOverlayStatus.Error.NoModelAvailable(selectedProvider.displayName),
-                    )
-                return null
-            }
-            return manageThreadsUseCase.createThread(defaultModel)
+            val liveModel = llmProviderFactory.getLiveProvider(selectedProvider).liveModel
+            return manageThreadsUseCase.createThread(liveModel)
         }
 
         override fun close() {

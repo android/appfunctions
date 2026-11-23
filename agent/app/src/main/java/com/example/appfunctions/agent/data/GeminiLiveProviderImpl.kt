@@ -75,6 +75,8 @@ class GeminiLiveProviderImpl
         private val toolConverter: GeminiLiveToolConverter,
         private val webSocketConnector: suspend (wsUrl: String) -> WebSocketSession,
     ) : LiveLlmProvider {
+        override val liveModel: LlmModel = LlmModel(LlmProviderName.GEMINI, LIVE_MODEL_ID)
+
         @Inject
         constructor(
             httpClient: HttpClient,
@@ -653,7 +655,8 @@ class GeminiLiveProviderImpl
 
         companion object {
             private const val TAG = "GeminiLiveProvider"
-            const val LIVE_MODEL_NAME = "models/gemini-3.8-live"
+            const val LIVE_MODEL_ID = "gemini-3.8-live"
+            const val LIVE_MODEL_NAME = "models/$LIVE_MODEL_ID"
             const val DEFAULT_INPUT_SAMPLE_RATE_HZ = 16_000
             const val DEFAULT_OUTPUT_SAMPLE_RATE_HZ = 24_000
             private const val GEMINI_LIVE_WS_URL =

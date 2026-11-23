@@ -16,12 +16,16 @@
 package com.example.appfunctions.agent.domain
 
 import androidx.appfunctions.metadata.AppFunctionMetadata
+import com.example.appfunctions.agent.data.LlmModel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /** Interface for LLM providers supporting bidirectional realtime audio and tool sessions. */
 interface LiveLlmProvider {
+    /** The [LlmModel] identifier recorded on chat threads created for this live provider. */
+    val liveModel: LlmModel
+
     /**
      * Connects to the live LLM backend, completes session initialization with [tools] and optional
      * provider-specific [voiceName], and returns the active [LiveLlmSession]. The caller is

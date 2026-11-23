@@ -760,6 +760,15 @@ class GeminiLiveProviderImplTest {
             )
         }
 
+    @Test
+    fun `liveModel exposes Gemini Live model identifier`() {
+        val provider = createProvider { error("Not expected to connect") }
+        assertEquals(
+            LlmModel(LlmProviderName.GEMINI, GeminiLiveProviderImpl.LIVE_MODEL_ID),
+            provider.liveModel,
+        )
+    }
+
     private suspend fun CoroutineScope.collectSingleServerFrame(
         frameJson: String,
         tools: List<AppFunctionMetadata> = emptyList(),

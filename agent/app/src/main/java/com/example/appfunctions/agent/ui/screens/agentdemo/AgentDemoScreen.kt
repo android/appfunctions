@@ -15,8 +15,15 @@
  */
 package com.example.appfunctions.agent.ui.screens.agentdemo
 
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.icu.text.ListFormatter
+import android.provider.Settings
+import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
@@ -49,8 +56,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,6 +72,7 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -71,6 +81,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -110,6 +121,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -131,6 +143,9 @@ import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.AgentStatus
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.ui.screens.debugging.LazyExposedDropdownMenu
+import com.example.appfunctions.agent.ui.screens.main.StatusWarningDialog
+import com.example.appfunctions.agent.ui.theme.AppFunctionsAgentTheme
+import com.example.appfunctions.agent.voice.AgentVoiceInteractionSession
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -138,8 +153,61 @@ import kotlinx.coroutines.launch
 @Composable
 fun AgentDemoScreen(viewModel: AgentDemoViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current
 
-    AgentDemoContent(uiState = uiState, onEvent = viewModel::onEvent)
+    val audioPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { isGranted ->
+            viewModel.onEvent(AgentUiEvent.OnAudioPermissionResult(isGranted))
+        }
+
+    val assistantSettingsLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult(),
+        ) {
+            viewModel.onEvent(AgentUiEvent.OnAssistantSettingsReturned)
+        }
+
+    val liveSetupPrompt = (uiState as? AgentUiState.Loaded)?.liveSetupPrompt
+    LaunchedEffect(liveSetupPrompt, activity) {
+        when (liveSetupPrompt) {
+            is LiveSetupPrompt.RequestAudioPermission -> {
+                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            is LiveSetupPrompt.LaunchAssistSession -> {
+                val isLaunched =
+                    activity?.showAssist(
+                        AgentVoiceInteractionSession.createSessionArgs(
+                            threadId = liveSetupPrompt.threadId,
+                            targetPackageName = liveSetupPrompt.targetPackageName,
+                        ),
+                    ) == true
+                viewModel.onEvent(AgentUiEvent.OnLiveSessionLaunchResult(isLaunched))
+            }
+            else -> Unit
+        }
+    }
+
+    val openAssistantSettings = {
+        try {
+            assistantSettingsLauncher.launch(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+        } catch (_: ActivityNotFoundException) {
+            try {
+                assistantSettingsLauncher.launch(
+                    Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+                )
+            } catch (_: ActivityNotFoundException) {
+                viewModel.onEvent(AgentUiEvent.OnAssistantSettingsUnavailable)
+            }
+        }
+    }
+
+    AgentDemoContent(
+        uiState = uiState,
+        onEvent = viewModel::onEvent,
+        onOpenAssistantSettings = openAssistantSettings,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,6 +216,7 @@ fun AgentDemoContent(
     uiState: AgentUiState,
     onEvent: (AgentUiEvent) -> Unit,
     initialSidePanelVisible: Boolean = false,
+    onOpenAssistantSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val packageManager = context.packageManager
@@ -177,6 +246,7 @@ fun AgentDemoContent(
                         scope = scope,
                         packageManager = packageManager,
                         initialSidePanelVisible = initialSidePanelVisible,
+                        onOpenAssistantSettings = onOpenAssistantSettings,
                     )
                 }
             }
@@ -211,6 +281,81 @@ fun AgentDemoContent(
 }
 
 @Composable
+private fun LiveSetupPromptDialog(
+    prompt: LiveSetupPrompt?,
+    onOpenAssistantSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    when (prompt) {
+        null,
+        is LiveSetupPrompt.RequestAudioPermission,
+        is LiveSetupPrompt.LaunchAssistSession,
+        -> Unit
+        is LiveSetupPrompt.SelectDigitalAssistant -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(R.string.live_session_select_assistant_title)) },
+                text = { Text(stringResource(R.string.live_session_select_assistant_prompt)) },
+                confirmButton = {
+                    TextButton(onClick = onOpenAssistantSettings) {
+                        Text(stringResource(R.string.live_session_open_settings))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.live_session_cancel))
+                    }
+                },
+            )
+        }
+        LiveSetupPrompt.AudioPermissionDenied -> {
+            StatusWarningDialog(
+                title = stringResource(R.string.live_session_audio_permission_title),
+                message = stringResource(R.string.live_session_audio_permission_required),
+                isError = true,
+                onDismiss = onDismiss,
+            )
+        }
+        LiveSetupPrompt.AssistantNotSelected -> {
+            StatusWarningDialog(
+                title = stringResource(R.string.live_session_select_assistant_title),
+                message = stringResource(R.string.live_session_assistant_not_selected),
+                isError = true,
+                onDismiss = onDismiss,
+            )
+        }
+        LiveSetupPrompt.AssistantSettingsUnavailable -> {
+            StatusWarningDialog(
+                title = stringResource(R.string.live_session_select_assistant_title),
+                message = stringResource(R.string.live_session_assistant_settings_unavailable),
+                isError = true,
+                onDismiss = onDismiss,
+            )
+        }
+        LiveSetupPrompt.AssistLaunchFailed -> {
+            StatusWarningDialog(
+                title = stringResource(R.string.live_session_launch_failed_title),
+                message = stringResource(R.string.live_session_launch_failed_message),
+                isError = true,
+                onDismiss = onDismiss,
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun LiveSetupPromptDialogPreview() {
+    AppFunctionsAgentTheme {
+        LiveSetupPromptDialog(
+            prompt = LiveSetupPrompt.SelectDigitalAssistant(),
+            onOpenAssistantSettings = {},
+            onDismiss = {},
+        )
+    }
+}
+
+@Composable
 fun AgentDemoLoadingScreen() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
@@ -227,10 +372,22 @@ fun AgentDemoLoadedScreen(
     scope: CoroutineScope,
     packageManager: PackageManager,
     initialSidePanelVisible: Boolean = false,
+    onOpenAssistantSettings: () -> Unit = {},
 ) {
     var messageText by remember { mutableStateOf(TextFieldValue("")) }
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
     var selectedAppPackageName by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(uiState.currentThread?.threadId) {
+        messageText = TextFieldValue("")
+        selectedAppPackageName = null
+    }
+
+    LiveSetupPromptDialog(
+        prompt = uiState.liveSetupPrompt,
+        onOpenAssistantSettings = onOpenAssistantSettings,
+        onDismiss = { onEvent(AgentUiEvent.OnDismissLiveSetupPrompt) },
+    )
 
     val chipBgColor = MaterialTheme.colorScheme.primaryContainer
     val chipTextColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -254,6 +411,7 @@ fun AgentDemoLoadedScreen(
                             .padding(horizontal = 8.dp),
                     currentThread = uiState.currentThread,
                     availableModels = uiState.availableModels,
+                    isModelSelectionEnabled = !uiState.isCurrentThreadLive,
                     onModelSelected = { onEvent(AgentUiEvent.OnModelSelected(it)) },
                     onMenuClick = {
                         if (isWideScreen) {
@@ -264,7 +422,10 @@ fun AgentDemoLoadedScreen(
                     },
                 )
                 val defaultModel =
-                    uiState.currentThread?.llmModel ?: uiState.availableModels.firstOrNull()
+                    uiState.currentThread
+                        ?.llmModel
+                        ?.takeUnless { uiState.isCurrentThreadLive }
+                        ?: uiState.availableModels.firstOrNull()
                 IconButton(
                     onClick = {
                         if (defaultModel != null) {
@@ -362,13 +523,21 @@ fun AgentDemoLoadedScreen(
                     }
                 }
 
+                val isLiveOnCurrentThread = uiState.liveStatus != null
+                val isTextInputEnabled =
+                    uiState.currentThread != null &&
+                        !uiState.isCurrentThreadLive &&
+                        uiState.status == AgentStatus.Idle &&
+                        !isLiveOnCurrentThread
+                val isLiveStartEnabled =
+                    uiState.currentThread != null &&
+                        uiState.status == AgentStatus.Idle &&
+                        !isLiveOnCurrentThread &&
+                        !uiState.isAnotherThreadLiveBusy
+
                 val sendMessage = {
                     val textStr = messageText.text
-                    if (
-                        uiState.currentThread != null &&
-                        textStr.isNotBlank() &&
-                        uiState.status == AgentStatus.Idle
-                    ) {
+                    if (isTextInputEnabled && textStr.isNotBlank()) {
                         onEvent(AgentUiEvent.OnSendMessage(textStr, selectedAppPackageName))
                         messageText = TextFieldValue("")
                         selectedAppPackageName = null
@@ -456,10 +625,21 @@ fun AgentDemoLoadedScreen(
                                         false
                                     }
                                 },
-                        enabled =
-                            uiState.currentThread != null && uiState.status == AgentStatus.Idle,
+                        enabled = isTextInputEnabled,
                         shape = CircleShape,
-                        placeholder = { Text(stringResource(R.string.agent_demo_ask_agent)) },
+                        placeholder = {
+                            Text(
+                                stringResource(
+                                    when {
+                                        isLiveOnCurrentThread ->
+                                            R.string.agent_demo_live_active_placeholder
+                                        uiState.isCurrentThreadLive ->
+                                            R.string.agent_demo_live_thread_placeholder
+                                        else -> R.string.agent_demo_ask_agent
+                                    },
+                                ),
+                            )
+                        },
                         visualTransformation = visualTransformation,
                         colors =
                             OutlinedTextFieldDefaults.colors(
@@ -469,18 +649,40 @@ fun AgentDemoLoadedScreen(
                                 focusedBorderColor = Color.Transparent,
                             ),
                         trailingIcon = {
-                            IconButton(
-                                onClick = sendMessage,
-                                enabled =
-                                    uiState.currentThread != null &&
-                                        messageText.text.isNotBlank() &&
-                                        uiState.status == AgentStatus.Idle,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 4.dp),
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription =
-                                        stringResource(R.string.agent_demo_send),
-                                )
+                                IconButton(
+                                    onClick = {
+                                        onEvent(
+                                            AgentUiEvent.OnStartLiveSession(
+                                                selectedAppPackageName,
+                                            ),
+                                        )
+                                    },
+                                    enabled = isLiveStartEnabled,
+                                    colors =
+                                        IconButtonDefaults.iconButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.primary,
+                                        ),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.GraphicEq,
+                                        contentDescription =
+                                            stringResource(R.string.agent_demo_live_start),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = sendMessage,
+                                    enabled = isTextInputEnabled && messageText.text.isNotBlank(),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription =
+                                            stringResource(R.string.agent_demo_send),
+                                    )
+                                }
                             }
                         },
                     )
@@ -555,6 +757,7 @@ fun ModelDropdown(
     modifier: Modifier = Modifier,
     currentThread: ThreadEntity?,
     availableModels: List<LlmModel> = emptyList(),
+    isModelSelectionEnabled: Boolean = true,
     onModelSelected: (LlmModel) -> Unit,
     onMenuClick: () -> Unit,
 ) {
@@ -565,8 +768,8 @@ fun ModelDropdown(
         }
     ExposedDropdownMenuBox(
         modifier = modifier,
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
+        expanded = expanded && isModelSelectionEnabled,
+        onExpandedChange = { if (isModelSelectionEnabled) expanded = !expanded },
     ) {
         Surface(
             modifier = Modifier.padding(bottom = 8.dp),
@@ -602,7 +805,7 @@ fun ModelDropdown(
                             .fillMaxHeight()
                             .menuAnchor(
                                 ExposedDropdownMenuAnchorType.PrimaryEditable,
-                                enabled = true,
+                                enabled = isModelSelectionEnabled,
                             ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -620,13 +823,15 @@ fun ModelDropdown(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null)
+                    if (isModelSelectionEnabled) {
+                        Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
                 }
             }
         }
 
         LazyExposedDropdownMenu(
-            expanded = expanded,
+            expanded = expanded && isModelSelectionEnabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.exposedDropdownSize(),
             containerColor = MaterialTheme.colorScheme.surfaceBright,

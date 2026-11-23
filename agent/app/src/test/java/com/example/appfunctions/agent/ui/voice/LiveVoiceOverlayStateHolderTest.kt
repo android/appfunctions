@@ -17,11 +17,10 @@ package com.example.appfunctions.agent.ui.voice
 
 import com.example.appfunctions.agent.data.LlmModel
 import com.example.appfunctions.agent.data.LlmProviderName
-import com.example.appfunctions.agent.data.db.entities.ThreadEntity
 import com.example.appfunctions.agent.domain.ActiveLiveSession
 import com.example.appfunctions.agent.domain.LiveAgentOrchestrator
 import com.example.appfunctions.agent.domain.LiveAgentStatus
-import com.example.appfunctions.agent.domain.LlmProvider
+import com.example.appfunctions.agent.domain.LiveLlmProvider
 import com.example.appfunctions.agent.domain.LlmProviderFactory
 import com.example.appfunctions.agent.domain.appfunction.AppInfo
 import com.example.appfunctions.agent.domain.appfunction.GetInstalledAppsUseCase
@@ -40,7 +39,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -61,12 +59,12 @@ class LiveVoiceOverlayStateHolderTest {
     private lateinit var manageThreadsUseCase: ManageThreadsUseCase
     private lateinit var settingsRepository: FakeSettingsRepository
     private lateinit var llmProviderFactory: LlmProviderFactory
-    private lateinit var llmProvider: LlmProvider
+    private lateinit var liveLlmProvider: LiveLlmProvider
     private lateinit var checkAudioPermissionUseCase: CheckAudioPermissionUseCase
     private lateinit var getInstalledAppsUseCase: GetInstalledAppsUseCase
 
     private val activeSessionFlow = MutableStateFlow<ActiveLiveSession?>(null)
-    private val testModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash")
+    private val testLiveModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.8-live")
     private val chatAppInfo = AppInfo("com.example.chat", "ChatApp", null)
 
     @Before
@@ -74,13 +72,14 @@ class LiveVoiceOverlayStateHolderTest {
         liveAgentOrchestrator = mockk(relaxed = true)
         manageThreadsUseCase = mockk(relaxed = true)
         settingsRepository = FakeSettingsRepository()
-        llmProvider = mockk(relaxed = true)
+        liveLlmProvider = mockk()
         llmProviderFactory = mockk(relaxed = true)
         checkAudioPermissionUseCase = mockk()
         getInstalledAppsUseCase = mockk()
 
         every { liveAgentOrchestrator.activeSession } returns activeSessionFlow
-        every { llmProviderFactory.getProvider(any()) } returns llmProvider
+        every { llmProviderFactory.getLiveProvider(any()) } returns liveLlmProvider
+        every { liveLlmProvider.liveModel } returns testLiveModel
         every { checkAudioPermissionUseCase() } returns true
         every { getInstalledAppsUseCase() } returns listOf(chatAppInfo)
     }
@@ -123,12 +122,11 @@ class LiveVoiceOverlayStateHolderTest {
         }
 
     @Test
-    fun `OnSessionShown without threadId uses existing thread and avoids duplicate restart`() =
+    fun `OnSessionShown without threadId creates Live-model thread and avoids duplicate restart`() =
         runTest {
-            val existingThread = ThreadEntity("thread-existing", 1000L, testModel, null)
-            every { manageThreadsUseCase.getThreads() } returns flowOf(listOf(existingThread))
+            coEvery { manageThreadsUseCase.createThread(testLiveModel) } returns "thread-live"
             val statusChannel = Channel<LiveAgentStatus>(Channel.UNLIMITED)
-            stubRunSession("thread-existing", null, statusChannel.consumeAsFlow())
+            stubRunSession("thread-live", null, statusChannel.consumeAsFlow())
 
             val holder = createStateHolder()
 
@@ -136,14 +134,16 @@ class LiveVoiceOverlayStateHolderTest {
             statusChannel.send(LiveAgentStatus.Listening)
             advanceUntilIdle()
 
+            coVerify(exactly = 1) { manageThreadsUseCase.createThread(testLiveModel) }
             assertTrue(holder.uiState.value.isVisible)
-            assertEquals("thread-existing", holder.uiState.value.threadId)
+            assertEquals("thread-live", holder.uiState.value.threadId)
             assertEquals(LiveOverlayStatus.Listening, holder.uiState.value.status)
 
             // Re-showing without explicit args while active keeps the current session running.
             holder.onEvent(LiveOverlayUiEvent.OnSessionShown())
             advanceUntilIdle()
-            verify(exactly = 1) { liveAgentOrchestrator.runSession("thread-existing", null) }
+            coVerify(exactly = 1) { manageThreadsUseCase.createThread(testLiveModel) }
+            verify(exactly = 1) { liveAgentOrchestrator.runSession("thread-live", null) }
 
             holder.onEvent(LiveOverlayUiEvent.OnSessionHidden)
             advanceUntilIdle()
@@ -153,46 +153,47 @@ class LiveVoiceOverlayStateHolderTest {
         }
 
     @Test
-    fun `OnSessionShown creates default thread from selected provider when no thread exists`() =
+    fun `OnRetryClicked reuses Live-model thread created for failed session`() =
         runTest {
-            settingsRepository.setGeminiApiKey("valid-key")
-            every { manageThreadsUseCase.getThreads() } returns flowOf(emptyList())
-            coEvery { llmProvider.getAvailableModels("valid-key") } returns listOf(testModel)
-            coEvery { manageThreadsUseCase.createThread(testModel) } returns "thread-created"
-            val statusChannel = Channel<LiveAgentStatus>(Channel.UNLIMITED)
-            stubRunSession("thread-created", null, statusChannel.consumeAsFlow())
-
-            val holder = createStateHolder()
-
-            holder.onEvent(LiveOverlayUiEvent.OnSessionShown())
-            statusChannel.send(LiveAgentStatus.Listening)
-            advanceUntilIdle()
-
-            coVerify(exactly = 1) { manageThreadsUseCase.createThread(testModel) }
-            assertEquals("thread-created", holder.uiState.value.threadId)
-            assertEquals(LiveOverlayStatus.Listening, holder.uiState.value.status)
-            holder.close()
-        }
-
-    @Test
-    fun `OnSessionShown surfaces NoModelAvailable when no thread exists and no model is available`() =
-        runTest {
-            every { manageThreadsUseCase.getThreads() } returns flowOf(emptyList())
-            coEvery { llmProvider.getAvailableModels(any()) } returns emptyList()
+            coEvery { manageThreadsUseCase.createThread(testLiveModel) } returns "thread-live"
+            var calls = 0
+            every { liveAgentOrchestrator.runSession("thread-live", null) } answers {
+                calls++
+                if (calls == 1) {
+                    flow {
+                        activeSessionFlow.value =
+                            ActiveLiveSession("thread-live", LiveAgentStatus.Error("Disconnected"))
+                        emit(LiveAgentStatus.Error("Disconnected"))
+                        activeSessionFlow.value = null
+                        awaitCancellation()
+                    }
+                } else {
+                    flow {
+                        activeSessionFlow.value =
+                            ActiveLiveSession("thread-live", LiveAgentStatus.Listening)
+                        emit(LiveAgentStatus.Listening)
+                        awaitCancellation()
+                    }
+                }
+            }
 
             val holder = createStateHolder()
 
             holder.onEvent(LiveOverlayUiEvent.OnSessionShown())
             advanceUntilIdle()
 
-            assertTrue(holder.uiState.value.isVisible)
+            assertEquals("thread-live", holder.uiState.value.threadId)
             assertEquals(
-                LiveOverlayStatus.Error.NoModelAvailable(LlmProviderName.GEMINI.displayName),
+                LiveOverlayStatus.Error.SessionFailed("Disconnected"),
                 holder.uiState.value.status,
             )
-            assertFalse(holder.uiState.value.keepVisibleOnSystemDialogsClose)
-            coVerify(exactly = 0) { manageThreadsUseCase.createThread(any()) }
-            verify(exactly = 0) { liveAgentOrchestrator.runSession(any(), any()) }
+
+            holder.onEvent(LiveOverlayUiEvent.OnRetryClicked)
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { manageThreadsUseCase.createThread(testLiveModel) }
+            assertEquals(2, calls)
+            assertEquals(LiveOverlayStatus.Listening, holder.uiState.value.status)
             holder.close()
         }
 
