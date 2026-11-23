@@ -63,6 +63,10 @@ class AppFunctionInstrumentationTest {
     @Test
     fun testSend_success() =
         runBlocking<Unit> {
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
             val sendMessageFunctionMetadata =
                 appFunctionManager
                     .searchAppFunctions(
@@ -99,6 +103,10 @@ class AppFunctionInstrumentationTest {
     @Test
     fun testSend_emptyContent_fails() =
         runBlocking<Unit> {
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
             val sendMessageFunctionMetadata =
                 appFunctionManager
                     .searchAppFunctions(
@@ -128,6 +136,10 @@ class AppFunctionInstrumentationTest {
     @Test
     fun testSearchContacts_success() =
         runBlocking<Unit> {
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
             val getRecipientsFunctionMetadata =
                 appFunctionManager
                     .searchAppFunctions(
@@ -165,5 +177,296 @@ class AppFunctionInstrumentationTest {
                         endpointDisplayName = "alice@example.com",
                     ),
                 )
+        }
+
+    @Test
+    fun testSearchContacts_disabledByDefault() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS }
+            val states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            val searchContactsState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(searchContactsState?.isEnabled ?: false).isFalse()
+        }
+
+    @Test
+    fun testSearchContacts_registrationLifecycle() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS }
+
+            // 1. Enable / Register capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            var states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            var searchContactsState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(searchContactsState?.isEnabled).isTrue()
+
+            // 2. Disable / Unregister capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS,
+                AppFunctionManager.APP_FUNCTION_STATE_DISABLED,
+            )
+            states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            searchContactsState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(searchContactsState?.isEnabled).isFalse()
+        }
+
+    @Test
+    fun testFetchSendMessageDetails_disabledByDefault() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS }
+            val states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            val functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled ?: false).isFalse()
+        }
+
+    @Test
+    fun testFetchSendMessageDetails_registrationLifecycle() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS }
+
+            // 1. Enable / Register capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            var states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            var functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isTrue()
+
+            // 2. Disable / Unregister capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                AppFunctionManager.APP_FUNCTION_STATE_DISABLED,
+            )
+            states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isFalse()
+        }
+
+    @Test
+    fun testSendMessage_disabledByDefault() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE }
+            val states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            val functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled ?: false).isFalse()
+        }
+
+    @Test
+    fun testSendMessage_registrationLifecycle() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE }
+
+            // 1. Enable / Register capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            var states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            var functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isTrue()
+
+            // 2. Disable / Unregister capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE,
+                AppFunctionManager.APP_FUNCTION_STATE_DISABLED,
+            )
+            states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isFalse()
+        }
+
+    @Test
+    fun testMakeCall_disabledByDefault() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_MAKE_CALL }
+            val states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            val functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled ?: false).isFalse()
+        }
+
+    @Test
+    fun testMakeCall_registrationLifecycle() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_MAKE_CALL }
+
+            // 1. Enable / Register capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_MAKE_CALL,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            var states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            var functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isTrue()
+
+            // 2. Disable / Unregister capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_MAKE_CALL,
+                AppFunctionManager.APP_FUNCTION_STATE_DISABLED,
+            )
+            states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isFalse()
+        }
+
+    @Test
+    fun testUpdateChatWallpaper_disabledByDefault() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_UPDATE_CHAT_WALLPAPER }
+            val states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            val functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled ?: false).isFalse()
+        }
+
+    @Test
+    fun testUpdateChatWallpaper_registrationLifecycle() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_UPDATE_CHAT_WALLPAPER }
+
+            // 1. Enable / Register capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_UPDATE_CHAT_WALLPAPER,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            var states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            var functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isTrue()
+
+            // 2. Disable / Unregister capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_UPDATE_CHAT_WALLPAPER,
+                AppFunctionManager.APP_FUNCTION_STATE_DISABLED,
+            )
+            states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isFalse()
+        }
+
+    @Test
+    fun testSearchMessages_disabledByDefault() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_MESSAGES }
+            val states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            val functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled ?: false).isFalse()
+        }
+
+    @Test
+    fun testSearchMessages_registrationLifecycle() =
+        runBlocking<Unit> {
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_SEARCH_MESSAGES }
+
+            // 1. Enable / Register capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEARCH_MESSAGES,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            var states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            var functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isTrue()
+
+            // 2. Disable / Unregister capability
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_SEARCH_MESSAGES,
+                AppFunctionManager.APP_FUNCTION_STATE_DISABLED,
+            )
+            states = appFunctionManager.getAppFunctionStates(listOf(metadata.name))
+            functionState = states.singleOrNull { it.functionName == metadata.name }
+            assertThat(functionState?.isEnabled).isFalse()
+        }
+
+    @Test
+    fun testFetchSendMessageDetails_selfInvocation() =
+        runBlocking<Unit> {
+            appFunctionManager.setAppFunctionEnabled(
+                ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                AppFunctionManager.APP_FUNCTION_STATE_ENABLED,
+            )
+            val metadata =
+                appFunctionManager
+                    .searchAppFunctions(
+                        AppFunctionSearchSpec(packageNames = setOf(context.packageName)),
+                    )
+                    .single { it.id == ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS }
+
+            val testRecipient = recipientsRepository.getAllRecipients().first()
+            val request =
+                ExecuteAppFunctionRequest(
+                    targetPackageName = context.packageName,
+                    ChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                    AppFunctionData.Builder(
+                        metadata.parameters,
+                        metadata.components,
+                    )
+                        .setString("endpointValue", testRecipient.id)
+                        .setString("messageBody", "Test Preview")
+                        .build(),
+                )
+
+            val response = appFunctionManager.executeAppFunction(request)
+            val successResponse = assertIs<ExecuteAppFunctionResponse.Success>(response)
+            assertThat(successResponse).isNotNull()
         }
 }

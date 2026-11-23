@@ -16,10 +16,15 @@
 package com.example.chatapp
 
 import android.app.Application
+import androidx.annotation.RequiresApi
+import androidx.appfunctions.AppFunctionData
 import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionSearchSpec
+import androidx.appfunctions.ExecuteAppFunctionRequest
+import androidx.appfunctions.ExecuteAppFunctionResponse
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.chatapp.appfunctions.BaseChatAppFunctionService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -121,5 +126,157 @@ class AppFunctionsViewModel
                     }
                 appFunctionManager?.setAppFunctionEnabled(id, newState)
             }
+        }
+
+        /**
+         * Registers (enables) the searchContacts capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerSearchContacts() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the searchContacts capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterSearchContacts() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_SEARCH_CONTACTS, enabled = false)
+        }
+
+        /**
+         * Registers (enables) the fetchSendMessageDetails capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerFetchSendMessageDetails() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the fetchSendMessageDetails capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterFetchSendMessageDetails() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS, enabled = false)
+        }
+
+        /**
+         * Registers (enables) the sendMessage capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerSendMessage() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the sendMessage capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterSendMessage() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_SEND_MESSAGE, enabled = false)
+        }
+
+        /**
+         * Registers (enables) the makeCall capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerMakeCall() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_MAKE_CALL, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the makeCall capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterMakeCall() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_MAKE_CALL, enabled = false)
+        }
+
+        /**
+         * Registers (enables) the updateChatWallpaper capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerUpdateChatWallpaper() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_UPDATE_CHAT_WALLPAPER, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the updateChatWallpaper capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterUpdateChatWallpaper() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_UPDATE_CHAT_WALLPAPER, enabled = false)
+        }
+
+        /**
+         * Registers (enables) the searchMessages capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun registerSearchMessages() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_SEARCH_MESSAGES, enabled = true)
+        }
+
+        /**
+         * Unregisters (disables) the searchMessages capability with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun unregisterSearchMessages() {
+            toggleFunction(BaseChatAppFunctionService.FUNCTION_ID_SEARCH_MESSAGES, enabled = false)
+        }
+
+        /**
+         * Handles user authentication state changes to dynamically register or unregister
+         * app capabilities with the OS at runtime.
+         */
+        @RequiresApi(36)
+        fun onUserAuthStateChanged(isSignedIn: Boolean) {
+            if (isSignedIn) {
+                registerSearchContacts()
+                registerFetchSendMessageDetails()
+                registerSendMessage()
+                registerMakeCall()
+                registerUpdateChatWallpaper()
+                registerSearchMessages()
+            } else {
+                unregisterSearchContacts()
+                unregisterFetchSendMessageDetails()
+                unregisterSendMessage()
+                unregisterMakeCall()
+                unregisterUpdateChatWallpaper()
+                unregisterSearchMessages()
+            }
+        }
+
+        /**
+         * Invokes the app-private fetchSendMessageDetails AppFunction internally from within ChatApp.
+         *
+         * @param endpointValue The recipient or group identifier.
+         * @param messageBody The text message body.
+         * @return The execution response from AppFunctionManager.
+         */
+        @RequiresApi(36)
+        suspend fun invokeFetchSendMessageDetailsInternally(
+            endpointValue: String,
+            messageBody: String,
+        ): ExecuteAppFunctionResponse? {
+            if (appFunctionManager == null) return null
+            val packageName = getApplication<Application>().packageName
+            val searchSpec = AppFunctionSearchSpec(packageNames = setOf(packageName))
+            val metadata =
+                appFunctionManager.searchAppFunctions(searchSpec)
+                    .singleOrNull { it.id == BaseChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS }
+                    ?: return null
+
+            val request =
+                ExecuteAppFunctionRequest(
+                    targetPackageName = packageName,
+                    BaseChatAppFunctionService.FUNCTION_ID_FETCH_SEND_MESSAGE_DETAILS,
+                    AppFunctionData.Builder(metadata.parameters, metadata.components)
+                        .setString("endpointValue", endpointValue)
+                        .setString("messageBody", messageBody)
+                        .build(),
+                )
+
+            return appFunctionManager.executeAppFunction(request)
         }
     }
