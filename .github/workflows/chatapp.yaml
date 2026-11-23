@@ -62,7 +62,7 @@ jobs:
 
       - name: Setup GMD
         run: |
-          ./gradlew :app:pixel7Api35Setup \
+          ./gradlew :app:pixel7Api37Setup \
           --info \
           -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
           -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
@@ -70,7 +70,7 @@ jobs:
 
       - name: Run instrumentation tests
         run: |
-          ./gradlew :app:pixel7Api35Check \
+          ./gradlew :app:pixel7Api37Check \
           -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
           -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
         working-directory: ChatApp
