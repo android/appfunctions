@@ -7,6 +7,7 @@
     "main"
   ],
   "automerge": true,
+  "platformAutomerge": true,
   "gitIgnoredAuthors": [
     "renovate[bot]@users.noreply.github.com",
     "github-actions[bot]@users.noreply.github.com",
