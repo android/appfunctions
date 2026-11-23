@@ -23,7 +23,9 @@ plugins {
 
 android {
     namespace = "com.example.chatapp.wear"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) { minorApiLevel = 2 }
+    }
 
     defaultConfig {
         applicationId = "com.example.chatapp.wear"
