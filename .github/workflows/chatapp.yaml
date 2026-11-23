@@ -9,10 +9,6 @@ on:
       - '.github/workflows/chatapp.yaml'
       - '.github/ci-gradle.properties'
   pull_request:
-    paths:
-      - 'ChatApp/**'
-      - '.github/workflows/chatapp.yaml'
-      - '.github/ci-gradle.properties'
   workflow_dispatch:
 
 concurrency:
@@ -20,8 +16,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: "Check changes"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      run_ci: ${{ steps.filter.outputs.run_ci }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Check changed paths
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_ci=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(ChatApp/|\.github/workflows/chatapp\.yaml|\.github/ci-gradle\.properties)'; then
+            echo "run_ci=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_ci=false" >> "$GITHUB_OUTPUT"
+          fi
+
   chatapp-build:
     name: "ChatApp build & test"
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
