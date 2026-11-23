@@ -145,11 +145,6 @@ fun LiveVoiceSessionOverlay(
                                 }
                                 LiveOverlayStatus.Error.AudioPermissionRequired ->
                                     stringResource(R.string.live_session_audio_permission_required)
-                                is LiveOverlayStatus.Error.NoModelAvailable ->
-                                    stringResource(
-                                        R.string.live_session_no_model_available,
-                                        status.providerDisplayName,
-                                    )
                                 is LiveOverlayStatus.Error.SessionFailed -> status.message
                             }
                         val subtitleColor =

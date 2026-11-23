@@ -29,6 +29,7 @@ import com.example.appfunctions.agent.domain.LiveAgentStatus
 
 private val previewFlashModel = LlmModel(LlmProviderName.GEMINI, "gemini-3-flash-preview")
 private val previewProModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.1-pro-preview")
+private val previewLiveModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.8-live")
 
 /** Screenshot test for [AgentDemoScreen]. */
 @PreviewTest
@@ -359,7 +360,7 @@ fun AgentDemoScreenSidePanelPreview() {
 @Composable
 fun AgentDemoScreenLiveActivePreview() {
     val thread =
-        ThreadEntity("thread-1", System.currentTimeMillis(), previewFlashModel, null)
+        ThreadEntity("thread-live", System.currentTimeMillis(), previewLiveModel, null)
     AgentDemoContent(
         uiState =
             AgentUiState.Loaded(
@@ -367,6 +368,45 @@ fun AgentDemoScreenLiveActivePreview() {
                 status = AgentStatus.Idle,
                 liveStatus = LiveAgentStatus.Listening,
                 currentThread = thread,
+                isCurrentThreadLive = true,
+            ),
+        onEvent = {},
+    )
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun AgentDemoScreenLiveTranscriptPreview() {
+    val thread =
+        ThreadEntity("thread-live", System.currentTimeMillis(), previewLiveModel, null)
+    val messages =
+        listOf(
+            MessageEntity(
+                "1",
+                "thread-live",
+                MessageRole.USER,
+                "Check my unread messages",
+                System.currentTimeMillis(),
+                MessageProcessingStatus.PROCESSED,
+            ),
+            MessageEntity(
+                "2",
+                "thread-live",
+                MessageRole.ASSISTANT,
+                "You have one unread message from Alice.",
+                System.currentTimeMillis(),
+                MessageProcessingStatus.PROCESSED,
+            ),
+        )
+    AgentDemoContent(
+        uiState =
+            AgentUiState.Loaded(
+                messages = messages,
+                status = AgentStatus.Idle,
+                liveStatus = null,
+                currentThread = thread,
+                isCurrentThreadLive = true,
             ),
         onEvent = {},
     )

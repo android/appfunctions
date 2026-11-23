@@ -28,6 +28,7 @@ sealed class AgentUiState {
 
     data class Loaded(
         val currentThread: ThreadEntity? = null,
+        val isCurrentThreadLive: Boolean = false,
         val messages: List<MessageEntity> = emptyList(),
         val status: AgentStatus = AgentStatus.Idle,
         val liveStatus: LiveAgentStatus? = null,
@@ -52,6 +53,8 @@ sealed class LiveSetupPrompt {
     ) : LiveSetupPrompt()
 
     data object AudioPermissionDenied : LiveSetupPrompt()
+
+    data object AssistantNotSelected : LiveSetupPrompt()
 
     data object AssistantSettingsUnavailable : LiveSetupPrompt()
 

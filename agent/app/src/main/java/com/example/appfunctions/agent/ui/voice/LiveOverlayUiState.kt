@@ -40,8 +40,6 @@ sealed interface LiveOverlayStatus {
     sealed interface Error : LiveOverlayStatus {
         data object AudioPermissionRequired : Error
 
-        data class NoModelAvailable(val providerDisplayName: String) : Error
-
         data class SessionFailed(val message: String) : Error
     }
 }

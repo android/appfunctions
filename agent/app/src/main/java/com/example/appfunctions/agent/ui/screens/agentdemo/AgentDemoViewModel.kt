@@ -83,6 +83,7 @@ class AgentDemoViewModel
         private val liveSetupPrompt = MutableStateFlow<LiveSetupPrompt?>(null)
 
         private var observationJob: Job? = null
+        private var createLiveThreadJob: Job? = null
 
         init {
             viewModelScope.launch {
@@ -181,11 +182,18 @@ class AgentDemoViewModel
                                 activeLiveSession.threadId != currentThread?.threadId
 
                         val currentLoadedState = _uiState.value as? AgentUiState.Loaded
+                        val isCurrentThreadLive =
+                            currentThread != null &&
+                                currentThread.llmModel ==
+                                llmProviderFactory
+                                    .getLiveProvider(currentThread.llmModel.providerName)
+                                    .liveModel
                         _uiState.value =
                             AgentUiState.Loaded(
                                 currentThread = currentThread,
+                                isCurrentThreadLive = isCurrentThreadLive,
                                 messages =
-                                    if (currentThread != null) {
+                                    if (currentThread != null && currentThread.threadId == previousThreadId) {
                                         currentLoadedState?.messages ?: emptyList()
                                     } else {
                                         emptyList()
@@ -233,7 +241,10 @@ class AgentDemoViewModel
             val currentState = _uiState.value
             when (event) {
                 is AgentUiEvent.OnSendMessage -> {
-                    val currentThread = (currentState as? AgentUiState.Loaded)?.currentThread
+                    val currentThread =
+                        (currentState as? AgentUiState.Loaded)
+                            ?.takeUnless { it.isCurrentThreadLive }
+                            ?.currentThread
                     if (currentThread != null) {
                         viewModelScope.launch {
                             sendMessageUseCase(
@@ -250,7 +261,7 @@ class AgentDemoViewModel
                     if (currentState is AgentUiState.Loaded) {
                         viewModelScope.launch {
                             val currentThread = currentState.currentThread
-                            if (currentThread != null) {
+                            if (currentThread != null && !currentState.isCurrentThreadLive) {
                                 manageThreadsUseCase.updateThreadModel(
                                     currentThread.threadId,
                                     event.model,
@@ -277,12 +288,22 @@ class AgentDemoViewModel
                     tryStartLiveSession(event.targetPackageName)
                 }
                 is AgentUiEvent.OnLiveSessionLaunchResult -> {
-                    liveSetupPrompt.value =
-                        if (event.isLaunched) {
-                            null
-                        } else {
-                            LiveSetupPrompt.AssistLaunchFailed
+                    val pendingThreadId =
+                        savedStateHandle.get<String?>(KEY_PENDING_LAUNCH_THREAD_ID)
+                    val previousThreadId =
+                        savedStateHandle.get<String?>(KEY_PREVIOUS_THREAD_ID)
+                    clearPendingLaunchThread()
+                    if (event.isLaunched) {
+                        liveSetupPrompt.value = null
+                    } else {
+                        savedStateHandle[MainActivity.ARG_THREAD_ID] = previousThreadId
+                        if (pendingThreadId != null) {
+                            viewModelScope.launch {
+                                manageThreadsUseCase.deleteThread(pendingThreadId)
+                            }
                         }
+                        liveSetupPrompt.value = LiveSetupPrompt.AssistLaunchFailed
+                    }
                 }
                 is AgentUiEvent.OnAudioPermissionResult -> {
                     val pendingTarget =
@@ -300,16 +321,9 @@ class AgentDemoViewModel
                         savedStateHandle.get<String?>(KEY_PENDING_LIVE_TARGET_PACKAGE)
                     clearPendingLiveTarget()
                     if (checkVoiceServiceActiveUseCase()) {
-                        val currentThread = (_uiState.value as? AgentUiState.Loaded)?.currentThread
-                        liveSetupPrompt.value =
-                            currentThread?.let {
-                                LiveSetupPrompt.LaunchAssistSession(
-                                    threadId = it.threadId,
-                                    targetPackageName = pendingTarget,
-                                )
-                            }
+                        launchNewLiveSession(pendingTarget)
                     } else {
-                        liveSetupPrompt.value = null
+                        liveSetupPrompt.value = LiveSetupPrompt.AssistantNotSelected
                     }
                 }
                 AgentUiEvent.OnAssistantSettingsUnavailable -> {
@@ -324,7 +338,12 @@ class AgentDemoViewModel
         }
 
         private fun tryStartLiveSession(targetPackageName: String?) {
-            val currentThread = (_uiState.value as? AgentUiState.Loaded)?.currentThread ?: return
+            if (
+                liveAgentOrchestrator.activeSession.value != null ||
+                agentOrchestrator.status.value != AgentStatus.Idle
+            ) {
+                return
+            }
             if (!checkAudioPermissionUseCase()) {
                 savedStateHandle[KEY_PENDING_LIVE_TARGET_PACKAGE] = targetPackageName
                 liveSetupPrompt.value = LiveSetupPrompt.RequestAudioPermission(targetPackageName)
@@ -336,15 +355,41 @@ class AgentDemoViewModel
                 return
             }
             clearPendingLiveTarget()
-            liveSetupPrompt.value =
-                LiveSetupPrompt.LaunchAssistSession(
-                    threadId = currentThread.threadId,
-                    targetPackageName = targetPackageName,
-                )
+            launchNewLiveSession(targetPackageName)
+        }
+
+        private fun launchNewLiveSession(targetPackageName: String?) {
+            if (
+                createLiveThreadJob?.isActive == true ||
+                savedStateHandle.get<String?>(KEY_PENDING_LAUNCH_THREAD_ID) != null
+            ) {
+                return
+            }
+            createLiveThreadJob =
+                viewModelScope.launch {
+                    val previousThreadId =
+                        (_uiState.value as? AgentUiState.Loaded)?.currentThread?.threadId
+                    val selectedProvider = settingsRepository.selectedProvider.first()
+                    val liveModel = llmProviderFactory.getLiveProvider(selectedProvider).liveModel
+                    val liveThreadId = manageThreadsUseCase.createThread(liveModel)
+                    savedStateHandle[KEY_PENDING_LAUNCH_THREAD_ID] = liveThreadId
+                    savedStateHandle[KEY_PREVIOUS_THREAD_ID] = previousThreadId
+                    savedStateHandle[MainActivity.ARG_THREAD_ID] = liveThreadId
+                    liveSetupPrompt.value =
+                        LiveSetupPrompt.LaunchAssistSession(
+                            threadId = liveThreadId,
+                            targetPackageName = targetPackageName,
+                        )
+                }
         }
 
         private fun clearPendingLiveTarget() {
             savedStateHandle.remove<String?>(KEY_PENDING_LIVE_TARGET_PACKAGE)
+        }
+
+        private fun clearPendingLaunchThread() {
+            savedStateHandle.remove<String?>(KEY_PENDING_LAUNCH_THREAD_ID)
+            savedStateHandle.remove<String?>(KEY_PREVIOUS_THREAD_ID)
         }
 
         private suspend fun createAndSelectThread(llmModel: LlmModel) {
@@ -354,6 +399,8 @@ class AgentDemoViewModel
 
         private companion object {
             const val KEY_PENDING_LIVE_TARGET_PACKAGE = "pending_live_target_package"
+            const val KEY_PENDING_LAUNCH_THREAD_ID = "pending_launch_live_thread_id"
+            const val KEY_PREVIOUS_THREAD_ID = "previous_thread_id_before_live"
         }
     }
 

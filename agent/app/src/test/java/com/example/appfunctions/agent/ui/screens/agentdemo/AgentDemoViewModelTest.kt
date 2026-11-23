@@ -29,6 +29,7 @@ import com.example.appfunctions.agent.domain.AgentOrchestrator
 import com.example.appfunctions.agent.domain.AgentStatus
 import com.example.appfunctions.agent.domain.LiveAgentOrchestrator
 import com.example.appfunctions.agent.domain.LiveAgentStatus
+import com.example.appfunctions.agent.domain.LiveLlmProvider
 import com.example.appfunctions.agent.domain.LlmProvider
 import com.example.appfunctions.agent.domain.LlmProviderFactory
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
@@ -77,6 +78,7 @@ class AgentDemoViewModelTest {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var llmProviderFactory: LlmProviderFactory
     private lateinit var llmProvider: LlmProvider
+    private lateinit var liveLlmProvider: LiveLlmProvider
     private lateinit var savedStateHandle: SavedStateHandle
     private lateinit var observeActivePendingIntentsUseCase: ObserveActivePendingIntentsUseCase
     private lateinit var launchPendingIntentUseCase: LaunchPendingIntentUseCase
@@ -88,6 +90,7 @@ class AgentDemoViewModelTest {
 
     private val testModelFlash = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash")
     private val testModelPro = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-pro")
+    private val testModelLive = LlmModel(LlmProviderName.GEMINI, "gemini-3.8-live")
 
     private val threadsFlow = MutableStateFlow<List<ThreadEntity>>(emptyList())
     private val selectedProviderFlow = MutableStateFlow<LlmProviderName>(LlmProviderName.GEMINI)
@@ -111,6 +114,7 @@ class AgentDemoViewModelTest {
         settingsRepository = mockk()
         llmProviderFactory = mockk()
         llmProvider = mockk()
+        liveLlmProvider = mockk()
         savedStateHandle = SavedStateHandle()
         observeActivePendingIntentsUseCase = mockk()
         launchPendingIntentUseCase = mockk()
@@ -128,6 +132,8 @@ class AgentDemoViewModelTest {
         every { settingsRepository.geminiApiKey } returns geminiApiKeyFlow
         every { llmProviderFactory.getProvider(any()) } returns llmProvider
         coEvery { llmProvider.getAvailableModels(any()) } returns listOf(testModelFlash, testModelPro)
+        every { llmProviderFactory.getLiveProvider(any()) } returns liveLlmProvider
+        every { liveLlmProvider.liveModel } returns testModelLive
         every { agentOrchestrator.status } returns agentStatusFlow
         every { liveAgentOrchestrator.activeSession } returns activeLiveSessionFlow
         every { checkAudioPermissionUseCase() } returns true
@@ -366,12 +372,17 @@ class AgentDemoViewModelTest {
         }
 
     @Test
-    fun `OnStartLiveSession checks permission and assistant role before emitting LaunchAssistSession`() =
+    fun `OnStartLiveSession checks permission and assistant role before creating Live thread and emitting LaunchAssistSession`() =
         runTest {
             val thread1 = ThreadEntity("thread-1", 2000L, testModelFlash, null)
             threadsFlow.value = listOf(thread1)
             every { checkAudioPermissionUseCase() } returns false
             every { checkVoiceServiceActiveUseCase() } returns false
+            coEvery { manageThreadsUseCase.createThread(testModelLive) } coAnswers {
+                val liveThread = ThreadEntity("thread-live", 3000L, testModelLive, null)
+                threadsFlow.value = listOf(liveThread) + threadsFlow.value
+                "thread-live"
+            }
 
             viewModel = createViewModel()
 
@@ -390,13 +401,98 @@ class AgentDemoViewModelTest {
 
             every { checkVoiceServiceActiveUseCase() } returns true
             viewModel.onEvent(AgentUiEvent.OnAssistantSettingsReturned)
+            val afterAssistantReady = viewModel.uiState.value as AgentUiState.Loaded
+            coVerify(exactly = 1) { manageThreadsUseCase.createThread(testModelLive) }
+            assertEquals("thread-live", afterAssistantReady.currentThread?.threadId)
+            assertTrue(afterAssistantReady.isCurrentThreadLive)
             assertEquals(
-                LiveSetupPrompt.LaunchAssistSession("thread-1", "com.example.chat"),
-                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+                LiveSetupPrompt.LaunchAssistSession("thread-live", "com.example.chat"),
+                afterAssistantReady.liveSetupPrompt,
             )
 
             viewModel.onEvent(AgentUiEvent.OnLiveSessionLaunchResult(isLaunched = true))
-            assertNull((viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt)
+            val afterLaunched = viewModel.uiState.value as AgentUiState.Loaded
+            assertNull(afterLaunched.liveSetupPrompt)
+            assertEquals("thread-live", afterLaunched.currentThread?.threadId)
+        }
+
+    @Test
+    fun `OnAssistantSettingsReturned surfaces AssistantNotSelected when voice service is still inactive`() =
+        runTest {
+            val thread1 = ThreadEntity("thread-1", 2000L, testModelFlash, null)
+            threadsFlow.value = listOf(thread1)
+            every { checkAudioPermissionUseCase() } returns true
+            every { checkVoiceServiceActiveUseCase() } returns false
+
+            viewModel = createViewModel()
+
+            viewModel.onEvent(AgentUiEvent.OnStartLiveSession("com.example.chat"))
+            assertEquals(
+                LiveSetupPrompt.SelectDigitalAssistant("com.example.chat"),
+                (viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt,
+            )
+
+            viewModel.onEvent(AgentUiEvent.OnAssistantSettingsReturned)
+            val afterReturned = viewModel.uiState.value as AgentUiState.Loaded
+            assertEquals(LiveSetupPrompt.AssistantNotSelected, afterReturned.liveSetupPrompt)
+            assertEquals("thread-1", afterReturned.currentThread?.threadId)
+            coVerify(exactly = 0) { manageThreadsUseCase.createThread(any()) }
+        }
+
+    @Test
+    fun `OnLiveSessionLaunchResult failure deletes pending Live thread and restores previous thread`() =
+        runTest {
+            val thread1 = ThreadEntity("thread-1", 2000L, testModelFlash, null)
+            threadsFlow.value = listOf(thread1)
+            coEvery { manageThreadsUseCase.createThread(testModelLive) } coAnswers {
+                val liveThread = ThreadEntity("thread-live", 3000L, testModelLive, null)
+                threadsFlow.value = listOf(liveThread) + threadsFlow.value
+                "thread-live"
+            }
+            coEvery { manageThreadsUseCase.deleteThread("thread-live") } coAnswers {
+                threadsFlow.value = threadsFlow.value.filterNot { it.threadId == "thread-live" }
+            }
+
+            viewModel = createViewModel()
+
+            viewModel.onEvent(AgentUiEvent.OnStartLiveSession())
+            assertEquals(
+                "thread-live",
+                (viewModel.uiState.value as AgentUiState.Loaded).currentThread?.threadId,
+            )
+
+            viewModel.onEvent(AgentUiEvent.OnLiveSessionLaunchResult(isLaunched = false))
+            val afterFailure = viewModel.uiState.value as AgentUiState.Loaded
+            coVerify(exactly = 1) { manageThreadsUseCase.deleteThread("thread-live") }
+            assertEquals("thread-1", afterFailure.currentThread?.threadId)
+            assertEquals(LiveSetupPrompt.AssistLaunchFailed, afterFailure.liveSetupPrompt)
+        }
+
+    @Test
+    fun `Live-model thread ignores OnSendMessage and OnModelSelected creates new text thread`() =
+        runTest {
+            val liveThread = ThreadEntity("thread-live", 3000L, testModelLive, null)
+            threadsFlow.value = listOf(liveThread)
+            coEvery { manageThreadsUseCase.createThread(testModelPro) } coAnswers {
+                val newTextThread = ThreadEntity("thread-text", 4000L, testModelPro, null)
+                threadsFlow.value = listOf(newTextThread, liveThread)
+                "thread-text"
+            }
+
+            viewModel = createViewModel()
+            assertTrue((viewModel.uiState.value as AgentUiState.Loaded).isCurrentThreadLive)
+
+            viewModel.onEvent(AgentUiEvent.OnSendMessage("Should be ignored"))
+            coVerify(exactly = 0) {
+                sendMessageUseCase(any(), any(), any(), any(), any(), any(), any())
+            }
+
+            viewModel.onEvent(AgentUiEvent.OnModelSelected(testModelPro))
+            coVerify(exactly = 0) { manageThreadsUseCase.updateThreadModel(any(), any()) }
+            coVerify(exactly = 1) { manageThreadsUseCase.createThread(testModelPro) }
+            val afterModelSelected = viewModel.uiState.value as AgentUiState.Loaded
+            assertEquals("thread-text", afterModelSelected.currentThread?.threadId)
+            assertFalse(afterModelSelected.isCurrentThreadLive)
         }
 
     @Test

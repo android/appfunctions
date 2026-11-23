@@ -316,6 +316,14 @@ private fun LiveSetupPromptDialog(
                 onDismiss = onDismiss,
             )
         }
+        LiveSetupPrompt.AssistantNotSelected -> {
+            StatusWarningDialog(
+                title = stringResource(R.string.live_session_select_assistant_title),
+                message = stringResource(R.string.live_session_assistant_not_selected),
+                isError = true,
+                onDismiss = onDismiss,
+            )
+        }
         LiveSetupPrompt.AssistantSettingsUnavailable -> {
             StatusWarningDialog(
                 title = stringResource(R.string.live_session_select_assistant_title),
@@ -370,6 +378,11 @@ fun AgentDemoLoadedScreen(
     var isSidePanelVisible by remember { mutableStateOf(initialSidePanelVisible) }
     var selectedAppPackageName by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(uiState.currentThread?.threadId) {
+        messageText = TextFieldValue("")
+        selectedAppPackageName = null
+    }
+
     LiveSetupPromptDialog(
         prompt = uiState.liveSetupPrompt,
         onOpenAssistantSettings = onOpenAssistantSettings,
@@ -398,6 +411,7 @@ fun AgentDemoLoadedScreen(
                             .padding(horizontal = 8.dp),
                     currentThread = uiState.currentThread,
                     availableModels = uiState.availableModels,
+                    isModelSelectionEnabled = !uiState.isCurrentThreadLive,
                     onModelSelected = { onEvent(AgentUiEvent.OnModelSelected(it)) },
                     onMenuClick = {
                         if (isWideScreen) {
@@ -408,7 +422,10 @@ fun AgentDemoLoadedScreen(
                     },
                 )
                 val defaultModel =
-                    uiState.currentThread?.llmModel ?: uiState.availableModels.firstOrNull()
+                    uiState.currentThread
+                        ?.llmModel
+                        ?.takeUnless { uiState.isCurrentThreadLive }
+                        ?: uiState.availableModels.firstOrNull()
                 IconButton(
                     onClick = {
                         if (defaultModel != null) {
@@ -507,14 +524,20 @@ fun AgentDemoLoadedScreen(
                 }
 
                 val isLiveOnCurrentThread = uiState.liveStatus != null
-                val isInputEnabled =
+                val isTextInputEnabled =
                     uiState.currentThread != null &&
+                        !uiState.isCurrentThreadLive &&
                         uiState.status == AgentStatus.Idle &&
                         !isLiveOnCurrentThread
+                val isLiveStartEnabled =
+                    uiState.currentThread != null &&
+                        uiState.status == AgentStatus.Idle &&
+                        !isLiveOnCurrentThread &&
+                        !uiState.isAnotherThreadLiveBusy
 
                 val sendMessage = {
                     val textStr = messageText.text
-                    if (isInputEnabled && textStr.isNotBlank()) {
+                    if (isTextInputEnabled && textStr.isNotBlank()) {
                         onEvent(AgentUiEvent.OnSendMessage(textStr, selectedAppPackageName))
                         messageText = TextFieldValue("")
                         selectedAppPackageName = null
@@ -602,15 +625,17 @@ fun AgentDemoLoadedScreen(
                                         false
                                     }
                                 },
-                        enabled = isInputEnabled,
+                        enabled = isTextInputEnabled,
                         shape = CircleShape,
                         placeholder = {
                             Text(
                                 stringResource(
-                                    if (isLiveOnCurrentThread) {
-                                        R.string.agent_demo_live_active_placeholder
-                                    } else {
-                                        R.string.agent_demo_ask_agent
+                                    when {
+                                        isLiveOnCurrentThread ->
+                                            R.string.agent_demo_live_active_placeholder
+                                        uiState.isCurrentThreadLive ->
+                                            R.string.agent_demo_live_thread_placeholder
+                                        else -> R.string.agent_demo_ask_agent
                                     },
                                 ),
                             )
@@ -636,7 +661,7 @@ fun AgentDemoLoadedScreen(
                                             ),
                                         )
                                     },
-                                    enabled = isInputEnabled && !uiState.isAnotherThreadLiveBusy,
+                                    enabled = isLiveStartEnabled,
                                     colors =
                                         IconButtonDefaults.iconButtonColors(
                                             contentColor = MaterialTheme.colorScheme.primary,
@@ -650,7 +675,7 @@ fun AgentDemoLoadedScreen(
                                 }
                                 IconButton(
                                     onClick = sendMessage,
-                                    enabled = isInputEnabled && messageText.text.isNotBlank(),
+                                    enabled = isTextInputEnabled && messageText.text.isNotBlank(),
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Send,
@@ -732,6 +757,7 @@ fun ModelDropdown(
     modifier: Modifier = Modifier,
     currentThread: ThreadEntity?,
     availableModels: List<LlmModel> = emptyList(),
+    isModelSelectionEnabled: Boolean = true,
     onModelSelected: (LlmModel) -> Unit,
     onMenuClick: () -> Unit,
 ) {
@@ -742,8 +768,8 @@ fun ModelDropdown(
         }
     ExposedDropdownMenuBox(
         modifier = modifier,
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
+        expanded = expanded && isModelSelectionEnabled,
+        onExpandedChange = { if (isModelSelectionEnabled) expanded = !expanded },
     ) {
         Surface(
             modifier = Modifier.padding(bottom = 8.dp),
@@ -779,7 +805,7 @@ fun ModelDropdown(
                             .fillMaxHeight()
                             .menuAnchor(
                                 ExposedDropdownMenuAnchorType.PrimaryEditable,
-                                enabled = true,
+                                enabled = isModelSelectionEnabled,
                             ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -797,13 +823,15 @@ fun ModelDropdown(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null)
+                    if (isModelSelectionEnabled) {
+                        Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
                 }
             }
         }
 
         LazyExposedDropdownMenu(
-            expanded = expanded,
+            expanded = expanded && isModelSelectionEnabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.exposedDropdownSize(),
             containerColor = MaterialTheme.colorScheme.surfaceBright,

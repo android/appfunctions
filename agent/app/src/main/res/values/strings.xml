@@ -125,6 +125,7 @@
     <string name="agent_demo_live_start">Start Live Voice Session</string>
     <string name="agent_demo_live_stop">End Live Voice Session</string>
     <string name="agent_demo_live_active_placeholder">Live voice session active…</string>
+    <string name="agent_demo_live_thread_placeholder">Live voice transcript</string>
     <string name="agent_demo_live_connecting">Connecting…</string>
     <string name="agent_demo_live_listening">Listening…</string>
     <string name="live_session_title">Live Agent</string>
@@ -133,9 +134,9 @@
     <string name="live_session_retry">Retry</string>
     <string name="live_session_audio_permission_title">Microphone Permission Required</string>
     <string name="live_session_audio_permission_required">Microphone permission is required for Live voice sessions.</string>
-    <string name="live_session_no_model_available">No model available for %1$s. Check your API key in Settings.</string>
     <string name="live_session_select_assistant_title">Select Digital Assistant</string>
     <string name="live_session_select_assistant_prompt">Select AppFunction Testing Agent as your Digital Assistant to start a Live voice session.</string>
+    <string name="live_session_assistant_not_selected">AppFunction Testing Agent was not selected as your Digital Assistant. Select it in Settings to start a Live voice session.</string>
     <string name="live_session_open_settings">Open Settings</string>
     <string name="live_session_cancel">Cancel</string>
     <string name="live_session_assistant_settings_unavailable">Digital Assistant settings are not available on this device.</string>
