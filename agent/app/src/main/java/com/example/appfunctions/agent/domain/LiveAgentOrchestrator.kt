@@ -40,6 +40,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.conflate
@@ -74,6 +77,13 @@ class LiveAgentOrchestrator
         private val audioSessionFactory: LiveAudioSessionFactory,
     ) {
         private val sessionMutex = Mutex()
+        private val _activeSession = MutableStateFlow<ActiveLiveSession?>(null)
+
+        /**
+         * The currently active live voice session and its latest [LiveAgentStatus], or `null` when
+         * no live session is running.
+         */
+        val activeSession: StateFlow<ActiveLiveSession?> = _activeSession.asStateFlow()
 
         /**
          * Returns a cold [Flow] that runs a bidirectional live voice session for [threadId] while
@@ -99,13 +109,23 @@ class LiveAgentOrchestrator
                     send(LiveAgentStatus.Error(ERROR_SESSION_ALREADY_ACTIVE))
                     return@channelFlow
                 }
+                val emitStatus: suspend (LiveAgentStatus) -> Unit = { status ->
+                    _activeSession.value =
+                        if (status is LiveAgentStatus.Ended) {
+                            null
+                        } else {
+                            ActiveLiveSession(threadId = threadId, status = status)
+                        }
+                    send(status)
+                }
                 try {
                     runSessionLocked(
-                        statusSink = ::send,
+                        statusSink = emitStatus,
                         threadId = threadId,
                         targetPackageName = targetPackageName,
                     )
                 } finally {
+                    _activeSession.value = null
                     sessionMutex.unlock()
                 }
             }.conflate()

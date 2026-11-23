@@ -16,8 +16,12 @@
 package com.example.appfunctions.agent
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,13 +40,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.core.util.Consumer
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -96,10 +104,33 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        const val ROUTE_AGENT_DEMO = "agent_demo?threadId={threadId}"
+        internal const val DEEPLINK_SCHEME = "appfunctions-agent"
+        internal const val DEEPLINK_HOST_CHAT = "chat"
         const val ARG_THREAD_ID = "threadId"
-        const val DEEPLINK_URI_PATTERN = "appfunctions-agent://chat?threadId={threadId}"
+        const val ROUTE_AGENT_DEMO = "agent_demo?$ARG_THREAD_ID={$ARG_THREAD_ID}"
+        const val DEEPLINK_URI_PATTERN =
+            "$DEEPLINK_SCHEME://$DEEPLINK_HOST_CHAT?$ARG_THREAD_ID={$ARG_THREAD_ID}"
         const val EXTRA_INSTRUMENTATION_ERROR = "EXTRA_INSTRUMENTATION_ERROR"
+
+        /**
+         * Creates an [Intent] that brings [MainActivity] to the foreground on the chat screen,
+         * optionally selecting [threadId].
+         */
+        fun createOpenChatIntent(
+            context: Context,
+            threadId: String? = null,
+        ): Intent {
+            val uriBuilder =
+                Uri.Builder()
+                    .scheme(DEEPLINK_SCHEME)
+                    .authority(DEEPLINK_HOST_CHAT)
+            if (!threadId.isNullOrBlank()) {
+                uriBuilder.appendQueryParameter(ARG_THREAD_ID, threadId)
+            }
+            return Intent(Intent.ACTION_VIEW, uriBuilder.build())
+                .setClass(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
     }
 }
 
@@ -115,6 +146,21 @@ fun MainScreen(
 ) {
     val navController = rememberNavController()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current as? ComponentActivity
+
+    LaunchedEffect(activity, navController) {
+        navigateToChatIfRequested(navController, activity?.intent)
+    }
+
+    DisposableEffect(activity, navController) {
+        val listener =
+            Consumer<Intent> { newIntent ->
+                activity?.intent = newIntent
+                navigateToChatIfRequested(navController, newIntent)
+            }
+        activity?.addOnNewIntentListener(listener)
+        onDispose { activity?.removeOnNewIntentListener(listener) }
+    }
 
     val items = listOf("debugging", "agent_demo", "settings")
     val icons = listOf(Icons.Default.Terminal, Icons.Default.PlayCircle, Icons.Default.Settings)
@@ -213,5 +259,36 @@ fun MainScreen(
                 ConnectedAppsScreen(onBack = { navController.popBackStack() })
             }
         }
+    }
+}
+
+private fun navigateToChatIfRequested(
+    navController: NavHostController,
+    intent: Intent?,
+) {
+    val deepLinkUri =
+        intent?.data?.takeIf {
+            it.scheme == MainActivity.DEEPLINK_SCHEME && it.host == MainActivity.DEEPLINK_HOST_CHAT
+        } ?: return
+    val threadId = deepLinkUri.getQueryParameter(MainActivity.ARG_THREAD_ID)
+    intent.data = null
+
+    val route =
+        if (!threadId.isNullOrEmpty()) {
+            "agent_demo?${MainActivity.ARG_THREAD_ID}=${Uri.encode(threadId)}"
+        } else {
+            "agent_demo"
+        }
+
+    navController.navigate(route) {
+        popUpTo(navController.graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+    }
+    if (!threadId.isNullOrEmpty()) {
+        navController.currentBackStackEntry
+            ?.savedStateHandle
+            ?.set(MainActivity.ARG_THREAD_ID, threadId)
     }
 }

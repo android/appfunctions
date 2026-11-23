@@ -22,6 +22,12 @@ interface SettingsRepository {
     /** Flow of the Gemini API key. */
     val geminiApiKey: Flow<String?>
 
+    /** Returns the API key flow configured for [provider]. */
+    fun getApiKey(provider: LlmProviderName): Flow<String?> =
+        when (provider) {
+            LlmProviderName.GEMINI -> geminiApiKey
+        }
+
     /** Flow of the selected LLM provider. */
     val selectedProvider: Flow<LlmProviderName>
 

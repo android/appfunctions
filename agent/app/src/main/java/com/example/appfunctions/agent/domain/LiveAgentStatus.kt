@@ -35,3 +35,14 @@ sealed class LiveAgentStatus {
 
     data class Error(val message: String) : LiveAgentStatus()
 }
+
+/**
+ * Snapshot of the currently active [LiveAgentOrchestrator] voice session.
+ *
+ * @property threadId Identifier of the chat thread bound to the active live session.
+ * @property status Latest [LiveAgentStatus] emitted for the active session.
+ */
+data class ActiveLiveSession(
+    val threadId: String,
+    val status: LiveAgentStatus,
+)
