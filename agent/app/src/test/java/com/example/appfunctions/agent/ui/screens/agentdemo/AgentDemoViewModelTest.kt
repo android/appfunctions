@@ -523,4 +523,24 @@ class AgentDemoViewModelTest {
             viewModel.onEvent(AgentUiEvent.OnDismissLiveSetupPrompt)
             assertNull((viewModel.uiState.value as AgentUiState.Loaded).liveSetupPrompt)
         }
+
+    @Test
+    fun `newThreadModel is first available model when current thread model is not offered`() =
+        runTest {
+            val ttsModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash-preview-tts")
+            val existingThread =
+                ThreadEntity(
+                    "thread-1",
+                    System.currentTimeMillis(),
+                    ttsModel,
+                    null,
+                )
+            threadsFlow.value = listOf(existingThread)
+
+            viewModel = createViewModel()
+
+            val loadedState = viewModel.uiState.value as AgentUiState.Loaded
+            assertEquals(existingThread, loadedState.currentThread)
+            assertEquals(testModelFlash, loadedState.newThreadModel)
+        }
 }

@@ -421,18 +421,14 @@ fun AgentDemoLoadedScreen(
                         }
                     },
                 )
-                val defaultModel =
-                    uiState.currentThread
-                        ?.llmModel
-                        ?.takeUnless { uiState.isCurrentThreadLive }
-                        ?: uiState.availableModels.firstOrNull()
+                val newThreadModel = uiState.newThreadModel
                 IconButton(
                     onClick = {
-                        if (defaultModel != null) {
-                            onEvent(AgentUiEvent.OnCreateThread(defaultModel))
+                        if (newThreadModel != null) {
+                            onEvent(AgentUiEvent.OnCreateThread(newThreadModel))
                         }
                     },
-                    enabled = defaultModel != null,
+                    enabled = newThreadModel != null,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = "Create Thread")

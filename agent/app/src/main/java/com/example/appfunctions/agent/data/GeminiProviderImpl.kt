@@ -104,17 +104,36 @@ class GeminiProviderImpl
                             supportedMethods == null ||
                                 VALUE_GENERATE_CONTENT in supportedMethods
 
-                        if (modelId.startsWith(GEMINI_MODEL_PREFIX) && supportsGenerateContent) {
+                        if (modelId.startsWith(GEMINI_MODEL_PREFIX) &&
+                            supportsGenerateContent &&
+                            !isSpecializedModel(modelId)
+                        ) {
                             LlmModel(LlmProviderName.GEMINI, modelId)
                         } else {
                             null
                         }
                     }
                     .distinct()
+                    .withDefaultModelFirst()
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse Gemini models response", e)
                 emptyList()
             }
+        }
+
+        /**
+         * Whether [modelId] belongs to one of [SPECIALIZED_MODEL_NAME_PARTS]: models that support
+         * `generateContent` but aren't meant for chat with function calling.
+         */
+        private fun isSpecializedModel(modelId: String): Boolean =
+            SPECIALIZED_MODEL_NAME_PARTS.any { part -> "-$modelId-".contains("-$part-") }
+
+        /** Moves the first model of [DEFAULT_MODEL_PREFERENCE] in this list to the front. */
+        private fun List<LlmModel>.withDefaultModelFirst(): List<LlmModel> {
+            val defaultModel =
+                DEFAULT_MODEL_PREFERENCE.firstNotNullOfOrNull { name -> find { it.modelName == name } }
+                    ?: return this
+            return listOf(defaultModel) + (this - defaultModel)
         }
 
         override suspend fun generateResponse(
@@ -383,6 +402,23 @@ class GeminiProviderImpl
             private const val VALUE_GENERATE_CONTENT = "generateContent"
             private const val MODEL_NAME_PREFIX = "models/"
             private const val GEMINI_MODEL_PREFIX = "gemini-"
+
+            /**
+             * Name parts of Gemini model families that support `generateContent` but aren't meant for
+             * chat with function calling: speech generation, image generation, transcription, Omni
+             * media generation, robotics, computer use, and Live and native audio. A model is hidden
+             * when one of them appears as whole `-`-separated parts of its name, so that new general
+             * models keep appearing without code changes.
+             */
+            private val SPECIALIZED_MODEL_NAME_PARTS =
+                listOf("tts", "image", "nano-banana", "transcribe", "omni", "robotics", "computer-use", "live", "audio")
+
+            /**
+             * Defaults for new threads, in order of preference. gemini-3.1-flash-lite is fast and calls
+             * functions reliably; the -latest aliases take over once it is retired.
+             */
+            private val DEFAULT_MODEL_PREFERENCE =
+                listOf("gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest")
 
             private const val KEY_MODEL = "model"
             private const val KEY_SERVICE_TIER = "service_tier"
