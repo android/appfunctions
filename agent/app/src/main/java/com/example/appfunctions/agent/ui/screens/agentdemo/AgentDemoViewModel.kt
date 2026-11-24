@@ -42,6 +42,7 @@ import com.example.appfunctions.agent.domain.live.CheckVoiceServiceActiveUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ConsumePendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUseCase
 import com.example.appfunctions.agent.domain.pendingintent.ObserveActivePendingIntentsUseCase
+import com.example.appfunctions.agent.domain.resolveDefaultModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,7 +80,7 @@ class AgentDemoViewModel
         val uiState: StateFlow<AgentUiState> = _uiState.asStateFlow()
 
         private val installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
-        private val availableModels = MutableStateFlow<List<LlmModel>>(emptyList())
+        private val modelChoices = MutableStateFlow(ModelChoices())
         private val liveSetupPrompt = MutableStateFlow<LiveSetupPrompt?>(null)
 
         private var observationJob: Job? = null
@@ -88,17 +89,25 @@ class AgentDemoViewModel
         init {
             viewModelScope.launch {
                 settingsRepository.geminiApiKey.collectLatest { geminiApiKey ->
-                    val models =
-                        LlmProviderName.entries.flatMap { providerName ->
+                    val choicesByProvider =
+                        LlmProviderName.entries.map { providerName ->
                             val apiKey =
                                 when (providerName) {
                                     LlmProviderName.GEMINI -> geminiApiKey
                                 }
-                            llmProviderFactory.getProvider(providerName).getAvailableModels(apiKey)
+                            val provider = llmProviderFactory.getProvider(providerName)
+                            val models = provider.getAvailableModels(apiKey)
+                            ModelChoices(models, provider.resolveDefaultModel(models))
                         }
-                    availableModels.value = models
-                    if (models.isNotEmpty() && manageThreadsUseCase.getThreads().first().isEmpty()) {
-                        createAndSelectThread(models.first())
+                    val choices =
+                        ModelChoices(
+                            availableModels = choicesByProvider.flatMap { it.availableModels },
+                            defaultModel = choicesByProvider.firstNotNullOfOrNull { it.defaultModel },
+                        )
+                    modelChoices.value = choices
+                    val defaultModel = choices.defaultModel
+                    if (defaultModel != null && manageThreadsUseCase.getThreads().first().isEmpty()) {
+                        createAndSelectThread(defaultModel)
                     }
                 }
             }
@@ -139,13 +148,13 @@ class AgentDemoViewModel
                     },
                     savedStateHandle.getStateFlow<String?>(MainActivity.ARG_THREAD_ID, null),
                     installedApps,
-                    availableModels,
+                    modelChoices,
                     liveSetupPrompt,
                 ) {
                         snapshot,
                         targetThreadId,
                         apps,
-                        models,
+                        choices,
                         setupPrompt,
                     ->
                     ThreadConfig(
@@ -155,7 +164,7 @@ class AgentDemoViewModel
                         activeLiveSession = snapshot.activeLiveSession,
                         targetThreadId = targetThreadId,
                         installedApps = apps,
-                        availableModels = models,
+                        modelChoices = choices,
                         liveSetupPrompt = setupPrompt,
                     )
                 }
@@ -206,7 +215,8 @@ class AgentDemoViewModel
                                 activePendingActionIds =
                                     currentLoadedState?.activePendingActionIds ?: emptySet(),
                                 installedApps = config.installedApps,
-                                availableModels = config.availableModels,
+                                availableModels = config.modelChoices.availableModels,
+                                defaultModel = config.modelChoices.defaultModel,
                             )
 
                         if (currentThread == null) {
@@ -418,6 +428,12 @@ private data class ThreadConfig(
     val activeLiveSession: ActiveLiveSession?,
     val targetThreadId: String?,
     val installedApps: List<AppInfo>,
-    val availableModels: List<LlmModel>,
+    val modelChoices: ModelChoices,
     val liveSetupPrompt: LiveSetupPrompt?,
+)
+
+/** The models the picker offers, and the default model among them for new threads. */
+private data class ModelChoices(
+    val availableModels: List<LlmModel> = emptyList(),
+    val defaultModel: LlmModel? = null,
 )

@@ -38,12 +38,13 @@ sealed class AgentUiState {
         val activePendingActionIds: Set<String> = emptySet(),
         val installedApps: List<AppInfo> = emptyList(),
         val availableModels: List<LlmModel> = emptyList(),
+        /** The model for new threads among [availableModels], as its provider resolves it. */
+        val defaultModel: LlmModel? = null,
     ) : AgentUiState() {
         /**
          * The model for a new thread: the current thread's model while [availableModels] offers it,
-         * otherwise the first available model, which is the provider's default. While no models are
-         * loaded, new threads keep the current thread's model. A Live thread's model is never
-         * copied.
+         * otherwise [defaultModel]. While no models are loaded, new threads keep the current
+         * thread's model. A Live thread's model is never copied.
          */
         val newThreadModel: LlmModel?
             get() =
@@ -51,7 +52,7 @@ sealed class AgentUiState {
                     ?.llmModel
                     ?.takeUnless { isCurrentThreadLive }
                     ?.takeIf { availableModels.isEmpty() || it in availableModels }
-                    ?: availableModels.firstOrNull()
+                    ?: defaultModel
     }
 }
 

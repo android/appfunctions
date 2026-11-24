@@ -19,6 +19,7 @@ import androidx.appfunctions.metadata.AppFunctionMetadata
 import com.example.appfunctions.agent.data.ServiceTier
 
 class FakeLlmProvider : LlmProvider {
+    override var defaultModelName: String? = null
     var responseToReturn: LlmResponse = LlmResponse.Error("Default fake error")
     private val enqueuedResponses = mutableListOf<LlmResponse>()
     var capturedPreviousInteractionId: String? = null

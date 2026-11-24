@@ -23,10 +23,14 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AgentUiStateTest {
-    private val flashLiteModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.1-flash-lite")
     private val proModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.1-pro-preview")
+    private val flashModel = LlmModel(LlmProviderName.GEMINI, "gemini-flash-latest")
     private val ttsModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash-preview-tts")
     private val liveModel = LlmModel(LlmProviderName.GEMINI, "gemini-3.8-live")
+
+    // The default model isn't the first available model, so that the tests tell the two apart.
+    private val availableModels = listOf(proModel, flashModel)
+    private val defaultModel = flashModel
 
     private fun threadWithModel(model: LlmModel): ThreadEntity =
         ThreadEntity(
@@ -40,21 +44,23 @@ class AgentUiStateTest {
         val uiState =
             AgentUiState.Loaded(
                 currentThread = threadWithModel(proModel),
-                availableModels = listOf(flashLiteModel, proModel),
+                availableModels = availableModels,
+                defaultModel = defaultModel,
             )
 
         assertEquals(proModel, uiState.newThreadModel)
     }
 
     @Test
-    fun newThreadModel_currentModelNotOffered_returnsFirstAvailableModel() {
+    fun newThreadModel_currentModelNotOffered_returnsDefaultModel() {
         val uiState =
             AgentUiState.Loaded(
                 currentThread = threadWithModel(ttsModel),
-                availableModels = listOf(flashLiteModel, proModel),
+                availableModels = availableModels,
+                defaultModel = defaultModel,
             )
 
-        assertEquals(flashLiteModel, uiState.newThreadModel)
+        assertEquals(defaultModel, uiState.newThreadModel)
     }
 
     @Test
@@ -69,14 +75,15 @@ class AgentUiStateTest {
     }
 
     @Test
-    fun newThreadModel_noCurrentThread_returnsFirstAvailableModel() {
+    fun newThreadModel_noCurrentThread_returnsDefaultModel() {
         val uiState =
             AgentUiState.Loaded(
                 currentThread = null,
-                availableModels = listOf(flashLiteModel, proModel),
+                availableModels = availableModels,
+                defaultModel = defaultModel,
             )
 
-        assertEquals(flashLiteModel, uiState.newThreadModel)
+        assertEquals(defaultModel, uiState.newThreadModel)
     }
 
     @Test
@@ -87,15 +94,16 @@ class AgentUiStateTest {
     }
 
     @Test
-    fun newThreadModel_currentThreadLive_returnsFirstAvailableModel() {
+    fun newThreadModel_currentThreadLive_returnsDefaultModel() {
         val uiState =
             AgentUiState.Loaded(
                 currentThread = threadWithModel(liveModel),
                 isCurrentThreadLive = true,
-                availableModels = listOf(flashLiteModel, liveModel),
+                availableModels = listOf(liveModel) + availableModels,
+                defaultModel = defaultModel,
             )
 
-        assertEquals(flashLiteModel, uiState.newThreadModel)
+        assertEquals(defaultModel, uiState.newThreadModel)
     }
 
     @Test

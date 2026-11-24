@@ -59,6 +59,8 @@ class GeminiProviderImpl
         private val httpClient: HttpClient,
         private val toolConverter: GeminiToolConverter,
     ) : LlmProvider {
+        override val defaultModelName: String = DEFAULT_MODEL_NAME
+
         override suspend fun getAvailableModels(apiKey: String?): List<LlmModel> {
             if (apiKey.isNullOrBlank()) {
                 return emptyList()
@@ -114,7 +116,6 @@ class GeminiProviderImpl
                         }
                     }
                     .distinct()
-                    .withDefaultModelFirst()
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse Gemini models response", e)
                 emptyList()
@@ -127,14 +128,6 @@ class GeminiProviderImpl
          */
         private fun isSpecializedModel(modelId: String): Boolean =
             SPECIALIZED_MODEL_NAME_PARTS.any { part -> "-$modelId-".contains("-$part-") }
-
-        /** Moves the first model of [DEFAULT_MODEL_PREFERENCE] in this list to the front. */
-        private fun List<LlmModel>.withDefaultModelFirst(): List<LlmModel> {
-            val defaultModel =
-                DEFAULT_MODEL_PREFERENCE.firstNotNullOfOrNull { name -> find { it.modelName == name } }
-                    ?: return this
-            return listOf(defaultModel) + (this - defaultModel)
-        }
 
         override suspend fun generateResponse(
             previousInteractionId: String?,
@@ -414,11 +407,10 @@ class GeminiProviderImpl
                 listOf("tts", "image", "nano-banana", "transcribe", "omni", "robotics", "computer-use", "live", "audio")
 
             /**
-             * Defaults for new threads, in order of preference. gemini-3.1-flash-lite is fast and calls
-             * functions reliably; the -latest aliases take over once it is retired.
+             * The model for new threads while the API lists it. The `-latest` alias follows the current
+             * Flash model, where a pinned version can be retired or run out of capacity.
              */
-            private val DEFAULT_MODEL_PREFERENCE =
-                listOf("gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest")
+            private const val DEFAULT_MODEL_NAME = "gemini-flash-latest"
 
             private const val KEY_MODEL = "model"
             private const val KEY_SERVICE_TIER = "service_tier"

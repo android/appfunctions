@@ -132,6 +132,7 @@ class AgentDemoViewModelTest {
         every { settingsRepository.geminiApiKey } returns geminiApiKeyFlow
         every { llmProviderFactory.getProvider(any()) } returns llmProvider
         coEvery { llmProvider.getAvailableModels(any()) } returns listOf(testModelFlash, testModelPro)
+        every { llmProvider.defaultModelName } returns null
         every { llmProviderFactory.getLiveProvider(any()) } returns liveLlmProvider
         every { liveLlmProvider.liveModel } returns testModelLive
         every { agentOrchestrator.status } returns agentStatusFlow
@@ -202,6 +203,18 @@ class AgentDemoViewModelTest {
             viewModel = createViewModel()
 
             coVerify { manageThreadsUseCase.createThread(testModelFlash) }
+        }
+
+    @Test
+    fun `init creates thread on the provider default model when none exists`() =
+        runTest {
+            threadsFlow.value = emptyList()
+            every { llmProvider.defaultModelName } returns testModelPro.modelName
+            coEvery { manageThreadsUseCase.createThread(testModelPro) } returns "thread-new"
+
+            viewModel = createViewModel()
+
+            coVerify { manageThreadsUseCase.createThread(testModelPro) }
         }
 
     @Test
@@ -525,8 +538,9 @@ class AgentDemoViewModelTest {
         }
 
     @Test
-    fun `newThreadModel is first available model when current thread model is not offered`() =
+    fun `newThreadModel is the provider default model when current thread model is not offered`() =
         runTest {
+            every { llmProvider.defaultModelName } returns testModelPro.modelName
             val ttsModel = LlmModel(LlmProviderName.GEMINI, "gemini-2.5-flash-preview-tts")
             val existingThread =
                 ThreadEntity(
@@ -541,6 +555,7 @@ class AgentDemoViewModelTest {
 
             val loadedState = viewModel.uiState.value as AgentUiState.Loaded
             assertEquals(existingThread, loadedState.currentThread)
-            assertEquals(testModelFlash, loadedState.newThreadModel)
+            assertEquals(testModelPro, loadedState.defaultModel)
+            assertEquals(testModelPro, loadedState.newThreadModel)
         }
 }
