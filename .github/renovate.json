@@ -12,5 +12,14 @@
     "renovate[bot]@users.noreply.github.com",
     "github-actions[bot]@users.noreply.github.com",
     "41898282+github-actions[bot]@users.noreply.github.com"
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": [
+        "com.android.compose.screenshot",
+        "com.android.tools.screenshot:screenshot-validation-api"
+      ],
+      "enabled": false
+    }
   ]
 }
