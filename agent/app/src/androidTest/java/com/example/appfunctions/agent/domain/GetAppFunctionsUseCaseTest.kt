@@ -15,12 +15,11 @@
  */
 package com.example.appfunctions.agent.domain
 
-import android.content.Context
-import android.os.ParcelFileDescriptor
-import androidx.appfunctions.AppFunctionManager
-import androidx.test.core.app.ApplicationProvider
+import androidx.appfunctions.metadata.AppFunctionMetadata
+import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
+import com.example.appfunctions.agent.FakeAppFunctionRule
+import com.example.appfunctions.agent.awaitUntil
 import com.example.appfunctions.agent.data.AgentInternalTools
 import com.example.appfunctions.agent.data.DataStoreSettingsRepository
 import com.example.appfunctions.agent.data.ToolDiscoveryTools
@@ -28,25 +27,30 @@ import com.example.appfunctions.agent.di.settingsDataStore
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsParams
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionsUseCase
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GetAppFunctionsUseCaseTest {
-    private lateinit var context: Context
-    private lateinit var appFunctionManager: AppFunctionManager
+    @get:Rule
+    val fakeFunction = FakeAppFunctionRule()
+
     private lateinit var useCase: GetAppFunctionsUseCase
 
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
-        appFunctionManager = AppFunctionManager.getInstance(context)!!
+        val context = fakeFunction.context
+        val appFunctionManager = fakeFunction.appFunctionManager
         val dataStore = context.settingsDataStore
         useCase =
             GetAppFunctionsUseCase(
@@ -60,47 +64,16 @@ class GetAppFunctionsUseCaseTest {
                         toolDiscoveryTools = ToolDiscoveryTools(context),
                     ),
             )
-
-        // Adopt shell permission identity
-        InstrumentationRegistry.getInstrumentation()
-            .uiAutomation
-            .adoptShellPermissionIdentity("android.permission.EXECUTE_APP_FUNCTIONS")
-
-        waitForFakeFunctionIndexed()
-    }
-
-    private fun waitForFakeFunctionIndexed() {
-        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val command = "cmd app_function list-app-functions --package ${context.packageName}"
-        var output = ""
-        val timeoutMs = 10_000L
-        val startTime = System.currentTimeMillis()
-        while (System.currentTimeMillis() - startTime < timeoutMs) {
-            output =
-                ParcelFileDescriptor.AutoCloseInputStream(
-                    uiAutomation.executeShellCommand(command),
-                ).bufferedReader().use { it.readText() }
-            if (output.contains("fakeFunction")) {
-                return
-            }
-            Thread.sleep(500)
-        }
-        fail("Timed out waiting for fakeFunction to be indexed. Output of '$command': $output")
     }
 
     @Test
-    fun invoke_returnsFakeFunction() =
+    fun invoke_returnsFakeFunctionAsGlobalFunction() =
         runBlocking {
-            val packageName = context.packageName
-
             val result = useCase().first()
 
-            val found =
-                result.entries.any { (pkg, funcs) ->
-                    pkg.packageName.contains(packageName) &&
-                        funcs.any { it.id.contains("fakeFunction") }
-                }
-            assertTrue("Should find fakeFunction in a package matching $packageName", found)
+            val found = result.findFakeFunction()
+            assertNotNull("Should find fakeFunction in ${fakeFunction.context.packageName}", found)
+            assertEquals(AppFunctionMetadata.SCOPE_GLOBAL, checkNotNull(found).scope)
         }
 
     @Test
@@ -112,9 +85,62 @@ class GetAppFunctionsUseCaseTest {
                     .values
                     .flatten()
 
-            assertFalse(tools.any { it.id.contains("fakeFunction") })
+            assertFalse(tools.any { it.name == fakeFunction.functionName })
             val expandTool =
                 tools.first { it.id == AgentInternalTools.EXPAND_TOOL_DESCRIPTION }
-            assertTrue(expandTool.description.contains(context.packageName))
+            assertTrue(expandTool.description.contains(fakeFunction.context.packageName))
         }
+
+    @Test
+    fun invoke_isEnabledFilter_followsFunctionDisabledAtRuntime() =
+        runBlocking {
+            fakeFunction.setEnabled(false)
+
+            awaitUntil("fakeFunction to be returned as disabled") {
+                useCase(DISABLED_ONLY).first().findFakeFunction() != null
+            }
+            assertEquals(null, useCase(ENABLED_ONLY).first().findFakeFunction())
+
+            fakeFunction.setEnabled(true)
+
+            awaitUntil("fakeFunction to be returned as enabled") {
+                useCase(ENABLED_ONLY).first().findFakeFunction() != null
+            }
+            assertEquals(null, useCase(DISABLED_ONLY).first().findFakeFunction())
+        }
+
+    @Test
+    fun invoke_functionDisabledAtRuntime_emitsWithoutTheFunction() =
+        runBlocking {
+            val containsFakeFunction = Channel<Boolean>(Channel.UNLIMITED)
+            val collector =
+                launch {
+                    useCase(ENABLED_ONLY).collect { result ->
+                        containsFakeFunction.send(result.findFakeFunction() != null)
+                    }
+                }
+            try {
+                assertTrue(
+                    "The first emission should contain fakeFunction",
+                    containsFakeFunction.receive(),
+                )
+
+                // The state change makes the flow emit again, without fakeFunction.
+                fakeFunction.setEnabledAndAwait(false) {
+                    while (containsFakeFunction.receive()) {
+                        // Skip emissions from before the change.
+                    }
+                }
+            } finally {
+                collector.cancel()
+            }
+        }
+
+    private fun Map<AppFunctionPackageMetadata, List<AppFunctionMetadata>>.findFakeFunction(): AppFunctionMetadata? =
+        values.flatten().find { it.name == fakeFunction.functionName }
+
+    private companion object {
+        val ENABLED_ONLY = GetAppFunctionsParams(isEnabled = true, includeInternalTools = false)
+        val DISABLED_ONLY = GetAppFunctionsParams(isEnabled = false, includeInternalTools = false)
+    }
 }

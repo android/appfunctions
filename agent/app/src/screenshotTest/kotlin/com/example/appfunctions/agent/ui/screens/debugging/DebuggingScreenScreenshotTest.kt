@@ -15,6 +15,7 @@
  */
 package com.example.appfunctions.agent.ui.screens.debugging
 
+import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.metadata.AppFunctionArrayTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionBooleanTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
@@ -24,6 +25,7 @@ import androidx.appfunctions.metadata.AppFunctionIntTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionLongTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionObjectTypeMetadata
+import androidx.appfunctions.metadata.AppFunctionPackageMetadata
 import androidx.appfunctions.metadata.AppFunctionParameterMetadata
 import androidx.appfunctions.metadata.AppFunctionReferenceTypeMetadata
 import androidx.appfunctions.metadata.AppFunctionResponseMetadata
@@ -86,7 +88,7 @@ fun DebuggingScreenAppSelectedScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
-                    enabledState = mapOf(function.name to true),
+                    functionStatuses = mapOf(function.name to AppFunctionStatus(isEnabled = true)),
                 ),
         )
     AppFunctionsAgentTheme {
@@ -123,7 +125,7 @@ fun DebuggingScreenFunctionExpandedScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
-                    enabledState = mapOf(function.name to true),
+                    functionStatuses = mapOf(function.name to AppFunctionStatus(isEnabled = true)),
                     expandedFunctions = setOf(function.id),
                 ),
         )
@@ -161,7 +163,7 @@ fun DebuggingScreenFunctionExpandedWithInputsScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
-                    enabledState = mapOf(function.name to true),
+                    functionStatuses = mapOf(function.name to AppFunctionStatus(isEnabled = true)),
                     expandedFunctions = setOf(function.id),
                     functionInputs =
                         mapOf(
@@ -249,7 +251,7 @@ fun DebuggingScreenFunctionWithEnumScreenshotPreview() {
             searchAppResultState =
                 SearchAppResultState.FunctionsFoundState(
                     functions = listOf(function),
-                    enabledState = mapOf(function.name to true),
+                    functionStatuses = mapOf(function.name to AppFunctionStatus(isEnabled = true)),
                     expandedFunctions = setOf(function.id),
                 ),
         )
@@ -270,6 +272,122 @@ fun DebuggingScreenFunctionWithEnumScreenshotPreview() {
         }
     }
 }
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun DebuggingScreenFunctionStatesScreenshotPreview() {
+    val enabled = createStatusFunction("sendMessage")
+    val disabled = createStatusFunction("deleteThread")
+    val dynamicRegistered =
+        createStatusFunction("appendDraftMessage", AppFunctionMetadata.SCOPE_ACTIVITY)
+    val dynamicNotRegistered =
+        createStatusFunction("insertIntoCurrentThread", AppFunctionMetadata.SCOPE_ACTIVITY)
+    FunctionsScreenshot(
+        SearchAppResultState.FunctionsFoundState(
+            functions = listOf(enabled, disabled, dynamicRegistered, dynamicNotRegistered),
+            functionStatuses =
+                mapOf(
+                    enabled.name to AppFunctionStatus(isEnabled = true),
+                    disabled.name to AppFunctionStatus(isEnabled = false),
+                    dynamicRegistered.name to
+                        AppFunctionStatus(isEnabled = true, registeredActivityCount = 1),
+                    dynamicNotRegistered.name to
+                        AppFunctionStatus(isEnabled = false, registeredActivityCount = 0),
+                ),
+        ),
+    )
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun DebuggingScreenDisabledFunctionExpandedScreenshotPreview() {
+    val function = createStatusFunction("deleteThread")
+    FunctionsScreenshot(
+        SearchAppResultState.FunctionsFoundState(
+            functions = listOf(function),
+            functionStatuses = mapOf(function.name to AppFunctionStatus(isEnabled = false)),
+            expandedFunctions = setOf(function.id),
+        ),
+    )
+}
+
+@PreviewTest
+@Preview(showBackground = true)
+@Composable
+fun DebuggingScreenDynamicFunctionExpandedScreenshotPreview() {
+    val function = createStatusFunction("appendDraftMessage", AppFunctionMetadata.SCOPE_ACTIVITY)
+    FunctionsScreenshot(
+        SearchAppResultState.FunctionsFoundState(
+            functions = listOf(function),
+            functionStatuses =
+                mapOf(function.name to AppFunctionStatus(isEnabled = true, registeredActivityCount = 2)),
+            expandedFunctions = setOf(function.id),
+        ),
+    )
+}
+
+@Composable
+private fun FunctionsScreenshot(state: SearchAppResultState.FunctionsFoundState) {
+    val app = AppInfo("com.example.test", "Test App", null)
+    val dummyState =
+        DebuggingUiState(
+            filteredApps =
+                AppsGroupState(
+                    sections = listOf(AppSection(R.string.debugging_supported, listOf(app), true)),
+                ),
+            selectedApp = app,
+            searchAppResultState = state,
+        )
+    AppFunctionsAgentTheme {
+        Box(Modifier.background(MaterialTheme.colorScheme.background)) {
+            DebuggingScreenContent(
+                uiState = dummyState,
+                onSearchQueryChanged = {},
+                onAppSelected = {},
+                onClearSelectedApp = {},
+                onFunctionInputsChange = { _, _ -> },
+                onInvoke = {},
+                onClearResult = {},
+                onFunctionExpandedChange = { _, _ -> },
+                onLaunchPendingIntent = {},
+                onTogglePin = {},
+            )
+        }
+    }
+}
+
+private fun createStatusFunction(
+    id: String,
+    scope: Int = AppFunctionMetadata.SCOPE_GLOBAL,
+): AppFunctionMetadata =
+    AppFunctionMetadata(
+        name = AppFunctionName("com.example.test", id),
+        schema = null,
+        parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    name = "threadId",
+                    isRequired = true,
+                    dataType = AppFunctionStringTypeMetadata(isNullable = false),
+                    description = "String param",
+                ),
+            ),
+        response =
+            AppFunctionResponseMetadata(
+                valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                description = "Returns a string",
+            ),
+        packageMetadata =
+            AppFunctionPackageMetadata(
+                packageName = "com.example.test",
+                components = AppFunctionComponentsMetadata(emptyMap()),
+            ),
+        description = "Function description",
+        deprecation = null,
+        scope = scope,
+    )
 
 private fun createFakeFunction(): AppFunctionMetadata {
     val stringType = AppFunctionStringTypeMetadata(isNullable = false)
