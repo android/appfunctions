@@ -26,6 +26,7 @@ import com.example.appfunctions.agent.domain.LlmResponse
 import com.example.appfunctions.agent.domain.LlmResponsePart
 import com.example.appfunctions.agent.domain.ToolOutput
 import com.example.appfunctions.agent.domain.ToolOutputImage
+import com.example.appfunctions.agent.domain.resolveDefaultModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -42,6 +43,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -58,6 +60,48 @@ import java.util.Base64
 
 class GeminiProviderImplTest {
     private val toolConverter = GeminiToolConverter()
+
+    /** The Gemini models the API listed on 2026-11-23, in API order. All of them list generateContent. */
+    private val apiModelIdsOn20261123 =
+        listOf(
+            "gemini-2.5-flash-preview-tts",
+            "gemini-2.5-pro-preview-tts",
+            "gemini-4-cobalt-eap",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-pro-latest",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash-image",
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-3.1-pro-preview-customtools",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-3.1-flash-lite",
+            "gemini-3-pro-image-preview",
+            "gemini-3-pro-image",
+            "gemini-3.1-flash-image-preview",
+            "gemini-3.1-flash-image",
+            "gemini-3.1-flash-lite-image",
+            "gemini-nano-banana-2.1",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-omni-flash-preview",
+            "gemini-omni-1.1-flash",
+            "gemini-omni-1.2-flash",
+            "gemini-3.5-transcribe",
+            "gemini-3.6-flash",
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+            "gemini-4-argon",
+            "gemini-4-carbon",
+            "gemini-4-hydrogen",
+            "gemini-4-neon",
+            "gemini-3.1-flash-tts-preview",
+            "gemini-3.8-flash-tts",
+            "gemini-3.8-flash-lite-tts",
+            "gemini-robotics-er-2-preview",
+            "gemini-2.5-computer-use-preview-10-2025",
+        )
 
     @Before
     fun setUp() {
@@ -177,6 +221,36 @@ class GeminiProviderImplTest {
         assertEquals(mimeType, content["mime_type"]!!.jsonPrimitive.content)
         assertArrayEquals(data, Base64.getDecoder().decode(content["data"]!!.jsonPrimitive.content))
     }
+
+    /** Returns a models.list response body that lists [modelIds], each of which supports `generateContent`. */
+    private fun modelsListResponse(modelIds: List<String>): String =
+        buildJsonObject {
+            put(
+                "models",
+                buildJsonArray {
+                    for (modelId in modelIds) {
+                        add(
+                            buildJsonObject {
+                                put("name", "models/$modelId")
+                                put(
+                                    "supportedGenerationMethods",
+                                    buildJsonArray { add(JsonPrimitive("generateContent")) },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+            .toString()
+
+    /** Returns a [GeminiProviderImpl] whose models request lists [apiModelIds]. */
+    private fun providerListing(apiModelIds: List<String>): GeminiProviderImpl =
+        GeminiProviderImpl(createMockHttpClient(HttpStatusCode.OK, modelsListResponse(apiModelIds)), toolConverter)
+
+    /** Returns the names of the models [GeminiProviderImpl.getAvailableModels] returns when the API lists [apiModelIds]. */
+    private suspend fun availableModelNames(apiModelIds: List<String>): List<String> =
+        providerListing(apiModelIds).getAvailableModels("test_key").map { it.modelName }
 
     @Test
     fun generateResponse_apiError_returnsError() =
@@ -1008,5 +1082,90 @@ class GeminiProviderImplTest {
             val models = provider.getAvailableModels("test_key")
 
             assertEquals(emptyList<LlmModel>(), models)
+        }
+
+    @Test
+    fun getAvailableModels_realModelsList_returnsChatModelsInApiOrder() =
+        runBlocking {
+            val modelNames = availableModelNames(apiModelIdsOn20261123)
+
+            assertEquals(
+                listOf(
+                    "gemini-4-cobalt-eap",
+                    "gemini-flash-latest",
+                    "gemini-flash-lite-latest",
+                    "gemini-pro-latest",
+                    "gemini-2.5-flash-lite",
+                    "gemini-3-flash-preview",
+                    "gemini-3.1-pro-preview",
+                    "gemini-3.1-pro-preview-customtools",
+                    "gemini-3.1-flash-lite-preview",
+                    "gemini-3.1-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.6-flash",
+                    "gemini-3.7-flash",
+                    "gemini-3.8-flash",
+                    "gemini-4-argon",
+                    "gemini-4-carbon",
+                    "gemini-4-hydrogen",
+                    "gemini-4-neon",
+                ),
+                modelNames,
+            )
+        }
+
+    @Test
+    fun resolveDefaultModel_realModelsList_returnsGeminiFlashLatest() =
+        runBlocking {
+            val provider = providerListing(apiModelIdsOn20261123)
+
+            val defaultModel = provider.resolveDefaultModel(provider.getAvailableModels("test_key"))
+
+            assertEquals(LlmModel(LlmProviderName.GEMINI, "gemini-flash-latest"), defaultModel)
+        }
+
+    @Test
+    fun resolveDefaultModel_withoutGeminiFlashLatest_returnsFirstAvailableModel() =
+        runBlocking {
+            // The TTS model comes first in API order, but it isn't available, so it can't be the default.
+            val provider =
+                providerListing(
+                    listOf("gemini-2.5-flash-preview-tts", "gemini-pro-latest", "gemini-flash-lite-latest", "gemini-3.1-flash-lite"),
+                )
+
+            val defaultModel = provider.resolveDefaultModel(provider.getAvailableModels("test_key"))
+
+            assertEquals(LlmModel(LlmProviderName.GEMINI, "gemini-pro-latest"), defaultModel)
+        }
+
+    @Test
+    fun getAvailableModels_newModels_keepsGeneralModelsAndDropsSpecializedModels() =
+        runBlocking {
+            val modelNames =
+                availableModelNames(
+                    listOf(
+                        "gemini-3.9-flash",
+                        "gemini-4-neon-tts",
+                        "gemini-nano-banana-3",
+                        "gemini-5-xenon",
+                        "gemini-3.5-transcribe-live",
+                        "gemini-2.5-flash-native-audio-preview-09-2025",
+                        "gemini-live-2.5-flash-preview",
+                    ),
+                )
+
+            assertEquals(listOf("gemini-3.9-flash", "gemini-5-xenon"), modelNames)
+        }
+
+    @Test
+    fun getAvailableModels_specializedPartInsideLongerNamePart_keepsModels() =
+        runBlocking {
+            // "live" in "olive" and "image" in "imagery" aren't whole parts of the names.
+            val apiModelIds = listOf("gemini-3.1-pro-preview-customtools", "gemini-5-olive", "gemini-5-imagery")
+
+            val modelNames = availableModelNames(apiModelIds)
+
+            assertEquals(apiModelIds, modelNames)
         }
 }

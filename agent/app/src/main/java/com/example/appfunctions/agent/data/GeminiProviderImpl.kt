@@ -59,6 +59,8 @@ class GeminiProviderImpl
         private val httpClient: HttpClient,
         private val toolConverter: GeminiToolConverter,
     ) : LlmProvider {
+        override val defaultModelName: String = DEFAULT_MODEL_NAME
+
         override suspend fun getAvailableModels(apiKey: String?): List<LlmModel> {
             if (apiKey.isNullOrBlank()) {
                 return emptyList()
@@ -104,7 +106,10 @@ class GeminiProviderImpl
                             supportedMethods == null ||
                                 VALUE_GENERATE_CONTENT in supportedMethods
 
-                        if (modelId.startsWith(GEMINI_MODEL_PREFIX) && supportsGenerateContent) {
+                        if (modelId.startsWith(GEMINI_MODEL_PREFIX) &&
+                            supportsGenerateContent &&
+                            !isSpecializedModel(modelId)
+                        ) {
                             LlmModel(LlmProviderName.GEMINI, modelId)
                         } else {
                             null
@@ -116,6 +121,13 @@ class GeminiProviderImpl
                 emptyList()
             }
         }
+
+        /**
+         * Whether [modelId] belongs to one of [SPECIALIZED_MODEL_NAME_PARTS]: models that support
+         * `generateContent` but aren't meant for chat with function calling.
+         */
+        private fun isSpecializedModel(modelId: String): Boolean =
+            SPECIALIZED_MODEL_NAME_PARTS.any { part -> "-$modelId-".contains("-$part-") }
 
         override suspend fun generateResponse(
             previousInteractionId: String?,
@@ -383,6 +395,22 @@ class GeminiProviderImpl
             private const val VALUE_GENERATE_CONTENT = "generateContent"
             private const val MODEL_NAME_PREFIX = "models/"
             private const val GEMINI_MODEL_PREFIX = "gemini-"
+
+            /**
+             * Name parts of Gemini model families that support `generateContent` but aren't meant for
+             * chat with function calling: speech generation, image generation, transcription, Omni
+             * media generation, robotics, computer use, and Live and native audio. A model is hidden
+             * when one of them appears as whole `-`-separated parts of its name, so that new general
+             * models keep appearing without code changes.
+             */
+            private val SPECIALIZED_MODEL_NAME_PARTS =
+                listOf("tts", "image", "nano-banana", "transcribe", "omni", "robotics", "computer-use", "live", "audio")
+
+            /**
+             * The model for new threads while the API lists it. The `-latest` alias follows the current
+             * Flash model, where a pinned version can be retired or run out of capacity.
+             */
+            private const val DEFAULT_MODEL_NAME = "gemini-flash-latest"
 
             private const val KEY_MODEL = "model"
             private const val KEY_SERVICE_TIER = "service_tier"

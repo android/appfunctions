@@ -22,7 +22,16 @@ import com.example.appfunctions.agent.data.ServiceTier
 /** Interface for LLM providers to generate responses. */
 interface LlmProvider {
     /**
-     * Retrieves the list of available models from this LLM provider.
+     * The name of the model new threads use while [getAvailableModels] lists it, or null for no
+     * preference. See [resolveDefaultModel].
+     */
+    val defaultModelName: String?
+        get() = null
+
+    /**
+     * Retrieves the list of available models from this LLM provider: the models that can run the
+     * agent's chat with function calling, in display order. The order doesn't determine the default
+     * model, which [resolveDefaultModel] picks.
      *
      * @param apiKey The API key for the LLM provider, or null/blank if not configured.
      * @return The list of available [LlmModel]s supported by this provider.
@@ -50,6 +59,14 @@ interface LlmProvider {
         serviceTier: ServiceTier = ServiceTier.STANDARD,
     ): LlmResponse
 }
+
+/**
+ * Returns the model for new threads among [availableModels], the models this provider's
+ * [LlmProvider.getAvailableModels] returned: the model named [LlmProvider.defaultModelName]
+ * if it is listed, otherwise the first available model, or null if there are none.
+ */
+fun LlmProvider.resolveDefaultModel(availableModels: List<LlmModel>): LlmModel? =
+    availableModels.find { it.modelName == defaultModelName } ?: availableModels.firstOrNull()
 
 /** Represents the input to the LLM, which can be a user message or a response from a tool. */
 sealed class LlmInput {
