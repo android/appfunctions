@@ -101,11 +101,21 @@ jobs:
         working-directory: agent
 
       - name: Run instrumentation tests
+        id: instrumentation-tests
         run: |
           ./gradlew :app:pixel7Api37StandardDebugAndroidTest -PGEMINI_API_KEY=dummy_key \
           -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true \
           -Pandroid.testoptions.manageddevices.emulator.gpu="swiftshader_indirect"
         working-directory: agent
+
+      - name: Upload instrumentation test results
+        if: failure() && steps.instrumentation-tests.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: agent-instrumentation-test-results
+          path: |
+            agent/app/build/outputs/androidTest-results/managedDevice
+            agent/app/build/reports/androidTests/managedDevice
 
       - name: Build Debug and Release APKs
         run: ./gradlew assembleDebug assembleRelease -PGEMINI_API_KEY=dummy_key

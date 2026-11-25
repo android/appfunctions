@@ -15,73 +15,56 @@
  */
 package com.example.appfunctions.agent.domain
 
-import android.content.Context
-import android.os.ParcelFileDescriptor
-import androidx.appfunctions.AppFunctionManager
-import androidx.appfunctions.AppFunctionName
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import com.example.appfunctions.agent.data.FakeAppFunctionService
+import com.example.appfunctions.agent.FakeAppFunctionRule
+import com.example.appfunctions.agent.awaitUntil
 import com.example.appfunctions.agent.domain.appfunction.GetAppFunctionStatesUseCase
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GetAppFunctionStatesUseCaseTest {
-    private lateinit var context: Context
-    private lateinit var appFunctionManager: AppFunctionManager
-    private lateinit var useCase: GetAppFunctionStatesUseCase
+    @get:Rule
+    val fakeFunction = FakeAppFunctionRule()
 
-    @Before
-    fun setup() {
-        context = ApplicationProvider.getApplicationContext()
-        appFunctionManager = AppFunctionManager.getInstance(context)!!
-        useCase = GetAppFunctionStatesUseCase(appFunctionManager)
-
-        // Adopt shell permission identity
-        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        uiAutomation.adoptShellPermissionIdentity("android.permission.EXECUTE_APP_FUNCTIONS")
-
-        waitForFakeFunctionIndexed()
-    }
-
-    private fun waitForFakeFunctionIndexed() {
-        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val command = "cmd app_function list-app-functions --package ${context.packageName}"
-        var output = ""
-        val timeoutMs = 10_000L
-        val startTime = System.currentTimeMillis()
-        while (System.currentTimeMillis() - startTime < timeoutMs) {
-            output =
-                ParcelFileDescriptor.AutoCloseInputStream(
-                    uiAutomation.executeShellCommand(command),
-                ).bufferedReader().use { it.readText() }
-            if (output.contains("fakeFunction")) {
-                return
-            }
-            Thread.sleep(500)
-        }
-        fail("Timed out waiting for fakeFunction to be indexed. Output of '$command': $output")
-    }
+    private val useCase by lazy { GetAppFunctionStatesUseCase(fakeFunction.appFunctionManager) }
 
     @Test
     fun invoke_returnsFakeFunctionState() =
         runBlocking {
-            val targetFunctionName =
-                AppFunctionName(
-                    context.packageName,
-                    FakeAppFunctionService.FUNCTION_ID_FAKE_FUNCTION,
-                )
+            val result = useCase(listOf(fakeFunction.functionName))
 
-            val result = useCase(listOf(targetFunctionName))
-
-            val found = result.find { it.functionName == targetFunctionName }
-            assertTrue("Should find fakeFunction from $targetFunctionName", found != null)
+            val found = result.find { it.functionName == fakeFunction.functionName }
+            assertNotNull("Should find fakeFunction from ${fakeFunction.functionName}", found)
             assertTrue("The function should be enabled", checkNotNull(found).isEnabled)
+        }
+
+    @Test
+    fun invoke_functionDisabledAtRuntime_returnsDisabledState() =
+        runBlocking {
+            fakeFunction.setEnabled(false)
+
+            awaitUntil("the use case to report fakeFunction as disabled") {
+                !useCase(listOf(fakeFunction.functionName)).single().isEnabled
+            }
+        }
+
+    @Test
+    fun invoke_functionReEnabledAtRuntime_returnsEnabledState() =
+        runBlocking {
+            fakeFunction.setEnabled(false)
+            awaitUntil("the use case to report fakeFunction as disabled") {
+                !useCase(listOf(fakeFunction.functionName)).single().isEnabled
+            }
+
+            fakeFunction.setEnabled(true)
+
+            awaitUntil("the use case to report fakeFunction as enabled") {
+                useCase(listOf(fakeFunction.functionName)).single().isEnabled
+            }
         }
 }

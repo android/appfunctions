@@ -256,7 +256,8 @@ class AndroidLiveAudioSessionTest {
         assertTrue(flushedLatch.await(2, TimeUnit.SECONDS))
         verify(atLeast = 1) { mockTrack.pause() }
         verify(atLeast = 1) { mockTrack.flush() }
-        verify(atLeast = 2) { mockTrack.play() }
+        // The playback thread calls play() again after flush(), so wait for it.
+        verify(timeout = 2_000, atLeast = 2) { mockTrack.play() }
 
         session.release()
     }
@@ -506,8 +507,11 @@ class AndroidLiveAudioSessionTest {
                         session.release()
                     }
                 releaseCaller.start()
-                // Spin briefly until releaseCaller flips isReleased (before blocking on stateLock)
-                Thread.sleep(30)
+                // release() flips isReleased before it blocks on stateLock, which start() holds.
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                while (releaseCaller.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                    Thread.yield()
+                }
                 releaseIssuedLatch.countDown()
                 releaseCaller.join(2000)
             }
