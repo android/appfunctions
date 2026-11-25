@@ -65,7 +65,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,10 +76,14 @@ import androidx.compose.ui.unit.dp
 import com.example.appfunctions.agent.R
 import com.example.appfunctions.agent.ui.theme.GoogleSansCodeFontFamily
 
+/**
+ * A function of the selected app. Shows whether it is disabled or dynamic (activity-scoped) and
+ * enables Run only when the function can run from this screen.
+ */
 @Composable
 fun AppFunctionItem(
     function: AppFunctionMetadata,
-    isEnabled: Boolean,
+    status: AppFunctionStatus,
     expanded: Boolean,
     inputValues: Map<String, Any>,
     onExpandedChange: (Boolean) -> Unit,
@@ -96,6 +102,7 @@ fun AppFunctionItem(
                     MaterialTheme.colorScheme.surface
                 },
         )
+    val contentAlpha = if (status.isEnabled) 1f else DISABLED_CONTENT_ALPHA
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -114,9 +121,7 @@ fun AppFunctionItem(
             Row(
                 modifier =
                     Modifier.fillMaxWidth()
-                        .alpha(if (isEnabled) 1f else 0.6f)
                         .clickable(
-                            enabled = isEnabled,
                             interactionSource = interactionSource,
                             indication = null,
                         ) {
@@ -138,40 +143,43 @@ fun AppFunctionItem(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Icon(
-                            modifier = Modifier.size(16.dp),
-                            painter = painterResource(R.drawable.ic_rounded_function),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Row(
+                            modifier = Modifier.weight(1f, fill = false).alpha(contentAlpha),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                modifier = Modifier.size(16.dp),
+                                painter = painterResource(R.drawable.ic_rounded_function),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
 
-                        Text(text = "\u2022")
+                            Text(text = "\u2022")
 
-                        Text(
-                            text = name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.MiddleEllipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.MiddleEllipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
 
-                        if (!isEnabled) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = MaterialTheme.shapes.extraSmall,
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.debugging_disabled),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier =
-                                        Modifier.padding(
-                                            horizontal = 4.dp,
-                                            vertical = 2.dp,
-                                        ),
-                                )
-                            }
+                        if (!status.isEnabled) {
+                            StatusChip(
+                                text = stringResource(R.string.debugging_disabled),
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (status.isDynamic) {
+                            StatusChip(
+                                text = stringResource(R.string.debugging_dynamic),
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
                         }
                     }
 
@@ -179,6 +187,7 @@ fun AppFunctionItem(
 
                     AnimatedContent(
                         expanded,
+                        modifier = Modifier.alpha(contentAlpha),
                         transitionSpec = { fadeIn().togetherWith(fadeOut()) },
                     ) {
                             expanded ->
@@ -191,6 +200,16 @@ fun AppFunctionItem(
                             overflow = TextOverflow.MiddleEllipsis,
                         )
                     }
+
+                    val statusDescription = statusDescription(status)
+                    if (statusDescription != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = statusDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 Spacer(Modifier.width(8.dp))
@@ -198,7 +217,6 @@ fun AppFunctionItem(
                 Box(
                     modifier =
                         Modifier.padding(end = 2.dp).size(48.dp).clip(CircleShape).clickable(
-                            enabled = isEnabled,
                             interactionSource = interactionSource,
                             indication = ripple(),
                         ) {
@@ -233,7 +251,7 @@ fun AppFunctionItem(
 
                         // Parameters List
                         Column(
-                            modifier = Modifier.alpha(if (isEnabled) 1f else 0.6f),
+                            modifier = Modifier.alpha(contentAlpha),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             for (parameter in function.parameters) {
@@ -258,11 +276,27 @@ fun AppFunctionItem(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    if (!status.canRun) {
+                        Text(
+                            text =
+                                stringResource(
+                                    if (status.isDynamic) {
+                                        R.string.debugging_run_unavailable_dynamic
+                                    } else {
+                                        R.string.debugging_run_unavailable_disabled
+                                    },
+                                ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
+
                     Button(
                         onClick = { onInvoke(inputValues) },
                         modifier = Modifier.height(48.dp).fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(),
-                        enabled = isEnabled,
+                        enabled = status.canRun,
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
@@ -278,6 +312,49 @@ fun AppFunctionItem(
         }
     }
 }
+
+/** Explains a disabled or dynamic [status], or returns `null` for an enabled global function. */
+@Composable
+private fun statusDescription(status: AppFunctionStatus): String? {
+    val registeredActivityCount = status.registeredActivityCount
+    return when {
+        registeredActivityCount != null && registeredActivityCount > 0 ->
+            pluralStringResource(
+                R.plurals.debugging_status_dynamic_registered,
+                registeredActivityCount,
+                registeredActivityCount,
+            )
+        registeredActivityCount != null ->
+            stringResource(R.string.debugging_status_dynamic_not_registered)
+        !status.isEnabled -> stringResource(R.string.debugging_status_disabled)
+        else -> null
+    }
+}
+
+@Composable
+private fun StatusChip(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+) {
+    Surface(
+        color = containerColor,
+        shape = MaterialTheme.shapes.extraSmall,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor,
+            modifier =
+                Modifier.padding(
+                    horizontal = 4.dp,
+                    vertical = 2.dp,
+                ),
+        )
+    }
+}
+
+private const val DISABLED_CONTENT_ALPHA = 0.6f
 
 @Composable
 private fun ParameterInput(
@@ -334,7 +411,7 @@ fun AppFunctionItemPreview() {
 
     AppFunctionItem(
         function = fakeMetadata,
-        isEnabled = false,
+        status = AppFunctionStatus(isEnabled = false),
         expanded = true,
         inputValues = emptyMap(),
         onExpandedChange = {},
@@ -371,7 +448,7 @@ fun AppFunctionItem_NoParams_Preview() {
 
     AppFunctionItem(
         function = fakeMetadata,
-        isEnabled = true,
+        status = AppFunctionStatus(isEnabled = true),
         expanded = true,
         inputValues = emptyMap(),
         onExpandedChange = {},
@@ -379,3 +456,59 @@ fun AppFunctionItem_NoParams_Preview() {
         onInvoke = {},
     )
 }
+
+@Preview(showBackground = true)
+@Composable
+fun AppFunctionItem_DynamicRegistered_Preview() {
+    AppFunctionItem(
+        function = createDynamicPreviewFunction(),
+        status = AppFunctionStatus(isEnabled = true, registeredActivityCount = 2),
+        expanded = true,
+        inputValues = emptyMap(),
+        onExpandedChange = {},
+        onInputValuesChange = {},
+        onInvoke = {},
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun AppFunctionItem_DynamicNotRegistered_Preview() {
+    AppFunctionItem(
+        function = createDynamicPreviewFunction(),
+        status = AppFunctionStatus(isEnabled = false, registeredActivityCount = 0),
+        expanded = false,
+        inputValues = emptyMap(),
+        onExpandedChange = {},
+        onInputValuesChange = {},
+        onInvoke = {},
+    )
+}
+
+private fun createDynamicPreviewFunction(): AppFunctionMetadata =
+    AppFunctionMetadata(
+        name = AppFunctionName("com.example.test", "appendDraftMessage"),
+        schema = null,
+        parameters =
+            listOf(
+                AppFunctionParameterMetadata(
+                    name = "messageText",
+                    isRequired = true,
+                    dataType = AppFunctionStringTypeMetadata(isNullable = false),
+                    description = "The text to append",
+                ),
+            ),
+        response =
+            AppFunctionResponseMetadata(
+                valueType = AppFunctionStringTypeMetadata(isNullable = false),
+                description = "Returns a string",
+            ),
+        packageMetadata =
+            AppFunctionPackageMetadata(
+                packageName = "com.example.test",
+                components = AppFunctionComponentsMetadata(),
+            ),
+        description = "Appends text to the chat input of the current thread",
+        deprecation = null,
+        scope = AppFunctionMetadata.SCOPE_ACTIVITY,
+    )

@@ -38,6 +38,7 @@ import com.example.appfunctions.agent.domain.pendingintent.LaunchPendingIntentUs
 import com.example.appfunctions.agent.domain.troubleshoot.TroubleshootAppUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -93,6 +94,7 @@ class DebuggingViewModel
         private fun loadAppFunctions() {
             viewModelScope.launch {
                 _uiState.update { it.copy(isLoading = true) }
+                // Emits again when functions or their states change at runtime.
                 getAppFunctionsUseCase(
                     GetAppFunctionsParams(includeInternalTools = false),
                 ).collect { appFunctionsMap ->
@@ -101,6 +103,7 @@ class DebuggingViewModel
                     allAppFunctions = appFunctionsMap
                     allAppFunctionStates = appFunctionStates.associateBy { it.functionName }
                     updateAppsGroupState()
+                    refreshSelectedAppFunctions()
                 }
             }
         }
@@ -119,31 +122,65 @@ class DebuggingViewModel
             }
         }
 
+        /**
+         * Shows the latest functions and states of the selected app, so that a function enabled or
+         * disabled at runtime, a dynamic function that is registered or unregistered, and added or
+         * removed functions show without selecting the app again. Inputs, expanded functions and an
+         * open result are kept.
+         */
+        private fun refreshSelectedAppFunctions() {
+            val packageName = _uiState.value.selectedApp?.packageName ?: return
+            // An update without the app (e.g. while it is reinstalled) keeps the last list.
+            val functions = findFunctions(packageName) ?: return
+            val functionStatuses = buildFunctionStatuses(functions)
+            updateFunctionsFoundState {
+                it.copy(functions = functions, functionStatuses = functionStatuses)
+            }
+        }
+
+        private fun findFunctions(packageName: String): List<AppFunctionMetadata>? =
+            allAppFunctions.entries.find { it.key.packageName == packageName }?.value
+
+        private fun buildFunctionStatuses(functions: List<AppFunctionMetadata>): Map<AppFunctionName, AppFunctionStatus> =
+            buildMap {
+                for (function in functions) {
+                    val state = allAppFunctionStates[function.name]
+                    if (state == null) {
+                        Log.w(TAG, "Unable to find enabled state for ${function.name}")
+                    } else {
+                        put(function.name, AppFunctionStatus.from(function, state))
+                    }
+                }
+            }
+
+        /** Applies [transform] to the functions state currently shown, if any. */
+        private fun updateFunctionsFoundState(
+            transform: (SearchAppResultState.FunctionsFoundState) -> SearchAppResultState.FunctionsFoundState,
+        ) {
+            _uiState.update { state ->
+                val searchAppResultState = state.searchAppResultState
+                if (searchAppResultState is SearchAppResultState.FunctionsFoundState) {
+                    state.copy(searchAppResultState = transform(searchAppResultState))
+                } else {
+                    state
+                }
+            }
+        }
+
         /** Handles app selection. */
         fun onAppSelected(appInfo: AppInfo) {
-            val functions =
-                allAppFunctions.entries.find { it.key.packageName == appInfo.packageName }?.value
+            val functions = findFunctions(appInfo.packageName)
             if (functions == null) {
                 runTroubleshooting(appInfo.packageName)
             } else {
-                val enabledStates =
-                    buildMap {
-                        for (function in functions) {
-                            val enabledState = allAppFunctionStates[function.name]
-                            if (enabledState == null) {
-                                Log.w(TAG, "Unable to find enabled state for ${function.name}")
-                            } else {
-                                put(function.name, enabledState.isEnabled)
-                            }
-                        }
-                    }
+                val functionStatuses = buildFunctionStatuses(functions)
                 _uiState.update { state ->
                     state.copy(
                         selectedApp = appInfo,
                         searchAppResultState =
                             SearchAppResultState.FunctionsFoundState(
                                 functions = functions,
-                                enabledState = enabledStates,
+                                functionStatuses = functionStatuses,
                             ),
                     )
                 }
@@ -176,16 +213,8 @@ class DebuggingViewModel
             functionId: String,
             inputs: Map<String, Any>,
         ) {
-            _uiState.update { state ->
-                val currentSearchAppResultState = state.searchAppResultState
-                if (currentSearchAppResultState !is SearchAppResultState.FunctionsFoundState) return
-                state.copy(
-                    searchAppResultState =
-                        currentSearchAppResultState.copy(
-                            functionInputs =
-                                currentSearchAppResultState.functionInputs + (functionId to inputs),
-                        ),
-                )
+            updateFunctionsFoundState {
+                it.copy(functionInputs = it.functionInputs + (functionId to inputs))
             }
         }
 
@@ -194,20 +223,14 @@ class DebuggingViewModel
             functionId: String,
             expanded: Boolean,
         ) {
-            _uiState.update { state ->
-                val currentSearchAppResultState = state.searchAppResultState
-                if (currentSearchAppResultState !is SearchAppResultState.FunctionsFoundState) return
-                val currentExpanded = currentSearchAppResultState.expandedFunctions
-                val newExpanded =
+            updateFunctionsFoundState {
+                val expandedFunctions =
                     if (expanded) {
-                        currentExpanded + functionId
+                        it.expandedFunctions + functionId
                     } else {
-                        currentExpanded - functionId
+                        it.expandedFunctions - functionId
                     }
-                state.copy(
-                    searchAppResultState =
-                        currentSearchAppResultState.copy(expandedFunctions = newExpanded),
-                )
+                it.copy(expandedFunctions = expandedFunctions)
             }
         }
 
@@ -218,6 +241,7 @@ class DebuggingViewModel
 
             val inputs = currentSearchAppResultState.functionInputs[function.id] ?: emptyMap()
             viewModelScope.launch {
+                // Results go to the latest state: the functions may have been refreshed meanwhile.
                 try {
                     val appFunctionDataResult =
                         withContext(Dispatchers.Default) {
@@ -235,43 +259,34 @@ class DebuggingViewModel
                                     parameters = appFunctionData,
                                     threadId = DEBUG_THREAD_ID,
                                 )
-                            _uiState.update {
+                            updateFunctionsFoundState {
                                 it.copy(
-                                    searchAppResultState =
-                                        currentSearchAppResultState.copy(
-                                            executionResult = result,
-                                            executedFunction = function,
-                                            executedInputs = inputs,
-                                        ),
+                                    executionResult = result,
+                                    executedFunction = function,
+                                    executedInputs = inputs,
                                 )
                             }
                         }
                         .onFailure { error ->
-                            _uiState.update {
+                            updateFunctionsFoundState {
                                 it.copy(
-                                    searchAppResultState =
-                                        currentSearchAppResultState.copy(
-                                            executionResult =
-                                                ExecuteAppFunctionResult.Error(
-                                                    Exception(
-                                                        error.message ?: "Failed to convert input",
-                                                    ),
-                                                ),
-                                            executedFunction = function,
-                                            executedInputs = inputs,
+                                    executionResult =
+                                        ExecuteAppFunctionResult.Error(
+                                            Exception(error.message ?: "Failed to convert input"),
                                         ),
+                                    executedFunction = function,
+                                    executedInputs = inputs,
                                 )
                             }
                         }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    _uiState.update {
+                    updateFunctionsFoundState {
                         it.copy(
-                            searchAppResultState =
-                                currentSearchAppResultState.copy(
-                                    executionResult = ExecuteAppFunctionResult.Error(e),
-                                    executedFunction = function,
-                                    executedInputs = inputs,
-                                ),
+                            executionResult = ExecuteAppFunctionResult.Error(e),
+                            executedFunction = function,
+                            executedInputs = inputs,
                         )
                     }
                 }
@@ -280,38 +295,28 @@ class DebuggingViewModel
 
         /** Clears the last execution result or error message. */
         fun clearResult() {
-            val currentSearchAppResultState = _uiState.value.searchAppResultState
-            if (currentSearchAppResultState !is SearchAppResultState.FunctionsFoundState) return
-            _uiState.update {
+            updateFunctionsFoundState {
                 it.copy(
-                    searchAppResultState =
-                        currentSearchAppResultState.copy(
-                            executionResult = null,
-                            executedFunction = null,
-                            executedInputs = emptyMap(),
-                        ),
+                    executionResult = null,
+                    executedFunction = null,
+                    executedInputs = emptyMap(),
                 )
             }
         }
 
         /** Handles launching a PendingIntent. */
         fun launchPendingIntent(pendingIntent: PendingIntent) {
-            val currentSearchAppResultState = _uiState.value.searchAppResultState
-            if (currentSearchAppResultState !is SearchAppResultState.FunctionsFoundState) return
+            if (_uiState.value.searchAppResultState !is SearchAppResultState.FunctionsFoundState) return
             viewModelScope.launch {
                 val result = launchPendingIntentUseCase(pendingIntent)
                 if (result.isFailure) {
-                    _uiState.update { state ->
-                        state.copy(
-                            searchAppResultState =
-                                currentSearchAppResultState.copy(
-                                    executionResult =
-                                        ExecuteAppFunctionResult.Error(
-                                            Exception(
-                                                result.exceptionOrNull()?.message
-                                                    ?: "Failed to launch action",
-                                            ),
-                                        ),
+                    updateFunctionsFoundState {
+                        it.copy(
+                            executionResult =
+                                ExecuteAppFunctionResult.Error(
+                                    Exception(
+                                        result.exceptionOrNull()?.message ?: "Failed to launch action",
+                                    ),
                                 ),
                         )
                     }

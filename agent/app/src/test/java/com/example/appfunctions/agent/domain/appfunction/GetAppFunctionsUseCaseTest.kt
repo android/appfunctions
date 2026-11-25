@@ -18,6 +18,7 @@ package com.example.appfunctions.agent.domain.appfunction
 import androidx.appfunctions.AppFunctionManager
 import androidx.appfunctions.AppFunctionName
 import androidx.appfunctions.AppFunctionState
+import androidx.appfunctions.AppFunctionsChangeEvent
 import androidx.appfunctions.metadata.AppFunctionComponentsMetadata
 import androidx.appfunctions.metadata.AppFunctionMetadata
 import androidx.appfunctions.metadata.AppFunctionPackageMetadata
@@ -27,9 +28,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -248,6 +253,83 @@ class GetAppFunctionsUseCaseTest {
             val withoutInternal =
                 nullManagerUseCase(GetAppFunctionsParams(includeInternalTools = false)).first()
             assertTrue(withoutInternal.isEmpty())
+        }
+
+    @Test
+    fun `metadata change event searches again and emits the changed functions`() =
+        runTest {
+            val notesPkg = createPackage("com.example.notes")
+            val createNoteTool = createTool(notesPkg, "com.example.notes.createNote")
+            val deleteNoteTool = createTool(notesPkg, "com.example.notes.deleteNote")
+            var installedTools = listOf(createNoteTool)
+            coEvery { appFunctionManager.searchAppFunctions(any()) } answers { installedTools }
+            every { appFunctionManager.observeAppFunctions() } returns
+                flow {
+                    // The app is updated with a new function after the first search.
+                    installedTools = listOf(createNoteTool, deleteNoteTool)
+                    emit(AppFunctionsChangeEvent.MetadataChanged(setOf(notesPkg.packageName)))
+                    awaitCancellation()
+                }
+
+            val (beforeChange, afterChange) =
+                useCase(GetAppFunctionsParams(includeInternalTools = false)).take(2).toList()
+
+            assertEquals(mapOf(notesPkg to listOf(createNoteTool)), beforeChange)
+            assertEquals(mapOf(notesPkg to listOf(createNoteTool, deleteNoteTool)), afterChange)
+        }
+
+    @Test
+    fun `isEnabled filter drops a function disabled at runtime after a states change event`() =
+        runTest {
+            val notesPkg = createPackage("com.example.notes")
+            val notesTool = createTool(notesPkg, "com.example.notes.createNote")
+            var isNotesToolEnabled = true
+            coEvery { appFunctionManager.searchAppFunctions(any()) } returns listOf(notesTool)
+            coEvery { getAppFunctionStatesUseCase(any()) } answers {
+                firstArg<List<AppFunctionName>>().map { name ->
+                    createState(name, isEnabled = isNotesToolEnabled)
+                }
+            }
+            every { appFunctionManager.observeAppFunctions() } returns
+                flow {
+                    // The app disables the function after the first search.
+                    isNotesToolEnabled = false
+                    emit(AppFunctionsChangeEvent.StatesChanged(setOf(notesTool.name)))
+                    awaitCancellation()
+                }
+
+            val (beforeChange, afterChange) =
+                useCase(GetAppFunctionsParams(isEnabled = true)).take(2).toList()
+
+            assertEquals(mapOf(notesPkg to listOf(notesTool)), beforeChange)
+            assertTrue(afterChange.isEmpty())
+        }
+
+    @Test
+    fun `isEnabled filter adds a function enabled at runtime after a states change event`() =
+        runTest {
+            val notesPkg = createPackage("com.example.notes")
+            val notesTool = createTool(notesPkg, "com.example.notes.createNote")
+            var isNotesToolEnabled = false
+            coEvery { appFunctionManager.searchAppFunctions(any()) } returns listOf(notesTool)
+            coEvery { getAppFunctionStatesUseCase(any()) } answers {
+                firstArg<List<AppFunctionName>>().map { name ->
+                    createState(name, isEnabled = isNotesToolEnabled)
+                }
+            }
+            every { appFunctionManager.observeAppFunctions() } returns
+                flow {
+                    // The app enables the function after the first search.
+                    isNotesToolEnabled = true
+                    emit(AppFunctionsChangeEvent.StatesChanged(setOf(notesTool.name)))
+                    awaitCancellation()
+                }
+
+            val (beforeChange, afterChange) =
+                useCase(GetAppFunctionsParams(isEnabled = true)).take(2).toList()
+
+            assertTrue(beforeChange.isEmpty())
+            assertEquals(mapOf(notesPkg to listOf(notesTool)), afterChange)
         }
 
     private fun createPackage(packageName: String): AppFunctionPackageMetadata =

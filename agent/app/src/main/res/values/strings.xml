@@ -42,6 +42,16 @@
     <string name="debugging_expand_function">Expand function</string>
     <string name="debugging_collapse_function">Collapse function</string>
     <string name="debugging_disabled">Disabled</string>
+    <string name="debugging_dynamic">Dynamic</string>
+    <string name="debugging_status_disabled">Turned off by the app, or not registered</string>
+    <plurals name="debugging_status_dynamic_registered">
+        <item quantity="one">Registered by %d activity</item>
+        <item quantity="other">Registered by %d activities</item>
+    </plurals>
+    <string name="debugging_status_dynamic_not_registered">Not registered: open the activity that provides it</string>
+    <string name="debugging_run_unavailable_disabled">Disabled functions can\'t run.</string>
+    <string name="debugging_run_unavailable_dynamic">The Debug tab can\'t run activity-scoped functions yet.</string>
+    <string name="debugging_state_unknown">Unable to determine enabled state</string>
     <string name="debugging_edit">Edit</string>
     <string name="debugging_execution_result">Execution Result</string>
     <string name="debugging_confirm">Confirm</string>

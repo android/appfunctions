@@ -98,8 +98,8 @@ fun FunctionsFoundContent(
             items = state.functions,
             key = { function -> function.id },
         ) { function ->
-            val isEnabled = state.enabledState[function.name]
-            if (isEnabled == null) {
+            val status = state.functionStatuses[function.name]
+            if (status == null) {
                 AppFunctionErrorItem(function = function)
                 return@items
             }
@@ -108,7 +108,7 @@ fun FunctionsFoundContent(
 
             AppFunctionItem(
                 function = function,
-                isEnabled = isEnabled,
+                status = status,
                 expanded = expanded,
                 inputValues = inputValues,
                 onExpandedChange = { isExpanded ->
@@ -296,7 +296,7 @@ fun AppFunctionErrorItem(
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
                 Text(
-                    text = "Unable to determine enabled state",
+                    text = stringResource(R.string.debugging_state_unknown),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
@@ -379,7 +379,7 @@ fun FunctionsFoundContentPreview() {
     val dummyState =
         SearchAppResultState.FunctionsFoundState(
             functions = listOf(function1, function2),
-            enabledState = mapOf(function1Name to true),
+            functionStatuses = mapOf(function1Name to AppFunctionStatus(isEnabled = true)),
             expandedFunctions = emptySet(),
             functionInputs = emptyMap(),
             executionResult = null,
