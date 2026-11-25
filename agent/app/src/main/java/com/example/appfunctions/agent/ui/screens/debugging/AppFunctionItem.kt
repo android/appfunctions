@@ -140,46 +140,47 @@ fun AppFunctionItem(
                         }
 
                     Row(
+                        modifier = Modifier.alpha(contentAlpha),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.weight(1f, fill = false).alpha(contentAlpha),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                modifier = Modifier.size(16.dp),
-                                painter = painterResource(R.drawable.ic_rounded_function),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Icon(
+                            modifier = Modifier.size(16.dp),
+                            painter = painterResource(R.drawable.ic_rounded_function),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
-                            Text(text = "\u2022")
+                        Text(text = "\u2022")
 
-                            Text(
-                                text = name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.MiddleEllipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                        }
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.MiddleEllipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
 
-                        if (!status.isEnabled) {
-                            StatusChip(
-                                text = stringResource(R.string.debugging_disabled),
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (status.isDynamic) {
-                            StatusChip(
-                                text = stringResource(R.string.debugging_dynamic),
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
+                    // On their own line, so that they don't shorten the function name.
+                    if (!status.isEnabled || status.isDynamic) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (!status.isEnabled) {
+                                StatusChip(
+                                    text = stringResource(R.string.debugging_disabled),
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (status.isDynamic) {
+                                StatusChip(
+                                    text = stringResource(R.string.debugging_dynamic),
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
                         }
                     }
 
