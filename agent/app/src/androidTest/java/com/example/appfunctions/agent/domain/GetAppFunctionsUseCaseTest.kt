@@ -31,7 +31,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -40,7 +39,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.time.Duration.Companion.seconds
 
 @RunWith(AndroidJUnit4::class)
 class GetAppFunctionsUseCaseTest {
@@ -127,10 +125,8 @@ class GetAppFunctionsUseCaseTest {
                     containsFakeFunction.receive(),
                 )
 
-                fakeFunction.setEnabled(false)
-
                 // The state change makes the flow emit again, without fakeFunction.
-                withTimeout(30.seconds) {
+                fakeFunction.setEnabledAndAwait(false) {
                     while (containsFakeFunction.receive()) {
                         // Skip emissions from before the change.
                     }

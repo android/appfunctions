@@ -141,12 +141,16 @@ class DebuggingViewModelTest {
                 initialStatus.isEnabled && !initialStatus.isDynamic,
             )
 
-            fakeFunction.setEnabled(false)
-            val disabledStatus = awaitFakeFunctionStatus { it?.isEnabled == false }
+            val disabledStatus =
+                fakeFunction.setEnabledAndAwait(false) {
+                    awaitFakeFunctionStatus { it?.isEnabled == false }
+                }
             assertFalse("A disabled function can't run", disabledStatus.canRun)
 
-            fakeFunction.setEnabled(true)
-            val enabledStatus = awaitFakeFunctionStatus { it?.isEnabled == true }
+            val enabledStatus =
+                fakeFunction.setEnabledAndAwait(true) {
+                    awaitFakeFunctionStatus { it?.isEnabled == true }
+                }
             assertTrue("A re-enabled global function can run", enabledStatus.canRun)
         }
 

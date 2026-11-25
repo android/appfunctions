@@ -24,8 +24,14 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.appfunctions.agent.data.FakeAppFunctionService
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.fail
 import org.junit.rules.ExternalResource
 import kotlin.time.Duration
@@ -98,6 +104,42 @@ class FakeAppFunctionRule : ExternalResource() {
         )
     }
 
+    /**
+     * Enables or disables the fake function, as [setEnabled] does, and returns the result of
+     * [awaitChange], which waits until the code under test shows the change. Fails the test after
+     * [timeout].
+     *
+     * A flow built on [AppFunctionManager.observeAppFunctions] registers its platform observer only
+     * when it is collected, and the observer isn't notified of earlier changes.
+     * `GetAppFunctionsUseCase` emits a first result before that, so a change made right after that
+     * result can be missed. Until [awaitChange] returns, the function is therefore switched to the
+     * other state and back every [RETOGGLE_INTERVAL].
+     */
+    suspend fun <T> setEnabledAndAwait(
+        enabled: Boolean,
+        timeout: Duration = 30.seconds,
+        awaitChange: suspend () -> T,
+    ): T =
+        coroutineScope {
+            setEnabled(enabled)
+            val retoggling =
+                launch {
+                    while (true) {
+                        delay(RETOGGLE_INTERVAL)
+                        // Not cancellable, so that the function is always left in the requested state.
+                        withContext(NonCancellable) {
+                            setEnabled(!enabled)
+                            setEnabled(enabled)
+                        }
+                    }
+                }
+            try {
+                withTimeout(timeout) { awaitChange() }
+            } finally {
+                retoggling.cancelAndJoin()
+            }
+        }
+
     private suspend fun setEnabledState(state: Int) {
         appFunctionManager.setAppFunctionEnabled(functionName.functionIdentifier, state)
     }
@@ -116,6 +158,13 @@ class FakeAppFunctionRule : ExternalResource() {
 
         /** Indexing a freshly installed app can take a while on a slow emulator. */
         val INDEXING_TIMEOUT = 60.seconds
+
+        /**
+         * How long a state change may take to show before it is made again. Long enough for the
+         * observer's notification, the use case's debounce and its queries; making the change again
+         * while it is still on its way does no harm.
+         */
+        val RETOGGLE_INTERVAL = 5.seconds
     }
 }
 
