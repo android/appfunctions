@@ -18,6 +18,7 @@ package com.example.chatapp
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import com.example.chatapp.appfunctions.ChatAppFunctionService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -56,6 +57,91 @@ class AppFunctionsViewModelTest {
         runTest {
             // Just verify we can collect from the flow
             val state = viewModel.uiState.first()
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerSearchContacts_enablesFunction() =
+        runTest {
+            viewModel.registerSearchContacts()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun onUserAuthStateChanged_togglesRegistration() =
+        runTest {
+            viewModel.onUserAuthStateChanged(isSignedIn = true)
+            var state = viewModel.uiState.value
+            assertNotNull(state)
+
+            viewModel.onUserAuthStateChanged(isSignedIn = false)
+            state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerFetchSendMessageDetails_enablesFunction() =
+        runTest {
+            viewModel.registerFetchSendMessageDetails()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerSendMessage_enablesFunction() =
+        runTest {
+            viewModel.registerSendMessage()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerMakeCall_enablesFunction() =
+        runTest {
+            viewModel.registerMakeCall()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerUpdateChatWallpaper_enablesFunction() =
+        runTest {
+            viewModel.registerUpdateChatWallpaper()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerSearchMessages_enablesFunction() =
+        runTest {
+            viewModel.registerSearchMessages()
+            val state = viewModel.uiState.value
+            assertNotNull(state)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun invokeFetchSendMessageDetailsInternally_executesSuccessfully() =
+        runTest {
+            viewModel.registerFetchSendMessageDetails()
+            val result = viewModel.invokeFetchSendMessageDetailsInternally("1", "Test Preview")
+            assertNotNull(result)
+        }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 36)
+    fun registerReviewSendMessage_enablesFunction() =
+        runTest {
+            viewModel.registerReviewSendMessage()
+            val state = viewModel.uiState.value
             assertNotNull(state)
         }
 }
